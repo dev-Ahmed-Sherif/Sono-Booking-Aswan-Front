@@ -1,0 +1,64 @@
+{
+  "Homepage": {
+    "title": "Welcome",
+    "content": "Welcome to Home Page"
+  },
+  "Nav": {
+    "chat": "Chat",
+    "unitData": "Unit Data",
+    "reservation": "Reservation"
+  },
+  "Chat": {
+    "title": "Chat",
+    "subtitle": "Conversations update in real time when SignalR is configured.",
+    "hubMissing": "Set NEXT_PUBLIC_SIGNALR_HUB_URL to enable the live connection (see chatApi.contract.ts). You can still use REST to send messages if the API supports it.",
+    "realtimeOn": "Live connection: connected",
+    "realtimeOff": "Live connection: disconnected — messages may still send via REST.",
+    "conversations": "Conversations",
+    "participantPlaceholder": "Participant user ID(s)",
+    "newChat": "New",
+    "emptyConversations": "No conversations yet. Add a participant ID to start.",
+    "unnamedConversation": "Conversation",
+    "selectConversation": "Messages",
+    "selectConversationHint": "Choose a conversation from the list or start a new one.",
+    "thread": "Thread",
+    "emptyMessages": "No messages yet. Say hello.",
+    "messagePlaceholder": "Type a message…",
+    "loadConversationsError": "Could not load conversations",
+    "loadMessagesError": "Could not load messages",
+    "sendError": "Could not send",
+    "participantRequired": "Enter at least one participant user ID.",
+    "createConversationError": "Could not start conversation",
+    "conversationCreated": "Conversation opened"
+  },
+  "BasicData": {
+    "page": {
+      "title": "Basic data",
+      "description": "Choose a section to manage"
+    },
+    "governorate": {
+      "title": "Governorates and cities",
+      "description": "Manage governorates and cities"
+    },
+    "partiesOfficials": {
+      "title": "Entities and officials",
+      "description": "Manage entities and officials"
+    },
+    "owningCompanies": {
+      "title": "Owning companies and officials",
+      "description": "Manage owning companies and officials"
+    },
+    "operatingCompanies": {
+      "title": "Operating companies and officials",
+      "description": "Manage operating companies and officials"
+    },
+    "touristMarinas": {
+      "title": "Tourist marinas",
+      "description": "Manage tourist marinas"
+    },
+    "floatingUnit": {
+      "title": "Floating units",
+      "description": "Basic data for floating units"
+    }
+  }
+}

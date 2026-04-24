@@ -1,0 +1,64 @@
+{
+  "Homepage": {
+    "title": "مرحباً",
+    "content": "مرحباً بكم في الصفحة الرئيسية"
+  },
+  "Nav": {
+    "chat": "المحادثات",
+    "unitData": "بيانات الوحدات",
+    "reservation": "الحجز"
+  },
+  "Chat": {
+    "title": "المحادثات",
+    "subtitle": "تحديث المحادثات فورياً عند تفعيل SignalR.",
+    "hubMissing": "عيّن NEXT_PUBLIC_SIGNALR_HUB_URL لتفعيل الاتصال المباشر (راجع chatApi.contract.ts). يمكن الإرسال عبر REST إن وفرها الـ API.",
+    "realtimeOn": "الاتصال المباشر: متصل",
+    "realtimeOff": "الاتصال المباشر: غير متصل — قد يعمل الإرسال عبر REST.",
+    "conversations": "المحادثات",
+    "participantPlaceholder": "معرّف المستخدم (المشارك)",
+    "newChat": "جديد",
+    "emptyConversations": "لا محادثات بعد. أدخل معرّف مشارك للبدء.",
+    "unnamedConversation": "محادثة",
+    "selectConversation": "الرسائل",
+    "selectConversationHint": "اختر محادثة من القائمة أو ابدأ محادثة جديدة.",
+    "thread": "الموضوع",
+    "emptyMessages": "لا رسائل بعد.",
+    "messagePlaceholder": "اكتب رسالة…",
+    "loadConversationsError": "تعذر تحميل المحادثات",
+    "loadMessagesError": "تعذر تحميل الرسائل",
+    "sendError": "تعذر الإرسال",
+    "participantRequired": "أدخل معرّف مستخدم مشارك واحد على الأقل.",
+    "createConversationError": "تعذر بدء المحادثة",
+    "conversationCreated": "تم فتح المحادثة"
+  },
+  "BasicData": {
+    "page": {
+      "title": "البيانات الأساسية",
+      "description": "اختر القسم الذي تريد إدارته"
+    },
+    "governorate": {
+      "title": "المحافظات و المدن",
+      "description": "إدارة بيانات المحافظات و المدن"
+    },
+    "partiesOfficials": {
+      "title": "الجهات و المسؤلين",
+      "description": "إدارة الجهات والمسؤولين"
+    },
+    "owningCompanies": {
+      "title": "الشركات المالكة و المسؤلين",
+      "description": "إدارة الشركات المالكة و المسؤلين"
+    },
+    "operatingCompanies": {
+      "title": "شركات التشغيل و المسؤلين",
+      "description": "إدارة شركات التشغيل و المسؤلين"
+    },
+    "touristMarinas": {
+      "title": "المراسى السياحية",
+      "description": "إدارة المراسى السياحية"
+    },
+    "floatingUnit": {
+      "title": "الوحدات العائمة",
+      "description": "البيانات الأساسية للوحدة العائمة"
+    }
+  }
+}
