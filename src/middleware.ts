@@ -19,6 +19,10 @@ const publicPages = [
   "/en/unit-data",
   "/ar/dashboard",
   "/en/dashboard",
+  "/ar/housing-sender",
+  "/en/housing-sender",
+  "/en/housing-receiver",
+  "/ar/housing-receiver",
 ];
 const LAST_ROUTE_COOKIE = "last_route";
 

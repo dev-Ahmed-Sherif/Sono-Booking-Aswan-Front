@@ -5,8 +5,11 @@
   },
   "Nav": {
     "chat": "المحادثات",
+    "dashboard": "الرئيسية",
     "unitData": "بيانات الوحدات",
-    "reservation": "الحجز"
+    "reservation": "الحجز",
+    "housingReceiver": "لوحة تحكم مسؤول القاهرة",
+    "housingSender": "لوحة تحكم مسؤول أسوان"
   },
   "Chat": {
     "title": "المحادثات",

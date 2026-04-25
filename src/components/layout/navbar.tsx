@@ -455,17 +455,35 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     () => [
       {
         id: 1,
+        href: `/${locale}/dashboard`,
+        label: tNav("dashboard"),
+        active: pathname === `/${locale}/dashboard`,
+      },
+      {
+        id: 2,
         href: `/${locale}/unit-data`,
         label: tNav("unitData"),
         active: pathname === `/${locale}/unit-data`,
       },
       {
-        id: 2,
+        id: 3,
         href: `/${locale}/reservation`,
         label: tNav("reservation"),
         active:
           pathname === `/${locale}/reservation` ||
           pathname.startsWith(`/${locale}/reservation/`),
+      },
+      {
+        id: 4,
+        href: `/${locale}/housing-receiver`,
+        label: tNav("housingReceiver"),
+        active: pathname === `/${locale}/housing-receiver`,
+      },
+      {
+        id: 5,
+        href: `/${locale}/housing-sender`,
+        label: tNav("housingSender"),
+        active: pathname === `/${locale}/housing-sender`,
       },
     ],
     [locale, pathname, tNav],

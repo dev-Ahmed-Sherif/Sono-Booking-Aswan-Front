@@ -5,8 +5,11 @@
   },
   "Nav": {
     "chat": "Chat",
+    "dashboard": "Dashboard",
     "unitData": "Unit Data",
-    "reservation": "Reservation"
+    "reservation": "Reservation",
+    "housingReceiver": "Housing Receiver",
+    "housingSender": "Housing Sender"
   },
   "Chat": {
     "title": "Chat",
