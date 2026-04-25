@@ -47,7 +47,6 @@ import {
 
 import { getRoles } from "@/actions/permissions/roleService";
 
-import { getOrganizations } from "@/actions/organization/organizationService";
 import { getUnitCategories } from "@/actions/settings/unitCategoryService";
 
 import { ToastAction } from "@radix-ui/react-toast";
@@ -86,10 +85,10 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
         setRolesData(rolesDataResult.data);
       }
 
-      const organizationsDataResult = await getOrganizations();
-      if (organizationsDataResult?.data) {
-        setOrganizationsData(organizationsDataResult.data);
-      }
+      // const organizationsDataResult = await getOrganizations();
+      // if (organizationsDataResult?.data) {
+      //   setOrganizationsData(organizationsDataResult.data);
+      // }
 
       const technicalJobCategoriesResult = await getUnitCategories();
       if (technicalJobCategoriesResult?.data) {
@@ -121,7 +120,7 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
   const isSuperAdminOrAdminRole = useMemo(() => {
     if (!selectedRoleId || !rolesData.length) return false;
     const selectedRole = rolesData.find(
-      (role: any) => String(role.id) === String(selectedRoleId)
+      (role: any) => String(role.id) === String(selectedRoleId),
     );
     if (!selectedRole) return false;
 
@@ -191,7 +190,7 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
         String(cat.id) === String(apiValue) ||
         cat.nameAr === apiValue ||
         cat.nameEn === apiValue ||
-        cat.name === apiValue
+        cat.name === apiValue,
     );
 
     if (match) {
@@ -206,7 +205,7 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
 
       // Check if the selected role is Super Admin or Admin
       const selectedRole = rolesData.find(
-        (role: any) => String(role.id) === String(data.roleId)
+        (role: any) => String(role.id) === String(data.roleId),
       );
 
       if (!selectedRole) {
@@ -289,7 +288,6 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
           throw new Error(res.message || res.error);
         }
       } else {
-
         // Prepare data for addUser, only include organizationId and technicalJobCategoryId if provided
         const addUserData: any = {
           name: data.name,
@@ -686,7 +684,10 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
             />
           </div>
           <div className="flex justify-center">
-            <Button disabled={loading} className="text-center h-11 min-w-32 px-6">
+            <Button
+              disabled={loading}
+              className="text-center h-11 min-w-32 px-6"
+            >
               {loading && <Loader2 className="h-6 w-6" />}
               {action}
             </Button>

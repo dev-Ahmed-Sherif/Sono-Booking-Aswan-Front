@@ -5,6 +5,7 @@ import CellAction from "@/components/basic-data/floating-unit-organization/cell-
 
 export type FloatingUnitOrganizationColumn = {
   id: string;
+  floatingUnitId?: string;
   organizationId?: string;
   organizationNameAr: string;
   /** From API `OrganizationType` (e.g. OwnerCompany = 1, OperatingCompany = 2). */

@@ -8,7 +8,6 @@ import "@/styles/globals.css";
 
 import Navbar from "@/components/layout/navbar";
 import Footer from "@/components/layout/footer";
-import Emergency from "@/components/layout/emergency";
 
 import ThemeProvider from "@/providers/theme-provider";
 import ToastProvider from "@/providers/toast-provider";
