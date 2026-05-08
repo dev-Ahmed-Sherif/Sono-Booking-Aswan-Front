@@ -14,7 +14,7 @@ const getGenders = async () => {
       };
     }
 
-    const res = await axios.get(`${process.env.BACK_END}/genders/getall`, {
+    const res = await axios.get(`${process.env.BACK_END}/Genders/getAll`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${accessToken}`,

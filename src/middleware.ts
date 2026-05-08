@@ -8,22 +8,7 @@ import type { NextRequest } from "next/server";
 //   // Used when no locale matches
 //   defaultLocale: "ar",
 // });
-const publicPages = [
-  "/ar",
-  "/en",
-  "/ar/register",
-  "/en/register",
-  "/ar/reservation",
-  "/en/reservation",
-  "/ar/unit-data",
-  "/en/unit-data",
-  "/ar/dashboard",
-  "/en/dashboard",
-  "/ar/housing-sender",
-  "/en/housing-sender",
-  "/en/housing-receiver",
-  "/ar/housing-receiver",
-];
+const publicPages = ["/ar", "/en", "/ar/register", "/en/register"];
 const LAST_ROUTE_COOKIE = "last_route";
 
 function isLocaleRootPath(pathname: string) {

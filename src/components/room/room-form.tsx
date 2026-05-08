@@ -32,10 +32,19 @@ import { roomSchema, type RoomFormValues } from "@/schemas";
 
 type RoomFormProps = {
   defaultValues?: Partial<RoomFormValues>;
+  statusOptions?: string[];
   onSubmit?: (values: RoomFormValues) => void | Promise<void>;
 };
 
-export default function RoomForm({ defaultValues, onSubmit }: RoomFormProps) {
+export default function RoomForm({
+  defaultValues,
+  statusOptions = ["متاح", "محجوز", "مشغول"],
+  onSubmit,
+}: RoomFormProps) {
+  const preferredStatus = statusOptions.includes("متاح")
+    ? "متاح"
+    : statusOptions[0];
+
   const roomImageInputRef = useRef<HTMLInputElement | null>(null);
   const [roomImage, setRoomImage] = useState<{
     file: File;
@@ -48,7 +57,7 @@ export default function RoomForm({ defaultValues, onSubmit }: RoomFormProps) {
       roomNumber: "",
       roomDescription: "",
       bedsCount: 1,
-      status: "متاحة",
+      status: (preferredStatus as RoomFormValues["status"] | undefined) || "متاح",
       roomImage: undefined,
       ...defaultValues,
     },
@@ -142,9 +151,15 @@ export default function RoomForm({ defaultValues, onSubmit }: RoomFormProps) {
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent dir="rtl" className="text-right">
-                    <SelectItem className="text-right" value="متاحة">متاحة</SelectItem>
-                    <SelectItem className="text-right" value="محجوزة">محجوزة</SelectItem>
-                    <SelectItem className="text-right" value="مشغولة">مشغولة</SelectItem>
+                    {statusOptions.map((option) => (
+                      <SelectItem
+                        key={option}
+                        className="text-right"
+                        value={option}
+                      >
+                        {option}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormMessage />

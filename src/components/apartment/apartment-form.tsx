@@ -30,15 +30,37 @@ import {
 } from "@/components/ui/dialog";
 import { apartmentSchema, type ApartmentFormValues } from "@/schemas";
 
+type LookupOption = { id: string; nameAr: string };
+type CityOption = LookupOption & { governorateId: string };
+
 type ApartmentFormProps = {
   defaultValues?: Partial<ApartmentFormValues>;
+  allocationOptions?: string[];
+  allocationTypeOptions?: string[];
+  statusOptions?: string[];
+  governorateOptions?: LookupOption[];
+  cityOptions?: CityOption[];
   onSubmit?: (values: ApartmentFormValues) => void | Promise<void>;
 };
 
 export default function ApartmentForm({
   defaultValues,
+  allocationOptions = ["رجال", "سيدات"],
+  allocationTypeOptions = ["ثابت", "مرن"],
+  statusOptions = ["متاح", "محجوز", "مشغول"],
+  governorateOptions = [],
+  cityOptions = [],
   onSubmit,
 }: ApartmentFormProps) {
+  const normalizeLookupValue = (value: string | undefined) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase();
+
+  const preferredStatus = statusOptions.includes("متاح")
+    ? "متاح"
+    : statusOptions[0];
+
   const apartmentImagesInputRef = useRef<HTMLInputElement | null>(null);
   const [apartmentImages, setApartmentImages] = useState<
     Array<{ file: File; previewUrl: string }>
@@ -52,9 +74,14 @@ export default function ApartmentForm({
       apartmentNumber: "",
       apartmentDescription: "",
       roomsCount: 1,
-      status: "متاحة",
-      allocation: "رجال",
-      allocationType: "ثابت",
+      status:
+        (preferredStatus as ApartmentFormValues["status"] | undefined) || "متاح",
+      allocation:
+        (allocationOptions[0] as ApartmentFormValues["allocation"] | undefined) ??
+        "رجال",
+      allocationType:
+        (allocationTypeOptions[0] as ApartmentFormValues["allocationType"]) ??
+        "ثابت",
       location: {
         governorate: "",
         city: "",
@@ -71,6 +98,67 @@ export default function ApartmentForm({
   const submitHandler = async (values: ApartmentFormValues) => {
     if (onSubmit) await onSubmit(values);
   };
+
+  const selectedGovernorate = form.watch("location.governorate");
+  const availableCities = cityOptions.filter(
+    (city) =>
+      normalizeLookupValue(city.governorateId) ===
+      normalizeLookupValue(selectedGovernorate),
+  );
+
+  useEffect(() => {
+    const currentGovernorate = form.getValues("location.governorate");
+    if (!currentGovernorate) return;
+    const governorateMatchedById = governorateOptions.some(
+      (item) => item.id === currentGovernorate,
+    );
+    if (governorateMatchedById) return;
+
+    const governorateMatchedByName = governorateOptions.find(
+      (item) => item.nameAr === currentGovernorate,
+    );
+    if (governorateMatchedByName) {
+      form.setValue("location.governorate", governorateMatchedByName.id, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    }
+  }, [form, governorateOptions]);
+
+  useEffect(() => {
+    const currentCity = form.getValues("location.city");
+    if (!currentCity) return;
+    const cityMatchedById = cityOptions.some((item) => item.id === currentCity);
+    if (cityMatchedById) return;
+
+    const cityMatchedByName = cityOptions.find((item) => item.nameAr === currentCity);
+    if (cityMatchedByName) {
+      form.setValue("location.city", cityMatchedByName.id, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    }
+  }, [cityOptions, form]);
+
+  useEffect(() => {
+    const selectedCity = form.getValues("location.city");
+    if (!selectedCity) return;
+    const cityBelongsToGovernorate = cityOptions.some(
+      (city) =>
+        normalizeLookupValue(city.id) === normalizeLookupValue(selectedCity) &&
+        normalizeLookupValue(city.governorateId) ===
+          normalizeLookupValue(selectedGovernorate),
+    );
+    if (!cityBelongsToGovernorate) {
+      form.setValue("location.city", "", {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    }
+  }, [cityOptions, form, selectedGovernorate]);
 
   useEffect(() => {
     return () => {
@@ -181,9 +269,15 @@ export default function ApartmentForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent dir="rtl" className="text-right">
-                    <SelectItem className="text-right" value="متاحة">متاحة</SelectItem>
-                    <SelectItem className="text-right" value="محجوزة">محجوزة</SelectItem>
-                    <SelectItem className="text-right" value="مشغولة">مشغولة</SelectItem>
+                    {statusOptions.map((option) => (
+                      <SelectItem
+                        key={option}
+                        className="text-right"
+                        value={option}
+                      >
+                        {option}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -203,8 +297,15 @@ export default function ApartmentForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent dir="rtl" className="text-right">
-                    <SelectItem className="text-right" value="رجال">رجال</SelectItem>
-                    <SelectItem className="text-right" value="سيدات">سيدات</SelectItem>
+                    {allocationOptions.map((option) => (
+                      <SelectItem
+                        key={option}
+                        className="text-right"
+                        value={option}
+                      >
+                        {option}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -224,8 +325,15 @@ export default function ApartmentForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent dir="rtl" className="text-right">
-                    <SelectItem className="text-right" value="ثابت">ثابت</SelectItem>
-                    <SelectItem className="text-right" value="مرن">مرن</SelectItem>
+                    {allocationTypeOptions.map((option) => (
+                      <SelectItem
+                        key={option}
+                        className="text-right"
+                        value={option}
+                      >
+                        {option}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormMessage />
@@ -264,13 +372,35 @@ export default function ApartmentForm({
               render={({ field }) => (
                 <FormItem className="w-full md:max-w-[260px]">
                   <FormLabel>المحافظة</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      className="w-full"
-                      placeholder="المحافظة"
-                    />
-                  </FormControl>
+                  <Select
+                    dir="rtl"
+                    value={field.value}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      form.setValue("location.city", "", {
+                        shouldDirty: true,
+                        shouldTouch: true,
+                        shouldValidate: true,
+                      });
+                    }}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-full text-right [&>span]:w-full [&>span]:text-right">
+                        <SelectValue placeholder="اختر المحافظة" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent dir="rtl" className="text-right">
+                      {governorateOptions.map((option) => (
+                        <SelectItem
+                          key={option.id}
+                          className="text-right"
+                          value={option.id}
+                        >
+                          {option.nameAr}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
@@ -281,13 +411,35 @@ export default function ApartmentForm({
               render={({ field }) => (
                 <FormItem className="w-full md:max-w-[260px]">
                   <FormLabel>المدينة</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      className="w-full"
-                      placeholder="المدينة"
-                    />
-                  </FormControl>
+                  <Select
+                    dir="rtl"
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    disabled={!selectedGovernorate}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-full text-right [&>span]:w-full [&>span]:text-right">
+                        <SelectValue
+                          placeholder={
+                            selectedGovernorate
+                              ? "اختر المدينة"
+                              : "اختر المحافظة أولا"
+                          }
+                        />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent dir="rtl" className="text-right">
+                      {availableCities.map((option) => (
+                        <SelectItem
+                          key={option.id}
+                          className="text-right"
+                          value={option.id}
+                        >
+                          {option.nameAr}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

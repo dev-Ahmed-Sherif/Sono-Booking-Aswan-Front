@@ -14,7 +14,7 @@ const getIdTypes = async () => {
       };
     }
 
-    const res = await axios.get(`${process.env.BACK_END}/idtypes/getall`, {
+    const res = await axios.get(`${process.env.BACK_END}/IDTypes/getAll`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${accessToken}`,

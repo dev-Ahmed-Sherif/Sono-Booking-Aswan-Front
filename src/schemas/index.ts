@@ -1137,9 +1137,12 @@ const unitDataFileLikeSchema = z
     message: "ملف الصورة غير صالح",
   });
 
-export const apartmentStatusEnum = z.enum(["متاحة", "محجوزة", "مشغولة"], {
+export const apartmentStatusEnum = z.enum(
+  ["متاح", "محجوز", "مشغول", "متاحة", "محجوزة", "مشغولة"],
+  {
   required_error: "حالة الشقة مطلوبة",
-});
+  },
+);
 
 export const apartmentAllocationEnum = z.enum(["رجال", "سيدات"], {
   required_error: "التخصيص مطلوب",
@@ -1164,7 +1167,7 @@ export const apartmentSchema = z.object({
     .min(1, { message: "عدد الغرف يجب أن يكون 1 على الأقل" }),
   status: apartmentStatusEnum,
   allocation: apartmentAllocationEnum,
-  allocationType: apartmentAllocationTypeEnum,
+  allocationType: z.string().min(1, { message: "نوع التخصيص مطلوب" }),
   location: z.object({
     governorate: z.string().min(1, { message: "المحافظة مطلوبة" }),
     city: z.string().min(1, { message: "المدينة مطلوبة" }),
@@ -1180,9 +1183,12 @@ export const apartmentSchema = z.object({
 
 export type ApartmentFormValues = z.infer<typeof apartmentSchema>;
 
-export const roomStatusEnum = z.enum(["متاحة", "محجوزة", "مشغولة"], {
+export const roomStatusEnum = z.enum(
+  ["متاح", "محجوز", "مشغول", "متاحة", "محجوزة", "مشغولة"],
+  {
   required_error: "حالة الغرفة مطلوبة",
-});
+  },
+);
 
 export const roomSchema = z.object({
   roomNumber: z.string().min(1, { message: "رقم الغرفة مطلوب" }),
@@ -1203,9 +1209,12 @@ export const roomSchema = z.object({
 
 export type RoomFormValues = z.infer<typeof roomSchema>;
 
-export const bedStatusEnum = z.enum(["متاح", "محجوز", "مشغول"], {
+export const bedStatusEnum = z.enum(
+  ["متاح", "محجوز", "مشغول", "متاحة", "محجوزة", "مشغولة"],
+  {
   required_error: "حالة السرير مطلوبة",
-});
+  },
+);
 
 export const bedSchema = z.object({
   bedNumber: z.string().min(1, { message: "رقم السرير مطلوب" }),

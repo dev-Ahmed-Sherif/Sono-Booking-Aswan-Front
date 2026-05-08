@@ -9,7 +9,8 @@
     "unitData": "Unit Data",
     "reservation": "Reservation",
     "housingReceiver": "Housing Receiver",
-    "housingSender": "Housing Sender"
+    "housingSender": "Housing Sender",
+    "settings": "Settings"
   },
   "Chat": {
     "title": "Chat",

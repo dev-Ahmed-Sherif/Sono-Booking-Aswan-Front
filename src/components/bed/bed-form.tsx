@@ -32,10 +32,19 @@ import { bedSchema, type BedFormValues } from "@/schemas";
 
 type BedFormProps = {
   defaultValues?: Partial<BedFormValues>;
+  statusOptions?: string[];
   onSubmit?: (values: BedFormValues) => void | Promise<void>;
 };
 
-export default function BedForm({ defaultValues, onSubmit }: BedFormProps) {
+export default function BedForm({
+  defaultValues,
+  statusOptions = ["متاح", "محجوز", "مشغول"],
+  onSubmit,
+}: BedFormProps) {
+  const preferredStatus = statusOptions.includes("متاح")
+    ? "متاح"
+    : statusOptions[0];
+
   const bedImageInputRef = useRef<HTMLInputElement | null>(null);
   const [bedImage, setBedImage] = useState<{
     file: File;
@@ -48,7 +57,7 @@ export default function BedForm({ defaultValues, onSubmit }: BedFormProps) {
       bedNumber: "",
       bedDescription: "",
       dimensions: "",
-      status: "متاح",
+      status: (preferredStatus as BedFormValues["status"] | undefined) || "متاح",
       bedImage: undefined,
       ...defaultValues,
     },
@@ -140,9 +149,15 @@ export default function BedForm({ defaultValues, onSubmit }: BedFormProps) {
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent dir="rtl" className="text-right">
-                    <SelectItem className="text-right" value="متاح">متاح</SelectItem>
-                    <SelectItem className="text-right" value="محجوز">محجوز</SelectItem>
-                    <SelectItem className="text-right" value="مشغول">مشغول</SelectItem>
+                    {statusOptions.map((option) => (
+                      <SelectItem
+                        key={option}
+                        className="text-right"
+                        value={option}
+                      >
+                        {option}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <FormMessage />

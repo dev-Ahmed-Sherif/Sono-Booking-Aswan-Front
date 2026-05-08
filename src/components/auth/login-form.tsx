@@ -207,8 +207,6 @@ export function LoginForm({ Cookie }: LoginFormProps) {
     setAvailability(null);
   }, [startDate, nights, unitType, gender]);
 
-
-
   const handleCheckAvailability = () => {
     if (!startDate || !nights || !unitType || !gender) {
       toast({
@@ -228,101 +226,100 @@ export function LoginForm({ Cookie }: LoginFormProps) {
   };
 
   const onSubmit = (values: z.infer<typeof LoginSchema>) => {
-    // startTransition(() => {
-    //   Login(values)
-    //     .then((data) => {
-    //       const { isLogedIn, refreshToken } = data.data;
-    //       if (!isLogedIn) return;
-    //       getUserData()
-    //         .then((result) => {
-    //           if (result.error) {
-    //             toast({
-    //               variant: "destructive",
-    //               title: "خطأ",
-    //               description: result.message || "فشل في جلب بيانات المستخدم",
-    //             });
-    //             return;
-    //           }
-    //           if (result.data?.data) {
-    //             const { id, role, name, organizationId, governorateId } =
-    //               result.data.data;
-    //             user.setItem({
-    //               id,
-    //               role,
-    //               name,
-    //               organizationId: organizationId ?? "",
-    //               governorateId: governorateId ?? "",
-    //             });
-    //             dispatch(setUserId(id));
-    //             dispatch(setOrganizationId(organizationId));
-    //             dispatch(setRole(role));
-    //             dispatch(setGovernorateId(governorateId ?? ""));
-    //             if (refreshToken && typeof refreshToken === "string") {
-    //               const cookieName =
-    //                 (
-    //                   process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE ?? ""
-    //                 ).trim() || "Ref_Tok_Housing_Aswan";
-    //               const cookieLife =
-    //                 process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE_LIFE ?? "";
-    //               setTimeout(() => {
-    //                 setClientCookie(cookieName, refreshToken, cookieLife);
-    //               }, 0);
-    //             }
-    //             if (id) {
-    //               const guideCookieName =
-    //                 (
-    //                   process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE ?? ""
-    //                 ).trim() || "Ref_Guid_Housing_Aswan";
-    //               const guideCookieLife =
-    //                 process.env.NEXT_PUBLIC_REFRESH_GUDIE_LIFE ?? "";
-    //               setTimeout(() => {
-    //                 setClientCookie(
-    //                   guideCookieName,
-    //                   String(id),
-    //                   guideCookieLife,
-    //                 );
-    //               }, 0);
-    //             }
-    //             nav.setItem(`/${locale}/dashboard`);
-    //             setTimeout(() => {
-    //               router.push(`/${locale}/dashboard`);
-    //               setTimeout(() => window.location.reload(), 700);
-    //             }, 35);
-    //           }
-    //         })
-    //         .catch((err) => {
-    //           console.error("Error getting user data:", err);
-    //           toast({
-    //             variant: "destructive",
-    //             title: "حدث خطأ !",
-    //             description: "يرجى تسجيل الدخول مرة أخرى",
-    //           });
-    //           setTimeout(() => router.push(`/${locale}`), 42);
-    //         });
-    //     })
-    //     .catch((err) => {
-    //       if (err.message?.includes("401") || err.message?.includes("404")) {
-    //         toast({
-    //           variant: "destructive",
-    //           title: "حدث خطأ !",
-    //           description: "البريد الإلكتروني أو كلمة المرور غير صحيحة",
-    //           action: (
-    //             <ToastAction altText="Try again">حاول مرة أخرى</ToastAction>
-    //           ),
-    //         });
-    //       } else {
-    //         toast({
-    //           variant: "destructive",
-    //           title: "حدث خطأ !",
-    //           description: "حدث خطأ غير متوقع، يرجى المحاولة لاحقاً",
-    //           action: (
-    //             <ToastAction altText="Try again">حاول مرة أخرى</ToastAction>
-    //           ),
-    //         });
-    //       }
-    //     });
-    // });
-    router.push(`/${locale}/reservation`);
+    startTransition(() => {
+      Login(values)
+        .then((data) => {
+          const { isLogedIn, refreshToken } = data.data;
+          if (!isLogedIn) return;
+          getUserData()
+            .then((result) => {
+              if (result.error) {
+                toast({
+                  variant: "destructive",
+                  title: "خطأ",
+                  description: result.message || "فشل في جلب بيانات المستخدم",
+                });
+                return;
+              }
+              if (result.data?.data) {
+                const { id, role, name, organizationId, governorateId } =
+                  result.data.data;
+                user.setItem({
+                  id,
+                  role,
+                  name,
+                  organizationId: organizationId ?? "",
+                  governorateId: governorateId ?? "",
+                });
+                dispatch(setUserId(id));
+                dispatch(setOrganizationId(organizationId));
+                dispatch(setRole(role));
+                dispatch(setGovernorateId(governorateId ?? ""));
+                if (refreshToken && typeof refreshToken === "string") {
+                  const cookieName =
+                    (
+                      process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE ?? ""
+                    ).trim() || "Ref_Tok_Housing_Aswan";
+                  const cookieLife =
+                    process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE_LIFE ?? "";
+                  setTimeout(() => {
+                    setClientCookie(cookieName, refreshToken, cookieLife);
+                  }, 0);
+                }
+                if (id) {
+                  const guideCookieName =
+                    (
+                      process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE ?? ""
+                    ).trim() || "Ref_Guid_Housing_Aswan";
+                  const guideCookieLife =
+                    process.env.NEXT_PUBLIC_REFRESH_GUDIE_LIFE ?? "";
+                  setTimeout(() => {
+                    setClientCookie(
+                      guideCookieName,
+                      String(id),
+                      guideCookieLife,
+                    );
+                  }, 0);
+                }
+                nav.setItem(`/${locale}/dashboard`);
+                setTimeout(() => {
+                  router.push(`/${locale}/dashboard`);
+                  setTimeout(() => window.location.reload(), 700);
+                }, 35);
+              }
+            })
+            .catch((err) => {
+              console.error("Error getting user data:", err);
+              toast({
+                variant: "destructive",
+                title: "حدث خطأ !",
+                description: "يرجى تسجيل الدخول مرة أخرى",
+              });
+              setTimeout(() => router.push(`/${locale}`), 42);
+            });
+        })
+        .catch((err) => {
+          if (err.message?.includes("401") || err.message?.includes("404")) {
+            toast({
+              variant: "destructive",
+              title: "حدث خطأ !",
+              description: "البريد الإلكتروني أو كلمة المرور غير صحيحة",
+              action: (
+                <ToastAction altText="Try again">حاول مرة أخرى</ToastAction>
+              ),
+            });
+          } else {
+            toast({
+              variant: "destructive",
+              title: "حدث خطأ !",
+              description: "حدث خطأ غير متوقع، يرجى المحاولة لاحقاً",
+              action: (
+                <ToastAction altText="Try again">حاول مرة أخرى</ToastAction>
+              ),
+            });
+          }
+        });
+    });
   };
 
   if (isLoading) return null;
@@ -417,13 +414,19 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                         <CalendarIcon className="h-4 w-4 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="z-50 w-auto p-0" align="start" dir="rtl">
+                    <PopoverContent
+                      className="z-50 w-auto p-0"
+                      align="start"
+                      dir="rtl"
+                    >
                       <Calendar
                         mode="single"
                         selected={startDate}
                         onSelect={setStartDate}
                         locale={ar}
-                        disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                        disabled={(date) =>
+                          date < new Date(new Date().setHours(0, 0, 0, 0))
+                        }
                         initialFocus
                         captionLayout="dropdown"
                         toYear={new Date().getFullYear() + 2}
@@ -455,7 +458,11 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                     <Building2 className="h-4 w-4 text-blue-500" />
                     نوع الوحدة
                   </Label>
-                  <Select value={unitType} onValueChange={setUnitType} dir="rtl">
+                  <Select
+                    value={unitType}
+                    onValueChange={setUnitType}
+                    dir="rtl"
+                  >
                     <SelectTrigger className="bg-white border-gray-300 text-gray-800 focus:ring-blue-400/30 focus:border-blue-400 text-right [&>span]:w-full [&>span]:text-right">
                       <SelectValue placeholder="اختر نوع الوحدة" />
                     </SelectTrigger>

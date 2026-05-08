@@ -461,12 +461,6 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
       },
       {
         id: 2,
-        href: `/${locale}/unit-data`,
-        label: tNav("unitData"),
-        active: pathname === `/${locale}/unit-data`,
-      },
-      {
-        id: 3,
         href: `/${locale}/reservation`,
         label: tNav("reservation"),
         active:
@@ -474,16 +468,24 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
           pathname.startsWith(`/${locale}/reservation/`),
       },
       {
-        id: 4,
+        id: 3,
         href: `/${locale}/housing-receiver`,
         label: tNav("housingReceiver"),
         active: pathname === `/${locale}/housing-receiver`,
       },
       {
-        id: 5,
+        id: 4,
         href: `/${locale}/housing-sender`,
         label: tNav("housingSender"),
         active: pathname === `/${locale}/housing-sender`,
+      },
+      {
+        id: 5,
+        href: `/${locale}/settings`,
+        label: tNav("settings"),
+        active:
+          pathname === `/${locale}/settings` ||
+          pathname.startsWith(`/${locale}/settings/`),
       },
     ],
     [locale, pathname, tNav],
@@ -589,140 +591,6 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
   if (cookie == null) {
     return (
       <header className="sticky top-0 z-[9999] w-full max-w-full min-w-0 overflow-hidden py-10 h-20 flex items-center gap-2 sm:gap-4 border-b bg-background px-4 md:px-6 lg:px-8">
-        <Link
-          href={`/${locale}/unit-data`}
-          className="hidden min-[771px]:flex md:shrink-0 md:items-center md:gap-2 md:font-semibold md:text-lg"
-        >
-          <ImageComponent
-            className="hidden rounded-full md:h-14 md:w-14 lg:h-14 lg:w-14"
-            src="/favicon.ico"
-            alt="logo"
-            width={70}
-            height={70}
-            loading="eager"
-            priority
-          />
-          <span className="sr-only">SMS</span>
-        </Link>
-        <nav className="hidden flex-col gap-2 font-medium min-[771px]:flex md:flex-row md:items-center md:min-w-0 md:flex-1 md:justify-start md:text-sm md:gap-1 lg:gap-2">
-          <ListComponent
-            data={routes}
-            animationType="slide"
-            delay={0.2}
-            duration={0.6}
-            renderItem={(route) => (
-              <Link
-                key={route.id}
-                href={route.href}
-                onClick={() => navClicks(route.href)}
-                className={cn(
-                  "relative flex items-center justify-center text-base text-balance text-center font-medium transition-all duration-300 hover:text-gray-900 dark:hover:text-white hover:scale-105 group rounded-full px-2 lg:px-4 shrink-0",
-                  activeTab === route.href
-                    ? "text-gray-900 dark:text-white"
-                    : "text-muted-foreground",
-                )}
-              >
-                {activeTab === route.href && (
-                  <motion.div
-                    layoutId="active-pill"
-                    className="absolute w-full px-1 inset-0 bg-gradient-to-r from-primary/60 to-secondary/60 hover:from-primary/70 hover:to-secondary/50 dark:from-primary/70 dark:to-secondary dark:hover:from-primary/60 dark:hover:to-secondary/80 rounded-full shadow-lg dark:shadow-primary/20"
-                    transition={{
-                      type: "spring",
-                      duration: 0.6,
-                      stiffness: 300,
-                      damping: 30,
-                    }}
-                  />
-                )}
-                <motion.p
-                  className="relative py-2 rounded-full font-bold dark:hover:text-secondary-foreground group-hover:text-gray-900 dark:group-hover:text-white transition-colors duration-300 whitespace-nowrap"
-                  whileHover={{ y: -2 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {route.label}
-                </motion.p>
-              </Link>
-            )}
-          />
-        </nav>
-        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              className="shrink-0 min-[771px]:hidden"
-            >
-              <Menu className="h-5 w-5" />
-              <span className="sr-only">Toggle navigation menu</span>
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left">
-            <VisuallyHidden>
-              <SheetTitle>قائمة التنقل</SheetTitle>
-              <SheetDescription>قائمة التنقل الرئيسية</SheetDescription>
-            </VisuallyHidden>
-            <nav className="px-10 grid items-center justify-center gap-6 text-lg font-medium">
-              <Link
-                href={`/${locale}/unit-data`}
-                className="flex items-center justify-center gap-2 text-lg font-semibold"
-                onClick={handleSheetClose}
-              >
-                <ImageComponent
-                  className="rounded-full"
-                  src="/logo.jpeg"
-                  alt="logo"
-                  width={70}
-                  height={70}
-                  loading="eager"
-                  priority
-                />
-                <span className="sr-only">Network Ticket</span>
-              </Link>
-              <ListComponent
-                data={routes}
-                animationType="stagger"
-                delay={0.1}
-                duration={0.4}
-                renderItem={(route) => (
-                  <Link
-                    key={route.href}
-                    href={route.href}
-                    className={cn(
-                      "relative w-full max-w-48 flex items-center justify-center text-base text-balance text-center font-medium transition-all duration-300 hover:text-gray-900 dark:hover:text-white hover:scale-105 group rounded-xl py-3 px-4 mb-2",
-                      activeTab === route.href
-                        ? "text-gray-900 dark:text-white"
-                        : "text-muted-foreground",
-                    )}
-                    onClick={() => {
-                      navClicks(route.href);
-                      handleSheetClose();
-                    }}
-                  >
-                    {activeTab === route.href && (
-                      <motion.div
-                        layoutId="active-pill-mobile"
-                        className="absolute w-full h-full inset-0 bg-gradient-to-b from-primary/60 to-secondary/60 hover:from-primary/70 hover:to-secondary/50 dark:from-primary/70 dark:to-secondary dark:hover:from-primary/60 dark:hover:to-secondary/80 rounded-xl shadow-lg dark:shadow-primary/20"
-                        transition={{
-                          type: "spring",
-                          duration: 0.6,
-                          stiffness: 300,
-                          damping: 30,
-                        }}
-                      />
-                    )}
-                    <motion.span
-                      className="relative z-10 font-semibold dark:hover:text-secondary-foreground group-hover:text-gray-900 dark:group-hover:text-white transition-colors duration-300"
-                      whileHover={{ y: -1 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      {route.label}
-                    </motion.span>
-                  </Link>
-                )}
-              />
-            </nav>
-          </SheetContent>
-        </Sheet>
         <div className="flex w-full items-center justify-end gap-4 md:ml-auto md:gap-2 lg:gap-4">
           <ModeToggle />
         </div>
