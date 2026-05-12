@@ -72,6 +72,7 @@ export function DataTable<TData, TValue>({
       "modifiedBy",
       "createdAt",
       "modifiedAt",
+      "isDeleted",
     ]);
     return columns.filter((c) => {
       const accessorKey = (c as { accessorKey?: unknown }).accessorKey;
@@ -92,7 +93,7 @@ export function DataTable<TData, TValue>({
   });
 
   return (
-    <div className="p-4">
+    <div dir="rtl" className="p-4 text-right">
       <div className="flex items-center py-4">
         <Input
           placeholder="بحث"
@@ -100,7 +101,7 @@ export function DataTable<TData, TValue>({
           onChange={(event) =>
             table.getColumn(searchKey)?.setFilterValue(event.target.value)
           }
-          className="max-w-sm"
+          className="max-w-sm text-right placeholder:text-right"
         />
       </div>
       <div className="rounded-md border">
@@ -158,7 +159,7 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-end gap-4 space-x-2 py-4">
+      <div className="flex items-center justify-start gap-4 py-4">
         <Button
           variant="outline"
           // size="sm"

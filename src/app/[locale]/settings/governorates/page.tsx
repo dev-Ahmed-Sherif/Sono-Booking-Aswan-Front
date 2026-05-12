@@ -1,7 +1,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { getGovernorates } from "@/actions/basic-data/governorateService";
+import { getGovernorates } from "@/actions/settings/governorateService";
 import type { GovernorateColumn } from "@/components/settings/governorates/columns";
 import UnitDataHeader from "@/components/settings/unit-data-header";
 
@@ -34,10 +34,11 @@ const GovernoratePage = async ({ params }: PageProps) => {
         <div className="flex-1 space-y-4 pt-6">
           <GovernorateClient
             data={data}
-            path={`/${locale}/basic-data/governorate/new`}
+            path={`/${locale}/settings/governorates/new`}
           />
         </div>
       </div>
+      <div className="my-14 text-transparent">t</div>
     </main>
   );
 };

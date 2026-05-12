@@ -22,7 +22,18 @@ const UnitDataPage = async ({ params }: UnitDataPageProps) => {
   const result = await getApartments();
   if (result && !(result as { error?: string }).error) {
     const raw = (result as { data?: unknown }).data ?? result;
-    data = Array.isArray(raw) ? (raw as ApartmentColumn[]) : null;
+    if (Array.isArray(raw)) {
+      data = raw
+        .filter(
+          (item): item is Record<string, unknown> =>
+            item != null && typeof item === "object",
+        )
+        .map((item) => {
+          const id = String(item.id ?? item.Id ?? "").trim();
+          return { ...item, id } as ApartmentColumn;
+        })
+        .filter((row) => row.id);
+    }
   }
 
   return (
@@ -36,7 +47,10 @@ const UnitDataPage = async ({ params }: UnitDataPageProps) => {
           رجوع
         </Link>
         <UnitDataHeader />
-        <UnitDataClient data={data} path={`/${locale}/settings/unit-data/new`} />
+        <UnitDataClient
+          data={data}
+          path={`/${locale}/settings/unit-data/new`}
+        />
       </div>
     </main>
   );

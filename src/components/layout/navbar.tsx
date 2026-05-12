@@ -14,8 +14,8 @@ import {
   CircleUser,
   CreditCard,
   DollarSign,
+  Hotel,
   Menu,
-  Package2,
   Search,
   Users,
 } from "lucide-react";
@@ -49,7 +49,6 @@ import {
 import { VisuallyHidden } from "@/components/ui/visually-hidden";
 
 import ModeToggle from "@/components/layout/mode-toggle";
-import ImageComponent from "@/components/Shared/image-component";
 import ListComponent from "@/components/Shared/list-component";
 
 import { useLocalStorage } from "@/hooks/useLocalStorage";
@@ -605,15 +604,9 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
         href={`/${locale}/dashboard`}
         className="hidden min-[771px]:flex md:shrink-0 md:items-center md:gap-2 md:font-semibold md:text-lg"
       >
-        <ImageComponent
-          className="rounded-full md:h-14 md:w-14 lg:h-14 lg:w-14"
-          src="/favicon.ico"
-          alt="logo"
-          width={70}
-          height={70}
-          loading="eager"
-          priority
-        />
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-blue-600 text-white shadow-md">
+          <Hotel className="h-7 w-7" />
+        </span>
         <span className="sr-only">SMS</span>
       </Link>
       <nav className="hidden flex-col gap-2 font-medium min-[771px]:flex md:flex-row md:items-center md:min-w-0 md:flex-1 md:justify-start md:text-sm md:gap-1 lg:gap-2">
@@ -679,15 +672,9 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
               className="flex items-center justify-center gap-2 text-lg font-semibold"
               onClick={handleSheetClose}
             >
-              <ImageComponent
-                className="rounded-full"
-                src="/logo.jpeg"
-                alt="logo"
-                width={70}
-                height={70}
-                loading="eager"
-                priority
-              />
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-blue-600 text-white shadow-md">
+                <Hotel className="h-7 w-7" />
+              </span>
               <span className="sr-only">Network Ticket</span>
             </Link>
             <ListComponent

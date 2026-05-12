@@ -5,18 +5,20 @@ import { ApartmentFormValues } from "@/schemas";
 
 type ApartmentClientProps = {
   defaultValues?: Partial<ApartmentFormValues>;
-  allocationOptions?: string[];
-  allocationTypeOptions?: string[];
-  statusOptions?: string[];
-  governorateOptions?: Array<{ id: string; nameAr: string }>;
+  genderOptions?: Array<{ id: string; nameAr: string; nameEn?: string }>;
+  allocationTypeOptions?: Array<{ id: string; nameAr: string; nameEn?: string }>;
+  apartmentTypeOptions?: Array<{ id: string; nameAr: string; nameEn?: string }>;
+  statusOptions?: Array<{ id: string; nameAr: string; nameEn?: string }>;
+  governorateOptions?: Array<{ id: string; nameAr: string; nameEn?: string }>;
   cityOptions?: Array<{ id: string; nameAr: string; governorateId: string }>;
   onSubmit?: (values: ApartmentFormValues) => void | Promise<void>;
 };
 
 const ApartmentClient = ({
   defaultValues,
-  allocationOptions,
+  genderOptions,
   allocationTypeOptions,
+  apartmentTypeOptions,
   statusOptions,
   governorateOptions,
   cityOptions,
@@ -25,8 +27,9 @@ const ApartmentClient = ({
   return (
     <ApartmentForm
       defaultValues={defaultValues}
-      allocationOptions={allocationOptions}
+      genderOptions={genderOptions}
       allocationTypeOptions={allocationTypeOptions}
+      apartmentTypeOptions={apartmentTypeOptions}
       statusOptions={statusOptions}
       governorateOptions={governorateOptions}
       cityOptions={cityOptions}

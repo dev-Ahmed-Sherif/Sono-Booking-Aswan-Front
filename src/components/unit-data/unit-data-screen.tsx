@@ -9,23 +9,38 @@ import { Button } from "@/components/ui/button";
 import ApartmentClient from "@/components/apartment/client";
 import RoomClient from "@/components/room/client";
 import BedClient from "@/components/bed/client";
+import type { ApartmentFormValues } from "@/schemas";
 
 type UnitDataTab = "apartment" | "room" | "bed";
-type LookupOption = { id: string; nameAr: string };
+type LookupOption = { id: string; nameAr: string; nameEn?: string };
 type CityOption = LookupOption & { governorateId: string };
 
 type UnitDataScreenProps = {
-  allocationOptions?: string[];
-  allocationTypeOptions?: string[];
-  statusOptions?: string[];
+  apartmentDefaultValues?: Partial<ApartmentFormValues>;
+  genderOptions?: LookupOption[];
+  allocationTypeOptions?: LookupOption[];
+  apartmentTypeOptions?: LookupOption[];
+  statusOptions?: LookupOption[];
   governorateOptions?: LookupOption[];
   cityOptions?: CityOption[];
 };
 
 export default function UnitDataScreen({
-  allocationOptions = ["رجال", "سيدات"],
-  allocationTypeOptions = ["ثابت", "مرن"],
-  statusOptions = ["متاح", "محجوز", "مشغول"],
+  apartmentDefaultValues,
+  genderOptions = [
+    { id: "1", nameAr: "رجال" },
+    { id: "2", nameAr: "سيدات" },
+  ],
+  allocationTypeOptions = [
+    { id: "1", nameAr: "ثابت" },
+    { id: "2", nameAr: "مرن" },
+  ],
+  apartmentTypeOptions = [],
+  statusOptions = [
+    { id: "1", nameAr: "متاح", nameEn: "Available" },
+    { id: "2", nameAr: "محجوز", nameEn: "Reserved" },
+    { id: "3", nameAr: "مشغول", nameEn: "Occupied" },
+  ],
   governorateOptions = [],
   cityOptions = [],
 }: UnitDataScreenProps) {
@@ -115,7 +130,11 @@ export default function UnitDataScreen({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="apartment" className="mt-4 text-right">
+        <TabsContent
+          forceMount
+          value="apartment"
+          className="mt-4 text-right data-[state=inactive]:hidden"
+        >
           <motion.div
             key="apartment-form"
             initial={{ opacity: 0, y: 16 }}
@@ -123,8 +142,11 @@ export default function UnitDataScreen({
             transition={{ duration: 0.35, ease: "easeOut" }}
           >
             <ApartmentClient
-              allocationOptions={allocationOptions}
+              key={unitDataId ?? "apartment"}
+              defaultValues={apartmentDefaultValues}
+              genderOptions={genderOptions}
               allocationTypeOptions={allocationTypeOptions}
+              apartmentTypeOptions={apartmentTypeOptions}
               statusOptions={statusOptions}
               governorateOptions={governorateOptions}
               cityOptions={cityOptions}
@@ -135,7 +157,11 @@ export default function UnitDataScreen({
           </motion.div>
         </TabsContent>
 
-        <TabsContent value="room" className="mt-4 text-right">
+        <TabsContent
+          forceMount
+          value="room"
+          className="mt-4 text-right data-[state=inactive]:hidden"
+        >
           <motion.div
             key="room-form"
             initial={{ opacity: 0, y: 16 }}
@@ -151,7 +177,11 @@ export default function UnitDataScreen({
           </motion.div>
         </TabsContent>
 
-        <TabsContent value="bed" className="mt-4 text-right">
+        <TabsContent
+          forceMount
+          value="bed"
+          className="mt-4 text-right data-[state=inactive]:hidden"
+        >
           <motion.div
             key="bed-form"
             initial={{ opacity: 0, y: 16 }}

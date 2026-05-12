@@ -38,7 +38,7 @@ import {
   softDeleteGovernorateById,
   updateGovernorateById,
   updateGovernorateMultipartById,
-} from "@/actions/basic-data/governorateService";
+} from "@/actions/settings/governorateService";
 import { ToastAction } from "@radix-ui/react-toast";
 import { getFullFileUrl } from "@/lib/file-viewer";
 import { cn } from "@/lib/utils";

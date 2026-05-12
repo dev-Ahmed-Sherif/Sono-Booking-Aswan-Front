@@ -3,9 +3,11 @@
 import RoomForm from "@/components/room/room-form";
 import { RoomFormValues } from "@/schemas";
 
+type LookupOption = { id: string; nameAr: string; nameEn?: string };
+
 type RoomClientProps = {
   defaultValues?: Partial<RoomFormValues>;
-  statusOptions?: string[];
+  statusOptions?: LookupOption[];
   onSubmit?: (values: RoomFormValues) => void | Promise<void>;
 };
 

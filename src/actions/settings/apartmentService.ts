@@ -7,7 +7,40 @@ type Payload = Record<string, unknown>;
 
 const BASE = "Apartments";
 
-async function request(method: "get" | "post" | "put" | "delete", url: string, data?: unknown) {
+function toFormData(payload: Payload): FormData {
+  const formData = new FormData();
+
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (item === undefined || item === null) return;
+        if (item instanceof File) {
+          formData.append(key, item);
+        } else {
+          formData.append(key, String(item));
+        }
+      });
+      return;
+    }
+
+    if (value instanceof File) {
+      formData.append(key, value);
+      return;
+    }
+
+    formData.append(key, String(value));
+  });
+
+  return formData;
+}
+
+async function request(
+  method: "get" | "post" | "put" | "delete",
+  url: string,
+  data?: unknown,
+) {
   const accessToken = await getAccessToken();
   if (!accessToken) {
     return {
@@ -16,9 +49,10 @@ async function request(method: "get" | "post" | "put" | "delete", url: string, d
     };
   }
 
+  const isFormData = data instanceof FormData;
   const config = {
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       Authorization: `Bearer ${accessToken}`,
       withCredentials: true,
     },
@@ -33,24 +67,81 @@ async function request(method: "get" | "post" | "put" | "delete", url: string, d
     const res = await axios[method](url, data, config);
     return res.data;
   } catch (error: unknown) {
-    const err = error as { response?: { data?: { message?: string } }; message?: string };
+    const err = error as {
+      response?: {
+        status?: number;
+        statusText?: string;
+        data?: {
+          message?: string;
+          error?: string;
+          title?: string;
+          errors?: Record<string, string[] | string>;
+          [key: string]: unknown;
+        };
+      };
+      config?: { url?: string; method?: string };
+      message?: string;
+      code?: string;
+    };
+    const responseData = err.response?.data;
+    const validationErrors = responseData?.errors;
+    const flattenedValidationErrors = validationErrors
+      ? Object.entries(validationErrors).map(([field, issues]) => ({
+          field,
+          issues: Array.isArray(issues) ? issues : [String(issues)],
+        }))
+      : [];
+    console.error("[apartmentsService.request] API error details", {
+      request: {
+        method: String(err.config?.method ?? method).toUpperCase(),
+        url: err.config?.url ?? url,
+      },
+      response: {
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        message: responseData?.message,
+        error: responseData?.error,
+        title: responseData?.title,
+      },
+      validationErrors: flattenedValidationErrors,
+      backendPayload: responseData,
+      axiosCode: err.code,
+      transportMessage: err.message,
+    });
+    const status = err.response?.status;
+    const message =
+      err.response?.data?.message ||
+      err.message ||
+      "An unexpected error occurred";
     return {
-      error: "Request Failed",
-      message: err.response?.data?.message || err.message || "An unexpected error occurred",
+      error: status ? `Request Failed (${status})` : "Request Failed",
+      message,
     };
   }
 }
 
-const getApartments = async () => request("get", `${process.env.BACK_END}/${BASE}/getAll`);
+const getApartments = async () =>
+  request("get", `${process.env.BACK_END}/${BASE}/getAll`);
 const getApartmentById = async (id: string) =>
-  id === "new" ? undefined : request("get", `${process.env.BACK_END}/${BASE}/get/${id}`);
+  id === "new"
+    ? undefined
+    : request("get", `${process.env.BACK_END}/${BASE}/get/${id}`);
 const getApartmentsPaged = async (filter: Payload) =>
   request("post", `${process.env.BACK_END}/${BASE}/getPaged`, filter);
 const getApartmentsDropDown = async (filter: Payload) =>
   request("post", `${process.env.BACK_END}/${BASE}/getDropDown`, filter);
-const addApartment = async (data: Payload) => request("post", `${process.env.BACK_END}/${BASE}/add`, data);
-const updateApartmentById = async (data: Payload) =>
-  request("put", `${process.env.BACK_END}/${BASE}/update`, data);
+const addApartment = async (data: Payload | FormData) =>
+  request(
+    "post",
+    `${process.env.BACK_END}/${BASE}/add`,
+    data instanceof FormData ? data : toFormData(data),
+  );
+const updateApartmentById = async (data: Payload | FormData) =>
+  request(
+    "put",
+    `${process.env.BACK_END}/${BASE}/update`,
+    data instanceof FormData ? data : toFormData(data),
+  );
 const deleteApartmentById = async (id: string) =>
   request("delete", `${process.env.BACK_END}/${BASE}/delete/${id}`);
 const softDeleteApartmentById = async (id: string) =>

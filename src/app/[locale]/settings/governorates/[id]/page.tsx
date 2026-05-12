@@ -1,5 +1,5 @@
-import { getCities } from "@/actions/basic-data/cityService";
-import { getGovernorateById } from "@/actions/basic-data/governorateService";
+import { getCities } from "@/actions/settings/cityService";
+import { getGovernorateById } from "@/actions/settings/governorateService";
 import GovernorateForm from "@/components/settings/governorates/governorate-form";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";

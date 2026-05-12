@@ -1140,7 +1140,7 @@ const unitDataFileLikeSchema = z
 export const apartmentStatusEnum = z.enum(
   ["متاح", "محجوز", "مشغول", "متاحة", "محجوزة", "مشغولة"],
   {
-  required_error: "حالة الشقة مطلوبة",
+    required_error: "حالة الشقة مطلوبة",
   },
 );
 
@@ -1153,30 +1153,58 @@ export const apartmentAllocationTypeEnum = z.enum(["ثابت", "مرن"], {
 });
 
 export const apartmentSchema = z.object({
-  apartmentNumber: z.string().min(1, { message: "رقم الشقة مطلوب" }),
-  apartmentDescription: z
+  apartmentNumber: z.string().max(20).optional().default(""),
+  description: z
     .string()
     .min(1, { message: "وصف الشقة مطلوب" })
-    .max(500, { message: "وصف الشقة يجب ألا يزيد عن 500 حرف" }),
-  roomsCount: z.coerce
+    .max(500, { message: "وصف الشقة يجب ألا يزيد عن 500 حرفًا" }),
+  price: z.coerce
     .number({
-      required_error: "عدد الغرف مطلوب",
-      invalid_type_error: "عدد الغرف غير صالح",
+      required_error: "السعر مطلوب",
+      invalid_type_error: "السعر غير صالح",
     })
-    .int({ message: "عدد الغرف يجب أن يكون رقمًا صحيحًا" })
-    .min(1, { message: "عدد الغرف يجب أن يكون 1 على الأقل" }),
-  status: apartmentStatusEnum,
-  allocation: apartmentAllocationEnum,
-  allocationType: z.string().min(1, { message: "نوع التخصيص مطلوب" }),
-  location: z.object({
-    governorate: z.string().min(1, { message: "المحافظة مطلوبة" }),
-    city: z.string().min(1, { message: "المدينة مطلوبة" }),
-    street: z.string().min(1, { message: "الشارع مطلوب" }),
-    buildingNumber: z.string().min(1, { message: "رقم المبنى مطلوب" }),
-    floor: z.string().min(1, { message: "الدور مطلوب" }),
-    detailedAddress: z.string().min(1, { message: "العنوان التفصيلي مطلوب" }),
-  }),
-  apartmentImages: z
+    .positive({ message: "السعر يجب أن يكون أكبر من صفر" }),
+  status: z
+    .string()
+    .min(1, { message: "حالة الشقة مطلوبة" })
+    .max(20, { message: "حالة الشقة يجب ألا تزيد عن 20 حرفًا" }),
+  gender: z
+    .string()
+    .min(1, { message: "النوع مطلوب" })
+    .max(10, { message: "النوع يجب ألا يزيد عن 10 أحرف" }),
+  allocationType: z
+    .string()
+    .min(1, { message: "نوع التخصيص مطلوب" })
+    .max(50, { message: "نوع التخصيص يجب ألا يزيد عن 50 حرفًا" }),
+  street: z
+    .string()
+    .min(1, { message: "الشارع مطلوب" })
+    .max(50, { message: "الشارع يجب ألا يزيد عن 50 حرفًا" }),
+  buildingNumber: z
+    .string()
+    .min(1, { message: "رقم المبنى مطلوب" })
+    .max(20, { message: "رقم المبنى يجب ألا يزيد عن 20 حرفًا" }),
+  floor: z
+    .string()
+    .min(1, { message: "الدور مطلوب" })
+    .max(10, { message: "الدور يجب ألا يزيد عن 10 أحرف" }),
+  detailedAddress: z
+    .string()
+    .min(1, { message: "العنوان التفصيلي مطلوب" })
+    .max(500, { message: "العنوان التفصيلي يجب ألا يزيد عن 500 حرفًا" }),
+  apartmentTypeId: z
+    .string()
+    .min(1, { message: "نوع الشقة مطلوب" })
+    .max(50, { message: "نوع الشقة يجب ألا يزيد عن 50 حرفًا" }),
+  governorateId: z
+    .string()
+    .min(1, { message: "المحافظة مطلوبة" })
+    .max(50, { message: "المحافظة يجب ألا تزيد عن 50 حرفًا" }),
+  cityId: z
+    .string()
+    .min(1, { message: "المدينة مطلوبة" })
+    .max(50, { message: "المدينة يجب ألا تزيد عن 50 حرفًا" }),
+  images: z
     .array(unitDataFileLikeSchema)
     .min(1, { message: "يجب رفع صورة واحدة على الأقل للشقة" }),
 });
@@ -1186,25 +1214,34 @@ export type ApartmentFormValues = z.infer<typeof apartmentSchema>;
 export const roomStatusEnum = z.enum(
   ["متاح", "محجوز", "مشغول", "متاحة", "محجوزة", "مشغولة"],
   {
-  required_error: "حالة الغرفة مطلوبة",
+    required_error: "حالة الغرفة مطلوبة",
   },
 );
 
 export const roomSchema = z.object({
-  roomNumber: z.string().min(1, { message: "رقم الغرفة مطلوب" }),
-  roomDescription: z
+  roomNumber: z.string().max(20).optional().default(""),
+  description: z
     .string()
     .min(1, { message: "وصف الغرفة مطلوب" })
     .max(500, { message: "وصف الغرفة يجب ألا يزيد عن 500 حرف" }),
-  bedsCount: z.coerce
+  price: z.coerce
     .number({
-      required_error: "عدد الأسرة مطلوب",
-      invalid_type_error: "عدد الأسرة غير صالح",
+      required_error: "السعر مطلوب",
+      invalid_type_error: "السعر غير صالح",
     })
-    .int({ message: "عدد الأسرة يجب أن يكون رقمًا صحيحًا" })
-    .min(1, { message: "عدد الأسرة يجب أن يكون 1 على الأقل" }),
-  status: roomStatusEnum,
-  roomImage: unitDataFileLikeSchema,
+    .positive({ message: "السعر يجب أن يكون أكبر من صفر" }),
+  status: z.string().min(1, { message: "حالة الغرفة مطلوبة" }),
+  apartmentId: z
+    .string()
+    .min(1, { message: "الشقة مطلوبة" })
+    .max(50, { message: "معرّف الشقة يجب ألا يزيد عن 50 حرفًا" }),
+  roomTypeId: z
+    .string()
+    .min(1, { message: "نوع الغرفة مطلوب" })
+    .max(50, { message: "معرّف نوع الغرفة يجب ألا يزيد عن 50 حرفًا" }),
+  images: z
+    .array(unitDataFileLikeSchema)
+    .min(1, { message: "يجب رفع صورة واحدة على الأقل للغرفة" }),
 });
 
 export type RoomFormValues = z.infer<typeof roomSchema>;
@@ -1212,19 +1249,34 @@ export type RoomFormValues = z.infer<typeof roomSchema>;
 export const bedStatusEnum = z.enum(
   ["متاح", "محجوز", "مشغول", "متاحة", "محجوزة", "مشغولة"],
   {
-  required_error: "حالة السرير مطلوبة",
+    required_error: "حالة السرير مطلوبة",
   },
 );
 
 export const bedSchema = z.object({
-  bedNumber: z.string().min(1, { message: "رقم السرير مطلوب" }),
-  bedDescription: z
+  bedNumber: z.string().max(20).optional().default(""),
+  description: z
     .string()
     .min(1, { message: "وصف السرير مطلوب" })
     .max(500, { message: "وصف السرير يجب ألا يزيد عن 500 حرف" }),
-  dimensions: z.string().min(1, { message: "الأبعاد مطلوبة" }),
-  status: bedStatusEnum,
-  bedImage: unitDataFileLikeSchema,
+  dimensions: z
+    .string()
+    .min(1, { message: "الأبعاد مطلوبة" })
+    .max(100, { message: "الأبعاد يجب ألا تزيد عن 100 حرف" }),
+  price: z.coerce
+    .number({
+      required_error: "السعر مطلوب",
+      invalid_type_error: "السعر غير صالح",
+    })
+    .positive({ message: "السعر يجب أن يكون أكبر من صفر" }),
+  status: z.string().min(1, { message: "حالة السرير مطلوبة" }),
+  roomId: z
+    .string()
+    .min(1, { message: "الغرفة مطلوبة" })
+    .max(50, { message: "معرّف الغرفة يجب ألا يزيد عن 50 حرفًا" }),
+  images: z
+    .array(unitDataFileLikeSchema)
+    .min(1, { message: "يجب رفع صورة واحدة على الأقل للسرير" }),
 });
 
 export type BedFormValues = z.infer<typeof bedSchema>;

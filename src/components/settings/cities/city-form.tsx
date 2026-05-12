@@ -31,13 +31,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import useToggleState from "@/hooks/use-toggle-state";
 import { isSuperAdminRoleCandidates, RoleCandidates } from "@/lib/role-utils";
-import { getGovernorates } from "@/actions/basic-data/governorateService";
+import { getGovernorates } from "@/actions/settings/governorateService";
 import {
   addCity,
   deleteCityById,
   softDeleteCityById,
   updateCityById,
-} from "@/actions/basic-data/cityService";
+} from "@/actions/settings/cityService";
 import { cityFormSchema, type CityFormValues } from "@/schemas";
 import { ToastAction } from "@radix-ui/react-toast";
 
@@ -218,7 +218,162 @@ const CityForm = ({
         duration: 3000,
         title: "حدث خطأ !",
         description:
-          ((err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).response?.status === 409 || (err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).status === 409 || String((err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).response?.status ?? "").toLowerCase().includes("conflict") || String((err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).status ?? "").toLowerCase().includes("conflict") || String((err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).response?.data?.status ?? "").toLowerCase().includes("conflict") || String((err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).data?.status ?? "").toLowerCase().includes("conflict") || String((err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).response?.status ?? "").includes("409") || String((err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).status ?? "").includes("409") || String((err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).response?.data?.status ?? "").includes("409") || String((err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).data?.status ?? "").includes("409") || String((err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).response?.data?.message ?? "").toLowerCase().includes("duplicated") || String((err as { response?: { status?: number | string; data?: { status?: number | string; message?: string } }; status?: number | string; data?: { status?: number | string; message?: string } }).data?.message ?? "").toLowerCase().includes("duplicated") || String(errorMessage).includes("409") || String(errorMessage).toLowerCase().includes("conflict") || String(errorMessage).toLowerCase().includes("code 409") || String(errorMessage).toLowerCase().includes("duplicated"))
+          (
+            err as {
+              response?: {
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              };
+              status?: number | string;
+              data?: { status?: number | string; message?: string };
+            }
+          ).response?.status === 409 ||
+          (
+            err as {
+              response?: {
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              };
+              status?: number | string;
+              data?: { status?: number | string; message?: string };
+            }
+          ).status === 409 ||
+          String(
+            (
+              err as {
+                response?: {
+                  status?: number | string;
+                  data?: { status?: number | string; message?: string };
+                };
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              }
+            ).response?.status ?? "",
+          )
+            .toLowerCase()
+            .includes("conflict") ||
+          String(
+            (
+              err as {
+                response?: {
+                  status?: number | string;
+                  data?: { status?: number | string; message?: string };
+                };
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              }
+            ).status ?? "",
+          )
+            .toLowerCase()
+            .includes("conflict") ||
+          String(
+            (
+              err as {
+                response?: {
+                  status?: number | string;
+                  data?: { status?: number | string; message?: string };
+                };
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              }
+            ).response?.data?.status ?? "",
+          )
+            .toLowerCase()
+            .includes("conflict") ||
+          String(
+            (
+              err as {
+                response?: {
+                  status?: number | string;
+                  data?: { status?: number | string; message?: string };
+                };
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              }
+            ).data?.status ?? "",
+          )
+            .toLowerCase()
+            .includes("conflict") ||
+          String(
+            (
+              err as {
+                response?: {
+                  status?: number | string;
+                  data?: { status?: number | string; message?: string };
+                };
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              }
+            ).response?.status ?? "",
+          ).includes("409") ||
+          String(
+            (
+              err as {
+                response?: {
+                  status?: number | string;
+                  data?: { status?: number | string; message?: string };
+                };
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              }
+            ).status ?? "",
+          ).includes("409") ||
+          String(
+            (
+              err as {
+                response?: {
+                  status?: number | string;
+                  data?: { status?: number | string; message?: string };
+                };
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              }
+            ).response?.data?.status ?? "",
+          ).includes("409") ||
+          String(
+            (
+              err as {
+                response?: {
+                  status?: number | string;
+                  data?: { status?: number | string; message?: string };
+                };
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              }
+            ).data?.status ?? "",
+          ).includes("409") ||
+          String(
+            (
+              err as {
+                response?: {
+                  status?: number | string;
+                  data?: { status?: number | string; message?: string };
+                };
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              }
+            ).response?.data?.message ?? "",
+          )
+            .toLowerCase()
+            .includes("duplicated") ||
+          String(
+            (
+              err as {
+                response?: {
+                  status?: number | string;
+                  data?: { status?: number | string; message?: string };
+                };
+                status?: number | string;
+                data?: { status?: number | string; message?: string };
+              }
+            ).data?.message ?? "",
+          )
+            .toLowerCase()
+            .includes("duplicated") ||
+          String(errorMessage).includes("409") ||
+          String(errorMessage).toLowerCase().includes("conflict") ||
+          String(errorMessage).toLowerCase().includes("code 409") ||
+          String(errorMessage).toLowerCase().includes("duplicated")
             ? `❌ ${toastMessageError}`
             : `❌ ${errorMessage}`,
         action: <ToastAction altText="Try again">حاول مره اخرى</ToastAction>,

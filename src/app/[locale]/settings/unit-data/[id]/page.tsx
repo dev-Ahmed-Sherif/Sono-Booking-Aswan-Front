@@ -1,20 +1,50 @@
 import UnitDataScreen from "@/components/unit-data/unit-data-screen";
-import { getCities } from "@/actions/basic-data/cityService";
-import { getGovernorates } from "@/actions/basic-data/governorateService";
+import { getApartmentById } from "@/actions/settings/apartmentService";
+import { getCities } from "@/actions/settings/cityService";
+import { getGovernorates } from "@/actions/settings/governorateService";
 import { getGenders } from "@/actions/settings/genderService";
 import { getAllocationTypes } from "@/actions/settings/allocationTypeService";
+import { getApartmentTypes } from "@/actions/settings/apartmentTypeService";
 import { getUnitStatuses } from "@/actions/settings/unitStatusService";
 import { normalizeAllCitiesResponse } from "@/lib/governorate-cities";
+import { mapApiApartmentToFormDefaults } from "@/lib/apartment-form-map";
 import { normalizeNumericLookupList } from "@/lib/numeric-lookup";
+import type { ApartmentFormValues } from "@/schemas";
 
 type PageProps = { params: { locale: string; id: string } };
-type LookupOption = { id: string; nameAr: string };
+type LookupOption = { id: string; nameAr: string; nameEn?: string };
 type CityOption = LookupOption & { governorateId: string };
 
 const UnitDataDetailsPage = async ({ params }: PageProps) => {
-  let allocationOptions = ["رجال", "سيدات"];
-  let allocationTypeOptions = ["ثابت", "مرن"];
-  let statusOptions = ["متاح", "محجوز", "مشغول"];
+  let apartmentDefaultValues: Partial<ApartmentFormValues> | undefined;
+
+  if (params.id && params.id !== "new") {
+    const apartmentResult = await getApartmentById(params.id);
+    if (apartmentResult && !(apartmentResult as { error?: string }).error) {
+      const rawPayload =
+        (apartmentResult as { data?: unknown }).data ?? apartmentResult;
+      if (rawPayload && typeof rawPayload === "object") {
+        apartmentDefaultValues = mapApiApartmentToFormDefaults(
+          rawPayload as Record<string, unknown>,
+        );
+      }
+    }
+  }
+
+  let genderOptions: LookupOption[] = [
+    { id: "1", nameAr: "رجال" },
+    { id: "2", nameAr: "سيدات" },
+  ];
+  let allocationTypeOptions: LookupOption[] = [
+    { id: "1", nameAr: "ثابت" },
+    { id: "2", nameAr: "مرن" },
+  ];
+  let apartmentTypeOptions: LookupOption[] = [];
+  let statusOptions: LookupOption[] = [
+    { id: "1", nameAr: "متاح" },
+    { id: "2", nameAr: "محجوز" },
+    { id: "3", nameAr: "مشغول" },
+  ];
   let governorateOptions: LookupOption[] = [];
   let cityOptions: CityOption[] = [];
 
@@ -22,9 +52,15 @@ const UnitDataDetailsPage = async ({ params }: PageProps) => {
   if (gendersResult && !(gendersResult as { error?: string }).error) {
     const raw = (gendersResult as { data?: unknown }).data ?? gendersResult;
     const normalized = normalizeNumericLookupList(raw);
-    const mapped = normalized.map((item) => item.nameAr).filter(Boolean);
+    const mapped = normalized
+      .map((item) => ({
+        id: String(item.id ?? "").trim(),
+        nameAr: String(item.nameAr ?? "").trim(),
+        nameEn: item.nameEn ? String(item.nameEn).trim() : undefined,
+      }))
+      .filter((item) => item.id && item.nameAr);
     if (mapped.length > 0) {
-      allocationOptions = mapped;
+      genderOptions = mapped;
     }
   }
 
@@ -32,7 +68,13 @@ const UnitDataDetailsPage = async ({ params }: PageProps) => {
   if (statusesResult && !(statusesResult as { error?: string }).error) {
     const raw = (statusesResult as { data?: unknown }).data ?? statusesResult;
     const normalized = normalizeNumericLookupList(raw);
-    const mapped = normalized.map((item) => item.nameAr).filter(Boolean);
+    const mapped = normalized
+      .map((item) => ({
+        id: String(item.id ?? "").trim(),
+        nameAr: String(item.nameAr ?? "").trim(),
+        nameEn: item.nameEn ? String(item.nameEn).trim() : undefined,
+      }))
+      .filter((item) => item.id && item.nameAr);
     if (mapped.length > 0) {
       statusOptions = mapped;
     }
@@ -47,10 +89,36 @@ const UnitDataDetailsPage = async ({ params }: PageProps) => {
       (allocationTypesResult as { data?: unknown }).data ??
       allocationTypesResult;
     const normalized = normalizeNumericLookupList(raw);
-    const mapped = normalized.map((item) => item.nameAr).filter(Boolean);
+    const mapped = normalized
+      .map((item) => ({
+        id: String(item.id ?? "").trim(),
+        nameAr: String(item.nameAr ?? "").trim(),
+        nameEn: item.nameEn ? String(item.nameEn).trim() : undefined,
+      }))
+      .filter((item) => item.id && item.nameAr);
     if (mapped.length > 0) {
       allocationTypeOptions = mapped;
     }
+  }
+
+  const apartmentTypesResult = await getApartmentTypes();
+  if (
+    apartmentTypesResult &&
+    !(apartmentTypesResult as { error?: string }).error
+  ) {
+    const raw =
+      (apartmentTypesResult as { data?: unknown }).data ?? apartmentTypesResult;
+    const list = Array.isArray(raw) ? raw : [];
+    apartmentTypeOptions = list
+      .filter(
+        (item): item is Record<string, unknown> =>
+          item != null && typeof item === "object",
+      )
+      .map((item) => ({
+        id: String(item.id ?? item.Id ?? "").trim(),
+        nameAr: String(item.nameAr ?? item.NameAr ?? item.name ?? "").trim(),
+      }))
+      .filter((item) => item.id && item.nameAr);
   }
 
   const governoratesResult = await getGovernorates();
@@ -89,7 +157,8 @@ const UnitDataDetailsPage = async ({ params }: PageProps) => {
     const perGovernorateCities = await Promise.all(
       governorateOptions.map(async (governorate) => {
         const res = await getCities(governorate.id);
-        if (!res || (res as { error?: string }).error) return [] as CityOption[];
+        if (!res || (res as { error?: string }).error)
+          return [] as CityOption[];
         const payload = (res as { data?: unknown }).data ?? res;
         return normalizeAllCitiesResponse(payload)
           .map((city) => ({
@@ -109,14 +178,17 @@ const UnitDataDetailsPage = async ({ params }: PageProps) => {
       <div className="p-3 sm:p-4 md:p-6 w-full border border-solid sm:border-2 border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-white dark:bg-gray-900">
         <div className="flex-1 space-y-4 pt-6">
           <UnitDataScreen
-            allocationOptions={allocationOptions}
+            apartmentDefaultValues={apartmentDefaultValues}
+            genderOptions={genderOptions}
             allocationTypeOptions={allocationTypeOptions}
+            apartmentTypeOptions={apartmentTypeOptions}
             statusOptions={statusOptions}
             governorateOptions={governorateOptions}
             cityOptions={cityOptions}
           />
         </div>
       </div>
+      <div className="my-14 text-transparent">t</div>
     </main>
   );
 };
