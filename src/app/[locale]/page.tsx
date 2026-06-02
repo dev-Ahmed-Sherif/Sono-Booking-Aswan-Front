@@ -11,7 +11,7 @@ export default async function Home() {
   // }
 
   return (
-    <main className="w-full flex-1 flex flex-col min-h-0 overflow-x-hidden overflow-y-scroll">
+    <main className="mb-20 w-full flex-1 flex flex-col min-h-0 overflow-x-hidden overflow-y-scroll">
       <LoginForm Cookie={access || null} />
     </main>
   );

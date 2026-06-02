@@ -1,19 +1,14 @@
 "use server";
 
 import axios from "axios";
-import { getAccessToken } from "@/lib/token-helper";
 
 const BASE = "AllocationTypes";
 
 const getAllocationTypes = async () => {
-  const accessToken = await getAccessToken();
-  if (!accessToken) return { error: "Unauthorized", message: "No access token found. Please login again." };
-
   try {
     const res = await axios.get(`${process.env.BACK_END}/${BASE}/getAll`, {
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
         withCredentials: true,
       },
     });

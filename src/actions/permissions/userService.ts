@@ -3,6 +3,17 @@
 import * as z from "zod";
 import axios from "axios";
 import { getAccessToken } from "@/lib/token-helper";
+import { toPlainSerializable } from "@/lib/to-plain-serializable";
+import { runAccountUpdatePut } from "@/lib/account-update-remote";
+
+function errorMessageFromAxios(data: unknown, fallback: string): string {
+  if (typeof data === "string" && data.trim()) return data;
+  if (data && typeof data === "object" && "message" in data) {
+    const m = (data as { message: unknown }).message;
+    if (typeof m === "string" && m.trim()) return m;
+  }
+  return fallback;
+}
 
 const addUser = async (data: any) => {
   try {
@@ -43,52 +54,57 @@ const addUser = async (data: any) => {
     }
 
     const res = await axios.post(
-      `${process.env.BACK_END_DEV}/accounts/register`,
+      `${process.env.BACK_END}/accounts/register`,
       requestBody,
       {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
-          withCredentials: true,
         },
-      }
+        withCredentials: true,
+      },
     );
 
-    return res.data;
+    return toPlainSerializable(res.data);
   } catch (error: any) {
     console.error("Error adding user:", error);
 
     if (error.response?.status === 401) {
       return {
         error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Authentication failed. Please login again.",
+        ),
       };
     }
 
     if (error.response?.status === 409) {
       return {
         error: "Conflict",
-        message: error.response?.data?.message || "This user already exists.",
+        message: errorMessageFromAxios(
+          error.response?.data,
+          "This user already exists.",
+        ),
       };
     }
 
     if (error.response?.status === 500) {
       return {
         error: "Server Error",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Server error occurred. Please try again later.",
+        ),
       };
     }
 
     return {
       error: "Failed to add user",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      message: errorMessageFromAxios(
+        error.response?.data,
+        error?.message || "An unexpected error occurred",
+      ),
     };
   }
 };
@@ -105,35 +121,36 @@ const getUsers = async () => {
     }
 
     const res = await axios.get(
-      `${process.env.BACK_END_DEV}/accounts/getallusers`,
+      `${process.env.BACK_END}/accounts/getallusers`,
       {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
-          withCredentials: true,
         },
-      }
+        withCredentials: true,
+      },
     );
 
-    return res.data;
+    return toPlainSerializable(res.data);
   } catch (error: any) {
     console.error("Error getting users:", error);
 
     if (error.response?.status === 401) {
       return {
         error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Authentication failed. Please login again.",
+        ),
       };
     }
 
     return {
       error: "Failed to get users",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      message: errorMessageFromAxios(
+        error.response?.data,
+        error?.message || "An unexpected error occurred",
+      ),
     };
   }
 };
@@ -141,7 +158,7 @@ const getUsers = async () => {
 const getUserById = async (id: string) => {
   try {
     if (id === "new") {
-      return undefined;
+      return null;
     }
 
     const accessToken = await getAccessToken();
@@ -153,147 +170,79 @@ const getUserById = async (id: string) => {
       };
     }
 
-    const res = await axios.get(
-      `${process.env.BACK_END_DEV}/accounts/get/${id}`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-          withCredentials: true,
-        },
-      }
-    );
+    const res = await axios.get(`${process.env.BACK_END}/accounts/get/${id}`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      withCredentials: true,
+    });
 
-    return res.data;
+    return toPlainSerializable(res.data);
   } catch (error: any) {
     console.error("Error getting user by id:", error);
 
     if (error.response?.status === 401) {
       return {
         error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Authentication failed. Please login again.",
+        ),
       };
     }
 
     if (error.response?.status === 404) {
       return {
         error: "Not Found",
-        message: error.response?.data?.message || "User not found.",
+        message: errorMessageFromAxios(error.response?.data, "User not found."),
       };
     }
 
     if (error.response?.status === 500) {
       return {
         error: "Server Error",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Server error occurred. Please try again later.",
+        ),
       };
     }
 
     return {
       error: "Failed to get user",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      message: errorMessageFromAxios(
+        error.response?.data,
+        error?.message || "An unexpected error occurred",
+      ),
     };
   }
 };
 
-const updateUserById = async (data: any) => {
-  console.log("update Data", data);
-  try {
-    const {
-      id,
-      userName,
-      email,
-      oldPassword,
-      newPassword,
-      confirmPassword,
-      roleId,
-      organizationId,
-      technicalJobCategory,
-    } = data;
+const updateUserById = async (data: any, identityAttachmentArg?: File | null) => {
+  const accessToken = await getAccessToken();
 
-    const accessToken = await getAccessToken();
-
-    if (!accessToken) {
-      return {
-        error: "Unauthorized",
-        message: "No access token found. Please login again.",
-      };
-    }
-
-    const updateData: any = {
-      id: id,
-      userName: userName,
-      email: email,
-      oldPassword: oldPassword,
-      newPassword: newPassword,
-      confirmPassword: confirmPassword,
-      roleId: roleId,
-    };
-
-    // Only include organizationId and technicalJobCategory if they are provided
-    if (organizationId) {
-      updateData.organizationId = organizationId;
-    }
-    if (technicalJobCategory) {
-      updateData.technicalJobCategory = technicalJobCategory;
-    }
-
-    const res = await axios.put(
-      `${process.env.BACK_END_DEV}/accounts/update`,
-      updateData,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-          withCredentials: true,
-        },
-      }
-    );
-
-    return res.data;
-  } catch (error: any) {
-    console.error("Error updating user:", error.message);
-
-    if (error.response?.status === 401) {
-      return {
-        error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
-          "Authentication failed. Please login again.",
-      };
-    }
-
-    if (error.response?.status === 409) {
-      return {
-        error: "Conflict",
-        message: error.response?.data?.message || "This user already exists.",
-      };
-    }
-
-    if (error.response?.status === 500) {
-      return {
-        error: "Server Error",
-        message:
-          error.response?.data?.message ||
-          "Server error occurred. Please try again later.",
-      };
-    }
-
+  if (!accessToken) {
     return {
-      error: "Failed to update user",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      error: "Unauthorized",
+      message: "No access token found. Please login again.",
     };
   }
+
+  const apiBase = process.env.BACK_END ?? process.env.BACK_END_DEV ?? "";
+  if (!apiBase) {
+    return {
+      error: "Configuration",
+      message: "عنوان الخادم غير مهيأ (BACK_END).",
+    };
+  }
+
+  return runAccountUpdatePut({
+    apiBase,
+    accessToken,
+    data,
+    identityAttachmentArg: identityAttachmentArg ?? undefined,
+  });
 };
 
 const deleteUserById = async (id: string) => {
@@ -308,51 +257,53 @@ const deleteUserById = async (id: string) => {
     }
 
     const res = await axios.delete(
-      `${process.env.BACK_END_DEV}/accounts/delete/${id}`,
+      `${process.env.BACK_END}/accounts/delete/${id}`,
       {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
-          withCredentials: true,
         },
-      }
+        withCredentials: true,
+      },
     );
 
-    return res.data;
+    return toPlainSerializable(res.data);
   } catch (error: any) {
     console.error("Error deleting user:", error);
 
     if (error.response?.status === 401) {
       return {
         error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Authentication failed. Please login again.",
+        ),
       };
     }
 
     if (error.response?.status === 404) {
       return {
         error: "Not Found",
-        message: error.response?.data?.message || "User not found.",
+        message: errorMessageFromAxios(error.response?.data, "User not found."),
       };
     }
 
     if (error.response?.status === 500) {
       return {
         error: "Server Error",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Server error occurred. Please try again later.",
+        ),
       };
     }
 
     return {
       error: "Failed to delete user",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      message: errorMessageFromAxios(
+        error.response?.data,
+        error?.message || "An unexpected error occurred",
+      ),
     };
   }
 };
@@ -369,53 +320,62 @@ const softDeleteUserById = async (id: string) => {
     }
 
     const res = await axios.delete(
-      `${process.env.BACK_END_DEV}/accounts/softdelete/${id}`,
+      `${process.env.BACK_END}/accounts/softdelete/${id}`,
       {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
-          withCredentials: true,
         },
-      }
+        withCredentials: true,
+      },
     );
 
-    return res.data;
+    return toPlainSerializable(res.data);
   } catch (error: any) {
     console.error("Error soft deleting user:", error);
 
     if (error.response?.status === 401) {
       return {
         error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Authentication failed. Please login again.",
+        ),
       };
     }
 
     if (error.response?.status === 404) {
       return {
         error: "Not Found",
-        message: error.response?.data?.message || "User not found.",
+        message: errorMessageFromAxios(error.response?.data, "User not found."),
       };
     }
 
     if (error.response?.status === 500) {
       return {
         error: "Server Error",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Server error occurred. Please try again later.",
+        ),
       };
     }
 
     return {
       error: "Failed to soft delete user",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      message: errorMessageFromAxios(
+        error.response?.data,
+        error?.message || "An unexpected error occurred",
+      ),
     };
   }
 };
 
-export { getUserById, getUsers, addUser, updateUserById, deleteUserById, softDeleteUserById };
+export {
+  getUserById,
+  getUsers,
+  addUser,
+  updateUserById,
+  deleteUserById,
+  softDeleteUserById,
+};

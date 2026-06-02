@@ -1,19 +1,14 @@
 "use server";
 
 import axios from "axios";
-import { getAccessToken } from "@/lib/token-helper";
 
 type Payload = Record<string, unknown>;
 const BASE = "RequestTypes";
 
 async function request(method: "get" | "post" | "put" | "delete", url: string, data?: unknown) {
-  const accessToken = await getAccessToken();
-  if (!accessToken) return { error: "Unauthorized", message: "No access token found. Please login again." };
-
   const config = {
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${accessToken}`,
       withCredentials: true,
     },
   };

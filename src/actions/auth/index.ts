@@ -7,6 +7,7 @@ import {
   getAccessToken,
   setAccessToken,
 } from "@/lib/token-helper";
+import { toPlainSerializable } from "@/lib/to-plain-serializable";
 
 import { LoginSchema } from "@/schemas";
 
@@ -15,6 +16,7 @@ type RefreshTokenInput = {
   accessToken: string;
   refreshToken: string;
 };
+
 
 const Login = async (values: z.infer<typeof LoginSchema>) => {
   //   console.log("name: " + values.name);
@@ -40,16 +42,18 @@ const Login = async (values: z.infer<typeof LoginSchema>) => {
   );
 
   try {
-    const payload = res.data?.data ?? res.data;
-    await setAccessToken(payload.accessToken);
+    const root = res.data as Record<string, unknown> | undefined;
+    const payload = (root?.data ?? root) as Record<string, unknown> | undefined;
+    const token = payload?.accessToken ?? (payload as { access_token?: string })?.access_token;
+    if (typeof token === "string" && token) {
+      await setAccessToken(token);
+    }
 
-    const refreshToken =
-      payload.refreshToken ??
-      (payload as any)?.refresh_token ??
-      (res.data as any)?.refreshToken;
-    return {
-      ...res.data,
-    };
+    const plain = toPlainSerializable(root);
+    if (plain == null) {
+      return { error: "Failed to login", message: "Invalid response from server" };
+    }
+    return plain as Record<string, unknown>;
   } catch (err) {
     console.error("Login API error:", err);
     return { error: "Failed to login", message: "Failed to login" };
@@ -112,7 +116,7 @@ const getUserData = async () => {
 
     // console.log("accessTokenBackName", accessTokenBack);
     // console.log("refreshTokenBackName", refreshTokenBack);
-    return { data: res.data };
+    return { data: toPlainSerializable(res.data) };
   } catch (error: any) {
     // Handle 401 Unauthorized errors
     if (error.response?.status === 401) {
@@ -130,6 +134,71 @@ const getUserData = async () => {
         error.response?.data?.message ||
         error.message ||
         "An unexpected error occurred",
+    };
+  }
+};
+
+/**
+ * Register a new user.
+ *
+ * IMPORTANT: Server Actions cannot receive `File` inside a plain object.
+ * Pass a `FormData` instead, with keys matching the backend `RegisterDto`.
+ */
+const Register = async (formData: FormData) => {
+  try {
+    const res = await axios.post(
+      `${process.env.BACK_END}/accounts/register`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      },
+    );
+
+    const plain = toPlainSerializable(res.data);
+    return plain != null && typeof plain === "object" && !Array.isArray(plain)
+      ? (plain as Record<string, unknown>)
+      : { result: plain };
+  } catch (error: unknown) {
+    const err = error as {
+      response?: {
+        status?: number;
+        data?: { message?: string; errors?: unknown } & Record<string, unknown>;
+      };
+      message?: string;
+    };
+    const status = err?.response?.status;
+    const data = err?.response?.data;
+    const message =
+      data?.message ||
+      (status === 400
+        ? "بيانات غير صحيحة"
+        : status === 409
+          ? "البريد الإلكتروني أو المستخدم مسجل مسبقاً"
+          : err?.message || "Failed to register");
+
+    if (status === 400) {
+      return {
+        error: "BadRequest",
+        status,
+        message,
+        data: data != null ? toPlainSerializable(data) : undefined,
+      };
+    }
+    if (status === 409) {
+      return {
+        error: "Conflict",
+        status,
+        message,
+        data: data != null ? toPlainSerializable(data) : undefined,
+      };
+    }
+    return {
+      error: "Failed to register",
+      status,
+      message,
+      data: data != null ? toPlainSerializable(data) : undefined,
     };
   }
 };
@@ -153,19 +222,31 @@ const refreshTokenData = async (values: RefreshTokenInput) => {
       },
     );
 
-    if (res.data.data.accessToken) {
-      await setAccessToken(res.data.data.accessToken);
+    const plainRoot = toPlainSerializable(res.data) as Record<
+      string,
+      unknown
+    > | null;
+    if (!plainRoot || typeof plainRoot !== "object") {
+      return {
+        error: "Failed to refresh token",
+        message: "Invalid response from server",
+      };
     }
 
-    // Don't set refresh token server-side - let frontend set Ref_Tok_Sono_Net as non-HttpOnly cookie
-    // if (res.data.data.refreshToken) {
-    //   await setRefreshToken(res.data.data.refreshToken);
-    // }
+    const inner = (plainRoot.data ?? plainRoot) as Record<string, unknown>;
+    const access = inner.accessToken ?? inner.AccessToken;
+    if (typeof access === "string" && access) {
+      await setAccessToken(access);
+    }
 
-    // Return refreshToken so frontend can set it as Ref_Tok_Sono_Net
+    const refresh =
+      inner.refreshToken ??
+      inner.RefreshToken ??
+      (plainRoot.refreshToken as string | undefined);
+
     return {
-      ...res.data,
-      refreshToken: res.data.data.refreshToken, // Include refreshToken for frontend to set as Ref_Tok_Sono_Net
+      ...plainRoot,
+      refreshToken: typeof refresh === "string" ? refresh : undefined,
     };
   } catch (error: any) {
     return {
@@ -174,4 +255,4 @@ const refreshTokenData = async (values: RefreshTokenInput) => {
   }
 };
 
-export { Login, Logout, getUserData, refreshTokenData };
+export { Login, Logout, Register, getUserData, refreshTokenData };

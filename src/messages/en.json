@@ -10,7 +10,10 @@
     "reservation": "Reservation",
     "housingReceiver": "Housing Receiver",
     "housingSender": "Housing Sender",
-    "settings": "Settings"
+    "settings": "Settings",
+    "welcome": "Welcome,",
+    "accountFallback": "My account",
+    "logout": "Log out"
   },
   "Chat": {
     "title": "Chat",

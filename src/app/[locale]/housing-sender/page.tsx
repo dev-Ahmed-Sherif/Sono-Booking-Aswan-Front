@@ -1,9 +1,41 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ClipboardList, Home } from "lucide-react";
+import { getRequestTypes } from "@/actions/settings/requestTypeService";
+import { getAllExtensions } from "@/actions/settings/extensionService";
+import { decideHousingRequest } from "@/actions/decideHousingRequest";
+import { getAllRequests } from "@/actions/requestService";
+import { canAccessHousingSenderFromCandidates } from "@/lib/role-utils";
+import { useEffectiveRole } from "@/hooks/use-effective-role";
+import { useRequireRole } from "@/hooks/use-require-role";
+import {
+  extractApplicantDisplayNameFromRequest,
+  extractRequestTypeId,
+  mapApiExtensionToTableRow,
+  mapApiRequestToTableRow,
+  parseExtensionsListFromApi,
+  parseRequestsListFromApi,
+  toYmd,
+  type HousingRequestTableRow,
+} from "@/lib/housing-request-list";
+import {
+  extractRequestUserId,
+  type LeaderRequestDecision,
+} from "@/lib/housing-request-detail";
+import {
+  getLookupArray,
+  mapGenericOptions,
+  type GenericOption,
+} from "@/lib/availability-inquiry";
+import { cn } from "@/lib/utils";
+import { ClipboardList, Home, Loader2 } from "lucide-react";
 
+import {
+  HousingSenderDecisionDialog,
+} from "@/components/housing-sender/housing-sender-decision-dialog";
+import { HousingRequestDetailModal } from "@/components/reservation/housing-request-detail-modal";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,37 +57,77 @@ import {
 } from "@/components/ui/table";
 
 type SenderView = "new" | "approved" | "extension";
-type RequestType = "all" | "work" | "treatment" | "specialization";
 
-type PendingRequest = {
-  id: string;
+const senderFilterFieldClassName =
+  "h-12 min-h-12 border-2 border-black dark:border-white bg-white text-base text-gray-800";
+
+const senderFilterSelectTriggerClassName = cn(
+  senderFilterFieldClassName,
+  "text-right [&>span]:w-full [&>span]:text-right",
+);
+
+const senderTableHeadClassName = "text-center align-middle";
+const senderTableBodyClassName =
+  "[&_td]:text-center [&_td]:align-middle [&_td]:[&>div]:mx-auto [&_td]:[&>div]:flex [&_td]:[&>div]:flex-wrap [&_td]:[&>div]:justify-center [&_td]:[&>div]:gap-2 [&_td]:[&>button]:mx-auto";
+const senderTableCellClassName = cn(
+  "text-center align-middle",
+  "[&>div]:mx-auto [&>div]:flex [&>div]:flex-wrap [&>div]:justify-center [&>div]:gap-2",
+  "[&>button]:mx-auto",
+);
+const senderTableButtonClassName =
+  "h-10 min-h-10 px-4 text-base font-medium";
+
+type SenderTableRow = {
+  /** Entity id for `getRequestById` (parent request when row is an extension). */
+  requestId: string;
+  /** `RequestDto.UserId` — passed to companions API as `UserId` header for leaders. */
+  requestOwnerUserId: string;
+  requestNumber: string;
+  housingTableRow: HousingRequestTableRow;
   applicant: string;
+  requestTypeId: string;
   reason: string;
-  date: string;
+  startDate: string;
+  endDate: string;
+  nights?: number;
+  status: string;
 };
 
-type ApprovedRequest = {
-  id: string;
-  applicant: string;
-  reason: string;
-  date: string;
-  nights: number;
-};
+function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = r[k];
+    if (v != null && String(v).trim() !== "") return String(v).trim();
+  }
+  return "";
+}
 
-const pendingRequests: PendingRequest[] = [
-  { id: "1001", applicant: "أحمد محمد", reason: "مأمورية عمل", date: "2023-10-26" },
-  { id: "1002", applicant: "فاطمة علي", reason: "علاج", date: "2023-10-25" },
-];
+function formatEndDateFromRaw(raw: Record<string, unknown>): string {
+  return toYmd(raw.endDate ?? raw.EndDate) ?? "—";
+}
 
-const recentlyApprovedRequests: ApprovedRequest[] = [
-  { id: "998", applicant: "محمود السيد", reason: "مأمورية عمل", date: "2023-10-24", nights: 30 },
-  { id: "997", applicant: "نورا حسن", reason: "علاج", date: "2023-10-23", nights: 7 },
-];
+function mapToSenderTableRow(
+  raw: Record<string, unknown>,
+  tableRow: HousingRequestTableRow,
+): SenderTableRow {
+  const isExtension = tableRow.entryKind === "extension";
+  const requestId = isExtension
+    ? pickStr(raw, "requestId", "RequestId")
+    : tableRow.id;
 
-const extensionRequests: PendingRequest[] = [
-  { id: "850", applicant: "خالد إبراهيم", reason: "مأمورية عمل", date: "2023-10-22" },
-  { id: "845", applicant: "لبنى جمال", reason: "علاج", date: "2023-10-21" },
-];
+  return {
+    requestId,
+    requestOwnerUserId: extractRequestUserId(raw),
+    requestNumber: tableRow.requestNo,
+    housingTableRow: tableRow,
+    applicant: extractApplicantDisplayNameFromRequest(raw),
+    requestTypeId: extractRequestTypeId(raw),
+    reason: tableRow.requestType,
+    startDate: tableRow.startDate,
+    endDate: formatEndDateFromRaw(raw),
+    nights: tableRow.nights,
+    status: tableRow.status,
+  };
+}
 
 const pageContentVariants = {
   hidden: { opacity: 0, y: 18 },
@@ -98,21 +170,22 @@ const mainCardChildrenVariants = {
   },
 };
 
-const normalizeReasonType = (reason: string): Exclude<RequestType, "all"> => {
-  if (reason.includes("علاج")) return "treatment";
-  if (reason.includes("تخصص")) return "specialization";
-  return "work";
-};
-
 const matchesFilters = (
-  reason: string,
-  date: string,
-  selectedType: RequestType,
+  row: Pick<SenderTableRow, "requestTypeId" | "reason">,
+  startDate: string,
+  endDate: string,
+  selectedType: string,
   selectedDate: string,
+  requestTypeLabelsById: Map<string, string>,
 ) => {
   const matchesType =
-    selectedType === "all" || normalizeReasonType(reason) === selectedType;
-  const matchesDate = !selectedDate || date === selectedDate;
+    selectedType === "all" ||
+    (row.requestTypeId !== "" && row.requestTypeId === selectedType) ||
+    row.reason === requestTypeLabelsById.get(selectedType);
+  const matchesDate =
+    !selectedDate ||
+    startDate === selectedDate ||
+    endDate === selectedDate;
   return matchesType && matchesDate;
 };
 
@@ -131,34 +204,345 @@ const viewTitles: Record<SenderView, { title: string; description: string }> = {
   },
 };
 
+function getLoggedInUserId(): string {
+  try {
+    const raw =
+      typeof window !== "undefined" ? window.localStorage.getItem("user") : null;
+    if (!raw || raw === "undefined" || raw === "null") return "";
+    const u = JSON.parse(raw) as { id?: string };
+    return String(u?.id ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 const HousingSenderPage = () => {
+  const { roleCandidates, isRoleReady } = useEffectiveRole();
+  const allowed = canAccessHousingSenderFromCandidates(roleCandidates);
+  useRequireRole({ allowed });
+  const { toast } = useToast();
+
   const [activeView, setActiveView] = useState<SenderView>("new");
-  const [selectedType, setSelectedType] = useState<RequestType>("all");
+  const [selectedType, setSelectedType] = useState("all");
+  const [requestTypeOptions, setRequestTypeOptions] = useState<GenericOption[]>(
+    [],
+  );
   const [selectedDate, setSelectedDate] = useState("");
+  const [pendingRequests, setPendingRequests] = useState<SenderTableRow[]>([]);
+  const [recentlyApprovedRequests, setRecentlyApprovedRequests] = useState<
+    SenderTableRow[]
+  >([]);
+  const [extensionRequests, setExtensionRequests] = useState<SenderTableRow[]>(
+    [],
+  );
+  const [dataLoading, setDataLoading] = useState(false);
+  const [dataLoadError, setDataLoadError] = useState<string | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [detailModalRequestId, setDetailModalRequestId] = useState<
+    string | null
+  >(null);
+  const [detailModalRow, setDetailModalRow] =
+    useState<HousingRequestTableRow | null>(null);
+  const [detailModalStatus, setDetailModalStatus] = useState("");
+  const [detailModalOwnerUserId, setDetailModalOwnerUserId] = useState("");
+  const [decisionOpen, setDecisionOpen] = useState(false);
+  const [decisionKind, setDecisionKind] = useState<LeaderRequestDecision | null>(
+    null,
+  );
+  const [decisionTarget, setDecisionTarget] = useState<SenderTableRow | null>(
+    null,
+  );
+  const [decisionNote, setDecisionNote] = useState("");
+  const [decisionSubmitting, setDecisionSubmitting] = useState(false);
+  const fetchTicketRef = useRef(0);
+
+  const requestTypeLabelsById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const opt of requestTypeOptions) {
+      map.set(opt.value, opt.label);
+    }
+    return map;
+  }, [requestTypeOptions]);
+
+  const openRequestDetails = useCallback((row: SenderTableRow) => {
+    if (!row.requestId.trim()) return;
+    setDetailModalRequestId(row.requestId);
+    setDetailModalOwnerUserId(row.requestOwnerUserId);
+    setDetailModalRow(row.housingTableRow);
+    setDetailModalStatus(row.status);
+    setDetailModalOpen(true);
+  }, []);
+
+  const closeRequestDetails = useCallback(() => {
+    setDetailModalOpen(false);
+    setDetailModalRequestId(null);
+    setDetailModalOwnerUserId("");
+    setDetailModalRow(null);
+    setDetailModalStatus("");
+  }, []);
+
+  const openDecisionModal = useCallback(
+    (row: SenderTableRow, kind: LeaderRequestDecision) => {
+      if (!row.requestId.trim()) return;
+      setDecisionTarget(row);
+      setDecisionKind(kind);
+      setDecisionNote("");
+      setDecisionOpen(true);
+    },
+    [],
+  );
+
+  const closeDecisionModal = useCallback(() => {
+    if (decisionSubmitting) return;
+    setDecisionOpen(false);
+    setDecisionKind(null);
+    setDecisionTarget(null);
+    setDecisionNote("");
+  }, [decisionSubmitting]);
+
+  const loadSenderData = useCallback(async () => {
+    const typeLabels = requestTypeLabelsById;
+    const ticket = ++fetchTicketRef.current;
+    setDataLoading(true);
+    setDataLoadError(null);
+
+    try {
+      const [requestsRes, extensionsRes] = await Promise.all([
+        getAllRequests(),
+        getAllExtensions(),
+      ]);
+      if (ticket !== fetchTicketRef.current) return;
+
+      if (
+        requestsRes &&
+        typeof requestsRes === "object" &&
+        "error" in requestsRes
+      ) {
+        const err = requestsRes as { message?: string; error?: string };
+        setPendingRequests([]);
+        setRecentlyApprovedRequests([]);
+        setExtensionRequests([]);
+        setDataLoadError(
+          String(err.message ?? err.error ?? "تعذر تحميل الطلبات."),
+        );
+        return;
+      }
+
+      const pending: SenderTableRow[] = [];
+      const approved: SenderTableRow[] = [];
+
+      for (const item of parseRequestsListFromApi(requestsRes)) {
+        if (!item || typeof item !== "object") continue;
+        const raw = item as Record<string, unknown>;
+        const tableRow = mapApiRequestToTableRow(raw, {
+          requestTypeLabelsById: typeLabels,
+        });
+        if (!tableRow) continue;
+        const row = mapToSenderTableRow(raw, tableRow);
+        if (tableRow.status === "قيد المراجعة") {
+          pending.push(row);
+        } else if (tableRow.status === "تمت الموافقة") {
+          approved.push(row);
+        }
+      }
+
+      const extensions: SenderTableRow[] = [];
+      if (
+        extensionsRes &&
+        typeof extensionsRes === "object" &&
+        !("error" in extensionsRes)
+      ) {
+        for (const item of parseExtensionsListFromApi(extensionsRes)) {
+          if (!item || typeof item !== "object") continue;
+          const raw = item as Record<string, unknown>;
+          const tableRow = mapApiExtensionToTableRow(raw, {
+            requestTypeLabelsById: typeLabels,
+          });
+          if (!tableRow) continue;
+          const row = mapToSenderTableRow(raw, tableRow);
+          if (tableRow.status === "قيد المراجعة") {
+            extensions.push(row);
+          }
+        }
+      }
+
+      setPendingRequests(pending);
+      setRecentlyApprovedRequests(approved);
+      setExtensionRequests(extensions);
+    } catch {
+      if (ticket !== fetchTicketRef.current) return;
+      setPendingRequests([]);
+      setRecentlyApprovedRequests([]);
+      setExtensionRequests([]);
+      setDataLoadError("تعذر تحميل الطلبات.");
+    } finally {
+      if (ticket === fetchTicketRef.current) {
+        setDataLoading(false);
+      }
+    }
+  }, [requestTypeLabelsById]);
+
+  useEffect(() => {
+    if (!isRoleReady || !allowed) return;
+    void (async () => {
+      const res = await getRequestTypes();
+      if (res && typeof res === "object" && "error" in res) return;
+      const mapped = mapGenericOptions(res);
+      if (mapped.length > 0) setRequestTypeOptions(mapped);
+    })();
+  }, [isRoleReady, allowed]);
+
+  const handleDecisionConfirm = useCallback(async () => {
+    if (!decisionTarget || !decisionKind) return;
+
+    const leaderUserId = getLoggedInUserId();
+    if (!leaderUserId) {
+      toast({
+        variant: "destructive",
+        title: "تعذر تنفيذ الإجراء",
+        description: "لم يتم العثور على بيانات المستخدم الحالي.",
+      });
+      return;
+    }
+
+    if (decisionKind === "reject" && !decisionNote.trim()) {
+      toast({
+        variant: "destructive",
+        title: "سبب الرفض مطلوب",
+        description: "يرجى إدخال سبب الرفض قبل المتابعة.",
+      });
+      return;
+    }
+
+    const requestId = decisionTarget.requestId.trim();
+    setDecisionSubmitting(true);
+
+    try {
+      const result = await decideHousingRequest({
+        requestId,
+        decision: decisionKind,
+        leaderUserId,
+        ownerUserId: decisionTarget.requestOwnerUserId.trim() || undefined,
+        rejectionReason: decisionNote,
+      });
+
+      if (!result.ok) {
+        toast({
+          variant: "destructive",
+          title: "فشل تحديث الطلب",
+          description: result.message,
+        });
+        return;
+      }
+
+      toast({
+        title: decisionKind === "approve" ? "تمت الموافقة" : "تم الرفض",
+        description:
+          decisionKind === "approve"
+            ? result.reservationWarning
+              ? "تم تحديث الطلب وإنشاء الحجز مع تنبيهات — راجع التفاصيل أدناه."
+              : "تم تحديث حالة الطلب وإنشاء الحجز."
+            : "تم تحديث حالة الطلب إلى مرفوض.",
+      });
+
+      if (result.unitReserveWarning) {
+        toast({
+          variant: "destructive",
+          title: "تنبيه: حالة الوحدات",
+          description: result.unitReserveWarning,
+        });
+      }
+
+      if (result.reservationWarning) {
+        toast({
+          variant: "destructive",
+          title: "تنبيه: إنشاء الحجز",
+          description: result.reservationWarning,
+        });
+      }
+
+      closeDecisionModal();
+      void loadSenderData();
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "فشل تحديث الطلب",
+        description: "حدث خطأ غير متوقع أثناء حفظ القرار.",
+      });
+    } finally {
+      setDecisionSubmitting(false);
+    }
+  }, [
+    closeDecisionModal,
+    decisionKind,
+    decisionNote,
+    decisionTarget,
+    loadSenderData,
+    toast,
+  ]);
+
+  useEffect(() => {
+    if (!isRoleReady || !allowed) return;
+    void loadSenderData();
+    return () => {
+      fetchTicketRef.current += 1;
+      setDataLoading(false);
+    };
+  }, [isRoleReady, allowed, loadSenderData]);
 
   const filteredPending = useMemo(
     () =>
       pendingRequests.filter((r) =>
-        matchesFilters(r.reason, r.date, selectedType, selectedDate),
+        matchesFilters(
+          r,
+          r.startDate,
+          r.endDate,
+          selectedType,
+          selectedDate,
+          requestTypeLabelsById,
+        ),
       ),
-    [selectedDate, selectedType],
+    [pendingRequests, requestTypeLabelsById, selectedDate, selectedType],
   );
 
   const filteredApproved = useMemo(
     () =>
       recentlyApprovedRequests.filter((r) =>
-        matchesFilters(r.reason, r.date, selectedType, selectedDate),
+        matchesFilters(
+          r,
+          r.startDate,
+          r.endDate,
+          selectedType,
+          selectedDate,
+          requestTypeLabelsById,
+        ),
       ),
-    [selectedDate, selectedType],
+    [
+      recentlyApprovedRequests,
+      requestTypeLabelsById,
+      selectedDate,
+      selectedType,
+    ],
   );
 
   const filteredExtension = useMemo(
     () =>
       extensionRequests.filter((r) =>
-        matchesFilters(r.reason, r.date, selectedType, selectedDate),
+        matchesFilters(
+          r,
+          r.startDate,
+          r.endDate,
+          selectedType,
+          selectedDate,
+          requestTypeLabelsById,
+        ),
       ),
-    [selectedDate, selectedType],
+    [extensionRequests, requestTypeLabelsById, selectedDate, selectedType],
   );
+
+  if (!isRoleReady || !allowed) {
+    return null;
+  }
 
   return (
     <main className="w-full flex-1 min-h-0 overflow-x-hidden overflow-y-auto" dir="rtl">
@@ -211,7 +595,7 @@ const HousingSenderPage = () => {
                           type="button"
                           onClick={() => setActiveView("new")}
                           variant={activeView === "new" ? "default" : "outline"}
-                          className="w-full justify-start"
+                          className="h-auto min-h-11 w-full justify-start py-3 text-base"
                         >
                           قسم الطلبات الجديدة
                         </Button>
@@ -221,7 +605,7 @@ const HousingSenderPage = () => {
                           type="button"
                           onClick={() => setActiveView("approved")}
                           variant={activeView === "approved" ? "default" : "outline"}
-                          className="w-full justify-start"
+                          className="h-auto min-h-11 w-full justify-start py-3 text-base"
                         >
                           قسم الطلبات الموافق عليها مؤخرًا
                         </Button>
@@ -231,7 +615,7 @@ const HousingSenderPage = () => {
                           type="button"
                           onClick={() => setActiveView("extension")}
                           variant={activeView === "extension" ? "default" : "outline"}
-                          className="w-full justify-start"
+                          className="h-auto min-h-11 w-full justify-start py-3 text-base"
                         >
                           قسم طلبات التمديد
                         </Button>
@@ -259,6 +643,11 @@ const HousingSenderPage = () => {
                     </CardHeader>
 
                     <CardContent className="space-y-4">
+                      {dataLoadError && (
+                        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                          {dataLoadError}
+                        </p>
+                      )}
                       <div className="rounded-2xl border border-blue-100 bg-slate-50/80 p-4">
                         <p className="mb-3 text-right text-sm font-medium text-gray-700">
                           فلترة
@@ -268,17 +657,19 @@ const HousingSenderPage = () => {
                             <Label className="text-sm text-gray-700">حسب نوع الطلب</Label>
                             <Select
                               value={selectedType}
-                              onValueChange={(value) => setSelectedType(value as RequestType)}
+                              onValueChange={setSelectedType}
                               dir="rtl"
                             >
-                              <SelectTrigger className="border-gray-300 bg-white text-right text-gray-800 [&>span]:w-full [&>span]:text-right">
+                              <SelectTrigger className={senderFilterSelectTriggerClassName}>
                                 <SelectValue placeholder="الكل" />
                               </SelectTrigger>
                               <SelectContent className="z-50 text-right">
                                 <SelectItem value="all">الكل</SelectItem>
-                                <SelectItem value="work">مأمورية عمل</SelectItem>
-                                <SelectItem value="treatment">علاج</SelectItem>
-                                <SelectItem value="specialization">تخصص</SelectItem>
+                                {requestTypeOptions.map((opt) => (
+                                  <SelectItem key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                           </div>
@@ -288,7 +679,7 @@ const HousingSenderPage = () => {
                               type="date"
                               value={selectedDate}
                               onChange={(e) => setSelectedDate(e.target.value)}
-                              className="border-gray-300 bg-white text-gray-800"
+                              className={cn(senderFilterFieldClassName, "text-right")}
                             />
                           </div>
                         </div>
@@ -306,39 +697,103 @@ const HousingSenderPage = () => {
                         }}
                       >
                         <div className="overflow-x-auto rounded-md border border-gray-200">
-                          {activeView === "new" && (
+                          {dataLoading && (
+                            <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
+                              <Loader2 className="h-5 w-5 animate-spin" />
+                              <span>جاري تحميل الطلبات...</span>
+                            </div>
+                          )}
+                          {!dataLoading && activeView === "new" && (
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead className="text-right">رقم الطلب</TableHead>
-                                  <TableHead className="text-right">اسم الطالب</TableHead>
-                                  <TableHead className="text-right">سبب الطلب</TableHead>
-                                  <TableHead className="text-right">التاريخ</TableHead>
-                                  <TableHead className="text-right">إجراءات</TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    رقم الطلب
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    اسم الطالب
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    سبب الطلب
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    تاريخ البداية
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    تاريخ النهاية
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    إجراءات
+                                  </TableHead>
                                 </TableRow>
                               </TableHeader>
-                              <TableBody>
+                              <TableBody className={senderTableBodyClassName}>
                                 {filteredPending.map((request) => (
-                                  <TableRow key={request.id}>
-                                    <TableCell>{request.id}</TableCell>
-                                    <TableCell>{request.applicant}</TableCell>
-                                    <TableCell>{request.reason}</TableCell>
-                                    <TableCell>{request.date}</TableCell>
-                                    <TableCell>
-                                      <div className="flex flex-wrap justify-end gap-2">
+                                  <TableRow key={request.requestId || request.requestNumber}>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.requestNumber}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.applicant}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.reason}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.startDate}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.endDate}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      <div className="flex flex-wrap justify-center gap-2">
                                         <Button
-                                          size="sm"
-                                          className="bg-[#00005c] text-white hover:bg-[#00004a]"
+                                          type="button"
+                                          className={cn(
+                                            senderTableButtonClassName,
+                                            "bg-[#00005c] text-white hover:bg-[#00004a]",
+                                          )}
+                                          disabled={
+                                            decisionSubmitting ||
+                                            !request.requestId
+                                          }
+                                          onClick={() =>
+                                            openDecisionModal(
+                                              request,
+                                              "approve",
+                                            )
+                                          }
                                         >
                                           موافقة
                                         </Button>
                                         <Button
-                                          size="sm"
-                                          className="bg-red-600 text-white hover:bg-red-700"
+                                          type="button"
+                                          className={cn(
+                                            senderTableButtonClassName,
+                                            "bg-red-600 text-white hover:bg-red-700",
+                                          )}
+                                          disabled={
+                                            decisionSubmitting ||
+                                            !request.requestId
+                                          }
+                                          onClick={() =>
+                                            openDecisionModal(
+                                              request,
+                                              "reject",
+                                            )
+                                          }
                                         >
                                           رفض
                                         </Button>
-                                        <Button size="sm" variant="outline">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          className={senderTableButtonClassName}
+                                          disabled={!request.requestId}
+                                          onClick={() =>
+                                            openRequestDetails(request)
+                                          }
+                                        >
                                           تفاصيل
                                         </Button>
                                       </div>
@@ -348,7 +803,7 @@ const HousingSenderPage = () => {
                                 {filteredPending.length === 0 && (
                                   <TableRow>
                                     <TableCell
-                                      colSpan={5}
+                                      colSpan={6}
                                       className="text-center text-muted-foreground"
                                     >
                                       لا توجد طلبات مطابقة للفلترة الحالية
@@ -359,31 +814,73 @@ const HousingSenderPage = () => {
                             </Table>
                           )}
 
-                          {activeView === "approved" && (
+                          {!dataLoading && activeView === "approved" && (
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead className="text-right">رقم الطلب</TableHead>
-                                  <TableHead className="text-right">اسم الطالب</TableHead>
-                                  <TableHead className="text-right">سبب الطلب</TableHead>
-                                  <TableHead className="text-right">التاريخ</TableHead>
-                                  <TableHead className="text-right">عدد الليالي</TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    رقم الطلب
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    اسم الطالب
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    سبب الطلب
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    تاريخ البداية
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    تاريخ النهاية
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    عدد الليالي
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    إجراءات
+                                  </TableHead>
                                 </TableRow>
                               </TableHeader>
-                              <TableBody>
+                              <TableBody className={senderTableBodyClassName}>
                                 {filteredApproved.map((request) => (
-                                  <TableRow key={request.id}>
-                                    <TableCell>{request.id}</TableCell>
-                                    <TableCell>{request.applicant}</TableCell>
-                                    <TableCell>{request.reason}</TableCell>
-                                    <TableCell>{request.date}</TableCell>
-                                    <TableCell>{request.nights}</TableCell>
+                                  <TableRow key={request.requestId || request.requestNumber}>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.requestNumber}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.applicant}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.reason}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.startDate}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.endDate}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.nights ?? "—"}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        className={senderTableButtonClassName}
+                                        disabled={!request.requestId}
+                                        onClick={() =>
+                                          openRequestDetails(request)
+                                        }
+                                      >
+                                        تفاصيل
+                                      </Button>
+                                    </TableCell>
                                   </TableRow>
                                 ))}
                                 {filteredApproved.length === 0 && (
                                   <TableRow>
                                     <TableCell
-                                      colSpan={5}
+                                      colSpan={7}
                                       className="text-center text-muted-foreground"
                                     >
                                       لا توجد طلبات مطابقة للفلترة الحالية
@@ -394,39 +891,75 @@ const HousingSenderPage = () => {
                             </Table>
                           )}
 
-                          {activeView === "extension" && (
+                          {!dataLoading && activeView === "extension" && (
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead className="text-right">رقم الطلب</TableHead>
-                                  <TableHead className="text-right">اسم الطالب</TableHead>
-                                  <TableHead className="text-right">سبب الطلب</TableHead>
-                                  <TableHead className="text-right">التاريخ</TableHead>
-                                  <TableHead className="text-right">إجراءات</TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    رقم الطلب
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    اسم الطالب
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    سبب الطلب
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    تاريخ البداية
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    تاريخ النهاية
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
+                                    إجراءات
+                                  </TableHead>
                                 </TableRow>
                               </TableHeader>
-                              <TableBody>
+                              <TableBody className={senderTableBodyClassName}>
                                 {filteredExtension.map((request) => (
-                                  <TableRow key={request.id}>
-                                    <TableCell>{request.id}</TableCell>
-                                    <TableCell>{request.applicant}</TableCell>
-                                    <TableCell>{request.reason}</TableCell>
-                                    <TableCell>{request.date}</TableCell>
-                                    <TableCell>
-                                      <div className="flex flex-wrap justify-end gap-2">
+                                  <TableRow key={request.requestId || request.requestNumber}>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.requestNumber}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.applicant}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.reason}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.startDate}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.endDate}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      <div className="flex flex-wrap justify-center gap-2">
                                         <Button
-                                          size="sm"
-                                          className="bg-[#00005c] text-white hover:bg-[#00004a]"
+                                          className={cn(
+                                            senderTableButtonClassName,
+                                            "bg-[#00005c] text-white hover:bg-[#00004a]",
+                                          )}
                                         >
                                           موافقة
                                         </Button>
                                         <Button
-                                          size="sm"
-                                          className="bg-red-600 text-white hover:bg-red-700"
+                                          className={cn(
+                                            senderTableButtonClassName,
+                                            "bg-red-600 text-white hover:bg-red-700",
+                                          )}
                                         >
                                           رفض
                                         </Button>
-                                        <Button size="sm" variant="outline">
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          className={senderTableButtonClassName}
+                                          disabled={!request.requestId}
+                                          onClick={() =>
+                                            openRequestDetails(request)
+                                          }
+                                        >
                                           تفاصيل
                                         </Button>
                                       </div>
@@ -436,7 +969,7 @@ const HousingSenderPage = () => {
                                 {filteredExtension.length === 0 && (
                                   <TableRow>
                                     <TableCell
-                                      colSpan={5}
+                                      colSpan={6}
                                       className="text-center text-muted-foreground"
                                     >
                                       لا توجد طلبات مطابقة للفلترة الحالية
@@ -456,6 +989,31 @@ const HousingSenderPage = () => {
           </motion.div>
         </Card>
       </motion.div>
+
+      {detailModalOpen && detailModalRequestId ? (
+        <HousingRequestDetailModal
+          open={detailModalOpen}
+          mode="view"
+          requestId={detailModalRequestId}
+          requestOwnerUserId={detailModalOwnerUserId}
+          statusLabel={detailModalStatus}
+          tableRow={detailModalRow}
+          onClose={closeRequestDetails}
+        />
+      ) : null}
+
+      <HousingSenderDecisionDialog
+        open={decisionOpen}
+        kind={decisionKind}
+        requestNumber={decisionTarget?.requestNumber}
+        note={decisionNote}
+        submitting={decisionSubmitting}
+        onNoteChange={setDecisionNote}
+        onOpenChange={(open) => {
+          if (!open) closeDecisionModal();
+        }}
+        onConfirm={() => void handleDecisionConfirm()}
+      />
     </main>
   );
 };

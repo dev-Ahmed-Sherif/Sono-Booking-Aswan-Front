@@ -7,6 +7,9 @@ type Payload = Record<string, unknown>;
 
 const BASE = "Beds";
 
+/** Backend accepts "متاح" or "Available"; ASCII avoids header encoding issues from Node. */
+const AVAILABLE_UNIT_STATUS_HEADER = "Available";
+
 function toFormData(payload: Payload): FormData {
   const formData = new FormData();
 
@@ -52,17 +55,25 @@ async function request(
 
   const isFormData = data instanceof FormData;
   const config = {
+    withCredentials: true,
     headers: {
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
       Authorization: `Bearer ${accessToken}`,
-      withCredentials: true,
       ...(extraHeaders ?? {}),
     },
   };
 
   try {
-    if (method === "get" || method === "delete") {
-      const res = await axios[method](url, config);
+    if (method === "get") {
+      const res = await axios.get(url, config);
+      return res.data;
+    }
+
+    if (method === "delete") {
+      const res = await axios.delete(url, {
+        ...config,
+        ...(data !== undefined ? { data } : {}),
+      });
       return res.data;
     }
 
@@ -85,12 +96,10 @@ async function request(
 
 const getBeds = async (roomId?: string) => {
   const trimmed = roomId?.trim();
-  return request(
-    "get",
-    `${process.env.BACK_END}/${BASE}/getAll`,
-    undefined,
-    trimmed ? { RoomId: trimmed } : undefined,
-  );
+  return request("get", `${process.env.BACK_END}/${BASE}/getAll`, undefined, {
+    Status: AVAILABLE_UNIT_STATUS_HEADER,
+    ...(trimmed ? { RoomId: trimmed } : {}),
+  });
 };
 const getBedById = async (id: string) =>
   id === "new" ? undefined : request("get", `${process.env.BACK_END}/${BASE}/get/${id}`);
@@ -114,9 +123,16 @@ const deleteBedById = async (id: string) =>
   request("delete", `${process.env.BACK_END}/${BASE}/delete/${id}`);
 const softDeleteBedById = async (id: string) =>
   request("delete", `${process.env.BACK_END}/${BASE}/deleteSoft/${id}`);
+const deleteBedAttachmentsRange = async (ids: string[]) =>
+  request(
+    "delete",
+    `${process.env.BACK_END}/${BASE}/deleteRange/attachments`,
+    ids,
+  );
 
 export {
   addBed,
+  deleteBedAttachmentsRange,
   deleteBedById,
   getBedById,
   getBeds,

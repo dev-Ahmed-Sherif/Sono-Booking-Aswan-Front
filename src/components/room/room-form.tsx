@@ -34,6 +34,7 @@ import { roomSchema, type RoomFormValues } from "@/schemas";
 import { useToast } from "@/hooks/use-toast";
 import {
   addRoom,
+  deleteRoomAttachmentsRange,
   getRoomById,
   getRooms,
   softDeleteRoomById,
@@ -57,7 +58,12 @@ function basename(path: string): string {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
-type RoomImageMeta = { id?: string; path: string; isPrimary?: boolean };
+type RoomImageMeta = {
+  id?: string;
+  attachmentId?: string;
+  path: string;
+  isPrimary?: boolean;
+};
 type LookupOption = { id: string; nameAr: string; nameEn?: string };
 type RoomTypeOption = LookupOption;
 
@@ -178,6 +184,7 @@ export default function RoomForm({
           .filter((item) => typeof item?.path === "string" && item.path.trim())
           .map((item) => ({
             id: String(item.id ?? "").trim(),
+            attachmentId: String(item.attachmentId ?? "").trim(),
             path: String(item.path).trim(),
             isPrimary: Boolean(item.isPrimary),
           }))
@@ -186,10 +193,15 @@ export default function RoomForm({
 
     const imgs = defaultValues?.images;
     if (!Array.isArray(imgs))
-      return [] as Array<{ id: string; path: string; isPrimary: boolean }>;
+      return [] as Array<{
+        id: string;
+        attachmentId: string;
+        path: string;
+        isPrimary: boolean;
+      }>;
     return imgs
       .filter((x): x is string => typeof x === "string" && x.trim() !== "")
-      .map((path) => ({ id: "", path, isPrimary: false }));
+      .map((path) => ({ id: "", attachmentId: "", path, isPrimary: false }));
   }, [defaultValues]);
 
   const serverImagePaths = useMemo(
@@ -208,6 +220,9 @@ export default function RoomForm({
   const [serverIdByPath, setServerIdByPath] = useState<Record<string, string>>(
     {},
   );
+  const [serverAttachmentIdByPath, setServerAttachmentIdByPath] = useState<
+    Record<string, string>
+  >({});
   const [newPrimaryMap, setNewPrimaryMap] = useState<Record<string, boolean>>(
     {},
   );
@@ -222,6 +237,14 @@ export default function RoomForm({
     setServerIdByPath(
       Object.fromEntries(
         defaultImageMeta.map((item) => [item.path, String(item.id ?? "")]),
+      ),
+    );
+    setServerAttachmentIdByPath(
+      Object.fromEntries(
+        defaultImageMeta.map((item) => [
+          item.path,
+          String(item.attachmentId ?? ""),
+        ]),
       ),
     );
     setNewPrimaryMap({});
@@ -398,6 +421,23 @@ export default function RoomForm({
           ? "تم تعديل بيانات الغرفة بنجاح"
           : "تم حفظ بيانات الغرفة بنجاح",
       });
+
+      const attachmentIdsToDelete = Array.from(removedServerPaths)
+        .map((path) => (serverAttachmentIdByPath[path] ?? "").trim())
+        .filter(Boolean);
+      if (attachmentIdsToDelete.length > 0) {
+        const delResult = await deleteRoomAttachmentsRange(attachmentIdsToDelete);
+        if ((delResult as { error?: string })?.error) {
+          toast({
+            variant: "destructive",
+            title: "تعذر حذف بعض الصور",
+            description:
+              (delResult as { message?: string })?.message ||
+              "تعذر حذف الصور المُزالة من الخادم",
+          });
+        }
+      }
+
       await loadRoomRecords();
       resetFormAfterSave();
 
@@ -572,6 +612,7 @@ export default function RoomForm({
     setRemovedServerPaths(new Set());
     setServerPrimaryMap({});
     setServerIdByPath({});
+    setServerAttachmentIdByPath({});
     if (roomImagesInputRef.current) roomImagesInputRef.current.value = "";
 
     form.reset({

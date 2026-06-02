@@ -7,6 +7,9 @@ type Payload = Record<string, unknown>;
 
 const BASE = "Apartments";
 
+/** Backend accepts "متاح" or "Available"; ASCII avoids header encoding issues from Node. */
+const AVAILABLE_UNIT_STATUS_HEADER = "Available";
+
 function toFormData(payload: Payload): FormData {
   const formData = new FormData();
 
@@ -40,6 +43,7 @@ async function request(
   method: "get" | "post" | "put" | "delete",
   url: string,
   data?: unknown,
+  extraHeaders?: Record<string, string>,
 ) {
   const accessToken = await getAccessToken();
   if (!accessToken) {
@@ -51,16 +55,25 @@ async function request(
 
   const isFormData = data instanceof FormData;
   const config = {
+    withCredentials: true,
     headers: {
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
       Authorization: `Bearer ${accessToken}`,
-      withCredentials: true,
+      ...(extraHeaders ?? {}),
     },
   };
 
   try {
-    if (method === "get" || method === "delete") {
-      const res = await axios[method](url, config);
+    if (method === "get") {
+      const res = await axios.get(url, config);
+      return res.data;
+    }
+
+    if (method === "delete") {
+      const res = await axios.delete(url, {
+        ...config,
+        ...(data !== undefined ? { data } : {}),
+      });
       return res.data;
     }
 
@@ -121,7 +134,9 @@ async function request(
 }
 
 const getApartments = async () =>
-  request("get", `${process.env.BACK_END}/${BASE}/getAll`);
+  request("get", `${process.env.BACK_END}/${BASE}/getAll`, undefined, {
+    Status: AVAILABLE_UNIT_STATUS_HEADER,
+  });
 const getApartmentById = async (id: string) =>
   id === "new"
     ? undefined
@@ -146,9 +161,16 @@ const deleteApartmentById = async (id: string) =>
   request("delete", `${process.env.BACK_END}/${BASE}/delete/${id}`);
 const softDeleteApartmentById = async (id: string) =>
   request("delete", `${process.env.BACK_END}/${BASE}/deleteSoft/${id}`);
+const deleteApartmentAttachmentsRange = async (ids: string[]) =>
+  request(
+    "delete",
+    `${process.env.BACK_END}/${BASE}/deleteRange/attachments`,
+    ids,
+  );
 
 export {
   addApartment,
+  deleteApartmentAttachmentsRange,
   deleteApartmentById,
   getApartmentById,
   getApartments,

@@ -2,6 +2,7 @@ import type { BedFormValues } from "@/schemas";
 
 export type BedImageMeta = {
   id: string;
+  attachmentId: string;
   path: string;
   isPrimary: boolean;
 };
@@ -26,6 +27,23 @@ function idFromAttachmentLike(item: unknown): string {
   if (item && typeof item === "object" && !Array.isArray(item)) {
     const o = item as Record<string, unknown>;
     for (const k of ["id", "Id", "unitImageId", "UnitImageId"] as const) {
+      const v = o[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+      if (typeof v === "number" && Number.isFinite(v)) return String(v);
+    }
+  }
+  return "";
+}
+
+function attachmentIdFromAttachmentLike(item: unknown): string {
+  if (item && typeof item === "object" && !Array.isArray(item)) {
+    const o = item as Record<string, unknown>;
+    for (const k of [
+      "attachmentId",
+      "AttachmentId",
+      "attachId",
+      "AttachId",
+    ] as const) {
       const v = o[k];
       if (typeof v === "string" && v.trim()) return v.trim();
       if (typeof v === "number" && Number.isFinite(v)) return String(v);
@@ -76,6 +94,7 @@ export function extractBedImagesFromApi(
     const images = v
       .map((item) => ({
         id: idFromAttachmentLike(item),
+        attachmentId: attachmentIdFromAttachmentLike(item),
         path: pathFromAttachmentLike(item),
         isPrimary: boolFromAttachmentLike(item),
       }))

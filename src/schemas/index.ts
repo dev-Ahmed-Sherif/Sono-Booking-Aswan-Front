@@ -25,43 +25,126 @@ export const LoginSchema = z.object({
   password: z.string().min(1, { message: "يجب إدخال كلمة المرور" }),
 });
 
-const registrationCompanionRelationshipEnum = z.enum(
-  ["جد", "جدة", "أب", "أم", "زوج", "زوجة", "ابن", "ابنه"],
-  {
-    required_error: "صلة القرابة مطلوبة",
-  },
-);
-
 const birthDateSchema = z.date({
   required_error: "تاريخ الميلاد مطلوب",
   invalid_type_error: "تاريخ الميلاد غير صالح",
 });
 
-const identityFileSchema = z.any().refine((val) => val instanceof File, {
-  message: "يرجى رفع صورة البطاقة/شهادة الميلاد",
-});
+const ALLOWED_IDENTITY_MIME_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/bmp",
+  "image/svg+xml",
+  "application/pdf",
+];
+const ALLOWED_IDENTITY_EXTENSIONS = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".svg",
+  ".pdf",
+];
 
-export const registrationCompanionSchema = z.object({
-  relationship: registrationCompanionRelationshipEnum,
-  fullName: z.string().min(1, { message: "اسم المرافق كامل مطلوب" }),
+const identityFileSchema = z
+  .any()
+  .refine((val) => val instanceof File, {
+    message: "يرجى رفع صورة البطاقة/شهادة الميلاد",
+  })
+  .refine(
+    (val) => {
+      if (!(val instanceof File)) return false;
+      const type = (val.type || "").toLowerCase();
+      const name = (val.name || "").toLowerCase();
+      const byType =
+        type.startsWith("image/") ||
+        ALLOWED_IDENTITY_MIME_TYPES.includes(type);
+      const byExt = ALLOWED_IDENTITY_EXTENSIONS.some((ext) =>
+        name.endsWith(ext),
+      );
+      return byType || byExt;
+    },
+    {
+      message: "يُسمح برفع الصور أو ملفات PDF فقط",
+    },
+  );
+
+export const documentTypeEnum = z.enum(
+  ["IDCard", "Passport", "ResidencePermit"],
+  {
+    required_error: "نوع المستند مطلوب",
+  },
+);
+
+export type DocumentType = z.infer<typeof documentTypeEnum>;
+
+export const documentTypeLabels: Record<DocumentType, string> = {
+  IDCard: "بطاقة شخصية",
+  Passport: "جواز سفر",
+  ResidencePermit: "شهادة ميلاد",
+};
+
+export const registrationCompanionSchema = z
+  .object({
+    id: z.string().optional(),
+    relationshipId: z.string().min(1, { message: "صلة القرابة مطلوبة" }),
+    fullName: z.string().min(1, { message: "اسم المرافق كامل مطلوب" }),
+    documentType: documentTypeEnum.optional(),
+    nationalId: z
+      .string()
+      .min(1, { message: "رقم المستند مطلوب" })
+      .max(14, { message: "رقم المستند يجب ألا يزيد عن 14 رقمًا" }),
+    gender: z.enum(["male", "female"], {
+      required_error: "النوع مطلوب",
+    }).optional(),
+    birthDate: birthDateSchema,
+    documentImageUrl: z.string().optional(),
+    identityAttachment: identityFileSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.documentType) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["documentType"],
+        message: "نوع المستند مطلوب",
+      });
+    }
+    if (!data.gender) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["gender"],
+        message: "النوع مطلوب",
+      });
+    }
+
+    const needsNationalId =
+      data.documentType === "IDCard" ||
+      data.documentType === "ResidencePermit";
+    if (needsNationalId && !/^\d{14}$/.test(data.nationalId.trim())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["nationalId"],
+        message: "رقم المستند يجب أن يكون 14 رقمًا",
+      });
+    }
+  });
+
+export const registrationSchema = z
+  .object({
+  fullName: z
+    .string()
+    .min(1, { message: "الاسم الكامل مطلوب" })
+    .max(70, { message: "الاسم الكامل يجب ألا يزيد عن 70 حرفًا" }),
   nationalId: z
     .string()
-    .min(1, { message: "الرقم القومي للمرافق مطلوب" })
-    .regex(/^\d{14}$/, {
-      message: "الرقم القومي للمرافق يجب أن يكون 14 رقمًا",
-    }),
-  birthDate: birthDateSchema,
-  identityAttachment: identityFileSchema,
-});
-
-export const registrationSchema = z.object({
-  fullName: z.string().min(1, { message: "الاسم الكامل مطلوب" }),
-  nationalId: z
-    .string()
-    .min(1, { message: "الرقم القومي مطلوب" })
-    .regex(/^\d{14}$/, {
-      message: "الرقم القومي يجب أن يكون 14 رقمًا",
-    }),
+    .min(1, { message: "رقم المستند مطلوب" })
+    .max(14, { message: "رقم المستند يجب ألا يزيد عن 14 رقمًا" }),
+  documentType: documentTypeEnum,
   gender: z.enum(["male", "female"], {
     required_error: "النوع مطلوب",
   }),
@@ -77,9 +160,25 @@ export const registrationSchema = z.object({
     .string()
     .min(1, { message: "الإيميل مطلوب" })
     .email({ message: "الإيميل غير صحيح" }),
+  password: z
+    .string()
+    .min(1, { message: "كلمة المرور مطلوبة" })
+    .min(6, { message: "كلمة المرور يجب أن تكون على الأقل 6 أحرف" }),
   identityAttachment: identityFileSchema,
   companions: z.array(registrationCompanionSchema).default([]),
-});
+})
+  .superRefine((data, ctx) => {
+    const needsNationalId =
+      data.documentType === "IDCard" ||
+      data.documentType === "ResidencePermit";
+    if (needsNationalId && !/^\d{14}$/.test(data.nationalId.trim())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["nationalId"],
+        message: "رقم المستند يجب أن يكون 14 رقمًا",
+      });
+    }
+  });
 
 export type RegistrationFormValues = z.infer<typeof registrationSchema>;
 
@@ -232,11 +331,33 @@ export const SettingsSchema = z
 
 export const accountSchema = z
   .object({
-    userName: z.string().min(1, { message: "الاسم مطلوب" }),
+    id: z.string().optional(),
+    userName: z
+      .string()
+      .min(1, { message: "الاسم الكامل مطلوب" })
+      .max(70, { message: "الاسم الكامل يجب ألا يزيد عن 70 حرفًا" }),
+    documentType: documentTypeEnum,
+    documentNumber: z
+      .string()
+      .min(1, { message: "رقم المستند مطلوب" })
+      .max(14, { message: "رقم المستند يجب ألا يزيد عن 14 رقمًا" }),
+    gender: z.enum(["male", "female"], {
+      required_error: "النوع مطلوب",
+    }),
+    birthDate: birthDateSchema,
+    phone: z
+      .string()
+      .min(1, { message: "رقم الموبيل مطلوب" })
+      .regex(/^(010|011|012|015)\d{8}$/, {
+        message:
+          "رقم الموبيل يجب أن يبدأ بـ 010 أو 011 أو 012 أو 015 ويتكون من 11 رقمًا",
+      }),
     email: z
       .string()
       .min(1, { message: "الإيميل مطلوب" })
       .email({ message: "الإيميل غير صحيح" }),
+    identityAttachment: identityFileSchema.optional(),
+    documentImageUrl: z.string().optional(),
     oldPassword: z.string().optional(),
     newPassword: z
       .union([
@@ -254,6 +375,29 @@ export const accountSchema = z
       .optional(),
   })
   .superRefine((data, ctx) => {
+    const needsNationalId =
+      data.documentType === "IDCard" ||
+      data.documentType === "ResidencePermit";
+    if (needsNationalId && !/^\d{14}$/.test(data.documentNumber.trim())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["documentNumber"],
+        message: "رقم المستند يجب أن يكون 14 رقمًا",
+      });
+    }
+
+    const hasDocImage =
+      Boolean(data.identityAttachment) ||
+      Boolean(data.documentImageUrl?.trim());
+    const isChangingPassword = Boolean(data.oldPassword?.trim());
+    if (!hasDocImage && !isChangingPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["identityAttachment"],
+        message: "يرجى رفع صورة البطاقة/شهادة الميلاد",
+      });
+    }
+
     // If oldPassword has a value, then newPassword and confirmPassword are required
     if (data.oldPassword && data.oldPassword.trim() !== "") {
       if (!data.newPassword || data.newPassword.trim() === "") {
@@ -286,10 +430,48 @@ export const accountSchema = z
       });
     }
 
-    // Validate that new password and confirm password match
+    // Validate match only when both fields have input (avoid stale mismatch while typing)
     if (
-      data.newPassword &&
-      data.confirmPassword &&
+      data.newPassword?.trim() &&
+      data.confirmPassword?.trim() &&
+      data.newPassword !== data.confirmPassword
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmPassword"],
+        message: "كلمتا المرور غير متطابقتين",
+      });
+    }
+  });
+
+/** Staff/admin account page: password change only (no profile / identity validation). */
+export const accountPasswordChangeSchema = z
+  .object({
+    id: z.string().optional(),
+    oldPassword: z
+      .string()
+      .min(1, { message: "كلمة المرور الحالية مطلوبة" }),
+    newPassword: z
+      .string()
+      .min(6, { message: "كلمة المرور يجب ألا تقل عن 6 أحرف" }),
+    confirmPassword: z
+      .string()
+      .min(6, { message: "تأكيد كلمة المرور يجب ألا يقل عن 6 أحرف" }),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      data.oldPassword.trim() &&
+      data.newPassword.trim() &&
+      data.oldPassword === data.newPassword
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["newPassword"],
+        message: "يجب أن تختلف كلمة المرور الجديدة عن الحالية",
+      });
+    }
+    if (
+      data.confirmPassword.trim() &&
       data.newPassword !== data.confirmPassword
     ) {
       ctx.addIssue({

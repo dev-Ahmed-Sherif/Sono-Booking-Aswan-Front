@@ -1,40 +1,38 @@
+import { useCallback, useMemo } from "react";
+
 export const useLocalStorage = (key: string) => {
-  const removeItem = () => {
+  const removeItem = useCallback(() => {
     if (typeof window === "undefined") return;
     try {
       localStorage.removeItem(key);
     } catch (error) {
       console.error("Error removing localStorage:", error);
     }
-  };
+  }, [key]);
 
-  const setItem = (value: any) => {
+  const setItem = useCallback((value: unknown) => {
     if (typeof window === "undefined") return;
     try {
-      // Don't store undefined or null values
       if (value === undefined || value === null) {
-        removeItem();
+        localStorage.removeItem(key);
         return;
       }
       localStorage.setItem(key, JSON.stringify(value));
     } catch (error) {
       console.error("Error setting localStorage:", error);
-      return;
     }
-  };
+  }, [key]);
 
-  const getItem = () => {
+  const getItem = useCallback(() => {
     if (typeof window === "undefined") return undefined;
     try {
       const item = localStorage.getItem(key);
-      // Check if item exists and is not the string "undefined" or "null"
       if (!item || item === "undefined" || item === "null") {
         return undefined;
       }
       return JSON.parse(item);
     } catch (error) {
       console.error("Error getting localStorage:", error);
-      // If parsing fails, remove the invalid item and return undefined
       try {
         localStorage.removeItem(key);
       } catch (removeError) {
@@ -42,7 +40,10 @@ export const useLocalStorage = (key: string) => {
       }
       return undefined;
     }
-  };
+  }, [key]);
 
-  return { getItem, setItem, removeItem };
+  return useMemo(
+    () => ({ getItem, setItem, removeItem }),
+    [getItem, setItem, removeItem],
+  );
 };

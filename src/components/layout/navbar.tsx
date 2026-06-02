@@ -11,10 +11,10 @@ import { useSelector, useDispatch } from "react-redux";
 import {
   Activity,
   ArrowUpRight,
-  CircleUser,
   CreditCard,
   DollarSign,
   Hotel,
+  LogOut,
   Menu,
   Search,
   Users,
@@ -31,15 +31,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-
-import {
   Sheet,
   SheetContent,
   SheetTrigger,
@@ -55,6 +46,18 @@ import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { Logout, getUserData } from "@/actions/auth";
 import { setLink } from "@/redux/navSiteReducer";
 import { setUserId, setOrganizationId, setRole } from "@/redux/userReducer";
+import {
+  canAccessHousingReceiverFromCandidates,
+  canAccessHousingSenderFromCandidates,
+  HOUSING_SENDER_ROLE,
+  type RoleCandidates,
+} from "@/lib/role-utils";
+
+/** Avoids SSR + first client paint reading `localStorage` (hydration mismatch). */
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
+
+type StoredUserBrief = RoleCandidates & { name?: string };
 
 type NavbarProps = {
   cookie: string | null;
@@ -80,6 +83,30 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
   const clearAllClientCookiesRef = React.useRef<(() => void) | null>(null);
   const nav = useLocalStorage("Nav");
   const user = useLocalStorage("user");
+
+  /** `pending` until after mount so server HTML matches first client render (no LS on server). */
+  const [storedUserBrief, setStoredUserBrief] = React.useState<
+    StoredUserBrief | null | "pending"
+  >("pending");
+
+  useIsomorphicLayoutEffect(() => {
+    const raw = user.getItem() as StoredUserBrief | undefined;
+    setStoredUserBrief(raw ?? null);
+    // Intentionally once: snapshot localStorage after mount for hydration-safe role/name.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Prefer non-empty Redux, else localStorage role (only after `storedUserBrief !== "pending"`). */
+  const effectiveRole = React.useMemo(() => {
+    const fromRedux = String(role ?? "").trim();
+    if (storedUserBrief === "pending") {
+      return fromRedux.toLowerCase();
+    }
+    const fromStorage = storedUserBrief
+      ? String(storedUserBrief.role ?? "").trim()
+      : "";
+    return (fromRedux || fromStorage).toLowerCase();
+  }, [role, storedUserBrief]);
 
   const handleSheetClose = () => setSheetOpen(false);
   // console.log("Cookie :", cookie);
@@ -302,7 +329,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     if (cookieValue !== cookie) {
       setCookieValue(cookie);
     }
-  }, [cookie, nav, user, cookieValue]);
+  }, [cookie, cookieValue, nav.removeItem, nav.getItem, user.removeItem]);
 
   React.useEffect(() => {
     if (pathname === "/ar" || pathname === "/en") {
@@ -318,7 +345,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
       setActiveTab(stored);
       dispatch(setLink(stored));
     }
-  }, [nav, dispatch]);
+  }, [dispatch, nav.getItem]);
 
   // Keep Redux and activeTab in sync when cookie is present
   React.useEffect(() => {
@@ -330,7 +357,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     } else if (activeTab !== active) {
       setActiveTab(active);
     }
-  }, [dispatch, active, nav, cookieValue, activeTab]);
+  }, [dispatch, active, cookieValue, activeTab, nav.getItem]);
 
   // Get user role from Redux state or localStorage (client-side only)
   React.useEffect(() => {
@@ -343,7 +370,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
         userRole === "super admin";
       setIsSuperAdmin(superAdminCheck);
     }
-  }, [role, user]);
+  }, [role, user.getItem]);
 
   // Helper function to check if Acc_Tok_SMS cookie exists
   const checkAccTokCookie = React.useCallback(() => {
@@ -397,11 +424,16 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
 
             // Update user data if successful
             if (result.data?.data) {
+              const d = result.data.data;
+              const resolvedEmployeeId = d.employeeId ?? d.EmployeeId;
               user.setItem({
-                id: result.data.data.id,
-                name: result.data.data.name,
-                role: result.data.data.role,
-                organizationId: result.data.data.organizationId,
+                id: d.id,
+                name: d.name,
+                role: d.role,
+                organizationId: d.organizationId,
+                ...(resolvedEmployeeId != null && resolvedEmployeeId !== ""
+                  ? { employeeId: resolvedEmployeeId }
+                  : {}),
               });
 
               // Update Redux state
@@ -450,8 +482,8 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cookieValue]); // Only depend on cookieValue - other deps are stable or accessed via refs
 
-  const routes = React.useMemo(
-    () => [
+  const routes = React.useMemo(() => {
+    const allRoutes = [
       {
         id: 1,
         href: `/${locale}/dashboard`,
@@ -486,9 +518,68 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
           pathname === `/${locale}/settings` ||
           pathname.startsWith(`/${locale}/settings/`),
       },
-    ],
-    [locale, pathname, tNav],
-  );
+    ];
+
+    const normalizedRole = effectiveRole;
+    const roleCandidates: RoleCandidates = {
+      role: normalizedRole || undefined,
+      ...(storedUserBrief !== "pending" && storedUserBrief
+        ? {
+            roleName: storedUserBrief.roleName,
+            roleEn: storedUserBrief.roleEn,
+            roleAr: storedUserBrief.roleAr,
+          }
+        : {}),
+    };
+
+    if (normalizedRole === "user") {
+      return allRoutes.filter(
+        (route) => route.href === `/${locale}/reservation`,
+      );
+    }
+    if (normalizedRole === HOUSING_SENDER_ROLE) {
+      return allRoutes.filter(
+        (route) =>
+          route.href === `/${locale}/dashboard` ||
+          route.href === `/${locale}/housing-sender`,
+      );
+    }
+    if (canAccessHousingReceiverFromCandidates(roleCandidates)) {
+      return allRoutes.filter(
+        (route) => route.href === `/${locale}/housing-receiver`,
+      );
+    }
+
+    return allRoutes.filter((route) => {
+      if (route.href === `/${locale}/housing-sender`) {
+        return canAccessHousingSenderFromCandidates(roleCandidates);
+      }
+      if (route.href === `/${locale}/housing-receiver`) {
+        return canAccessHousingReceiverFromCandidates(roleCandidates);
+      }
+      return true;
+    });
+  }, [locale, pathname, effectiveRole, storedUserBrief, tNav]);
+
+  const navHomeHref = React.useMemo(() => {
+    if (effectiveRole === "user") {
+      return `/${locale}/reservation`;
+    }
+    const roleCandidates: RoleCandidates = {
+      role: effectiveRole || undefined,
+      ...(storedUserBrief !== "pending" && storedUserBrief
+        ? {
+            roleName: storedUserBrief.roleName,
+            roleEn: storedUserBrief.roleEn,
+            roleAr: storedUserBrief.roleAr,
+          }
+        : {}),
+    };
+    if (canAccessHousingReceiverFromCandidates(roleCandidates)) {
+      return `/${locale}/housing-receiver`;
+    }
+    return `/${locale}/dashboard`;
+  }, [effectiveRole, storedUserBrief, locale]);
 
   // Keep active tab in sync with current pathname (e.g. when landing on /ar/settings)
   React.useEffect(() => {
@@ -601,7 +692,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
   return (
     <header className="sticky top-0 z-[9999] w-full max-w-full min-w-0 overflow-hidden py-10 h-20 flex items-center gap-2 sm:gap-4 border-b bg-background px-4 md:px-6 lg:px-8">
       <Link
-        href={`/${locale}/dashboard`}
+        href={navHomeHref}
         className="hidden min-[771px]:flex md:shrink-0 md:items-center md:gap-2 md:font-semibold md:text-lg"
       >
         <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-blue-600 text-white shadow-md">
@@ -668,7 +759,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
           </VisuallyHidden>
           <nav className="px-10 grid items-center justify-center gap-6 text-lg font-medium">
             <Link
-              href={`/${locale}/dashboard`}
+              href={navHomeHref}
               className="flex items-center justify-center gap-2 text-lg font-semibold"
               onClick={handleSheetClose}
             >
@@ -722,79 +813,34 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
           </nav>
         </SheetContent>
       </Sheet>
-      <div className="flex w-full items-center justify-end gap-4 md:ml-auto md:gap-2 lg:gap-4">
-        <ModeToggle />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="secondary"
-              size="icon"
-              className="rounded-full relative overflow-hidden group hover:bg-primary/10 transition-all duration-300 border-2 border-primary/20 hover:border-primary/40"
+      <div className="flex w-full items-center justify-end gap-2 sm:gap-4 md:ml-auto md:gap-4 flex-wrap min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 justify-end flex-wrap">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 max-w-[min(100%,22rem)]">
+            <span className="text-base font-medium text-muted-foreground shrink-0 sm:text-lg">
+              {tNav("welcome")}
+            </span>
+            <Link
+              href={`/${locale}/account`}
+              className="truncate min-w-0 rounded-md px-2 py-0.5 text-base font-bold text-foreground underline-offset-4 transition-colors hover:bg-blue-500/15 hover:text-blue-600 hover:underline dark:hover:bg-blue-400/20 dark:hover:text-blue-400 sm:text-lg"
             >
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-secondary/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <CircleUser className="h-5 w-5 relative z-10 group-hover:rotate-12 transition-transform duration-300" />
-              <span className="sr-only">Toggle user menu</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="w-64 p-0 bg-card/98 backdrop-blur-md border-0 shadow-2xl shadow-primary/5 dark:shadow-primary/10 rounded-2xl overflow-hidden"
-            align="end"
-            sideOffset={12}
+              {storedUserBrief === "pending"
+                ? tNav("accountFallback")
+                : storedUserBrief?.name || tNav("accountFallback")}
+            </Link>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="default"
+            onClick={() => logout()}
+            className="shrink-0 h-10 gap-2 border-destructive/30 px-3 text-base font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-11 sm:px-4 sm:text-lg"
+            aria-label={tNav("logout")}
           >
-            {/* Menu Items */}
-            <div className="p-4 flex flex-col items-center space-y-3">
-              <DropdownMenuItem className="group cursor-pointer rounded-xl px-6 py-4 w-full max-w-48 transition-all duration-300 hover:bg-gradient-to-r hover:from-primary/8 hover:to-primary/4 hover:shadow-lg hover:shadow-primary/10 hover:-translate-y-0.5">
-                <Link
-                  href={`/${locale}/account`}
-                  className="flex items-center justify-center gap-3 text-sm font-medium text-foreground group-hover:text-primary transition-colors"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
-                    <CircleUser className="h-5 w-5 group-hover:scale-110 transition-transform duration-200" />
-                  </div>
-                  <span className="text-center">
-                    {user.getItem()?.name || "حسابى"}
-                  </span>
-                </Link>
-              </DropdownMenuItem>
-
-              <DropdownMenuSeparator className="w-32 bg-gradient-to-r from-transparent via-border/50 to-transparent" />
-
-              <DropdownMenuItem className="group cursor-pointer rounded-xl px-6 py-4 w-full max-w-48 transition-all duration-300 hover:bg-gradient-to-r hover:from-destructive/8 hover:to-destructive/4 hover:shadow-lg hover:shadow-destructive/10 hover:-translate-y-0.5">
-                <Button
-                  onClick={() => logout()}
-                  variant="ghost"
-                  className="w-full justify-center p-0 h-auto text-sm font-medium text-foreground group-hover:text-destructive transition-colors"
-                >
-                  <div className="flex items-center justify-center gap-3 w-full">
-                    <div className="w-10 h-10 rounded-lg bg-destructive/10 group-hover:bg-destructive/20 flex items-center justify-center transition-colors">
-                      <svg
-                        className="h-5 w-5 group-hover:scale-110 transition-transform duration-200"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                        />
-                      </svg>
-                    </div>
-                    <span className="text-center">تسجيل الخروج</span>
-                  </div>
-                </Button>
-              </DropdownMenuItem>
-            </div>
-
-            {/* Footer */}
-            <div className="px-4 py-3 bg-muted/30 border-t border-border/20">
-              <p className="text-xs text-muted-foreground text-center">
-                نظام إدارة النشاطات العائمة في أسوان
-              </p>
-            </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <LogOut className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden />
+            <span className="hidden sm:inline">{tNav("logout")}</span>
+          </Button>
+        </div>
+        <ModeToggle />
       </div>
     </header>
   );

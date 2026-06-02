@@ -34,6 +34,7 @@ import { bedSchema, type BedFormValues } from "@/schemas";
 import { useToast } from "@/hooks/use-toast";
 import {
   addBed,
+  deleteBedAttachmentsRange,
   getBedById,
   getBeds,
   softDeleteBedById,
@@ -57,7 +58,12 @@ function basename(path: string): string {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
-type BedImageMeta = { id?: string; path: string; isPrimary?: boolean };
+type BedImageMeta = {
+  id?: string;
+  attachmentId?: string;
+  path: string;
+  isPrimary?: boolean;
+};
 type LookupOption = { id: string; nameAr: string; nameEn?: string };
 
 type BedFormProps = {
@@ -73,10 +79,11 @@ type BedRecordRow = {
   bedNumber: string;
   dimensions: string;
   status: string;
+  roomId: string;
 };
 
 function buildBedRecordColumns(
-  onEdit: (id: string) => void,
+  onEdit: (id: string, roomId?: string) => void,
   onDelete: (id: string) => void,
 ): ColumnDef<BedRecordRow>[] {
   return [
@@ -106,7 +113,7 @@ function buildBedRecordColumns(
             dimensions: row.original.dimensions,
             status: row.original.status,
           }}
-          onEdit={onEdit}
+          onEdit={() => onEdit(row.original.id, row.original.roomId)}
           onDelete={onDelete}
         />
       ),
@@ -166,6 +173,7 @@ export default function BedForm({
           .filter((item) => typeof item?.path === "string" && item.path.trim())
           .map((item) => ({
             id: String(item.id ?? "").trim(),
+            attachmentId: String(item.attachmentId ?? "").trim(),
             path: String(item.path).trim(),
             isPrimary: Boolean(item.isPrimary),
           }))
@@ -174,10 +182,15 @@ export default function BedForm({
 
     const imgs = defaultValues?.images;
     if (!Array.isArray(imgs))
-      return [] as Array<{ id: string; path: string; isPrimary: boolean }>;
+      return [] as Array<{
+        id: string;
+        attachmentId: string;
+        path: string;
+        isPrimary: boolean;
+      }>;
     return imgs
       .filter((x): x is string => typeof x === "string" && x.trim() !== "")
-      .map((path) => ({ id: "", path, isPrimary: false }));
+      .map((path) => ({ id: "", attachmentId: "", path, isPrimary: false }));
   }, [defaultValues]);
 
   const serverImagePaths = useMemo(
@@ -196,6 +209,9 @@ export default function BedForm({
   const [serverIdByPath, setServerIdByPath] = useState<Record<string, string>>(
     {},
   );
+  const [serverAttachmentIdByPath, setServerAttachmentIdByPath] = useState<
+    Record<string, string>
+  >({});
   const [newPrimaryMap, setNewPrimaryMap] = useState<Record<string, boolean>>(
     {},
   );
@@ -210,6 +226,14 @@ export default function BedForm({
     setServerIdByPath(
       Object.fromEntries(
         defaultImageMeta.map((item) => [item.path, String(item.id ?? "")]),
+      ),
+    );
+    setServerAttachmentIdByPath(
+      Object.fromEntries(
+        defaultImageMeta.map((item) => [
+          item.path,
+          String(item.attachmentId ?? ""),
+        ]),
       ),
     );
     setNewPrimaryMap({});
@@ -233,6 +257,21 @@ export default function BedForm({
       ...defaultValues,
     },
   });
+
+  const incomingRoomId = String(
+    (defaultValues as Record<string, unknown> | undefined)?.roomId ?? "",
+  ).trim();
+
+  useEffect(() => {
+    if (!incomingRoomId) return;
+    const currentRoomId = String(form.getValues("roomId") ?? "").trim();
+    if (currentRoomId === incomingRoomId) return;
+    form.setValue("roomId", incomingRoomId, {
+      shouldDirty: false,
+      shouldTouch: false,
+      shouldValidate: false,
+    });
+  }, [incomingRoomId, form]);
 
   useEffect(() => {
     const files = bedImages.map((x) => x.file);
@@ -278,6 +317,7 @@ export default function BedForm({
           bedNumber: String(item.bedNumber ?? item.BedNumber ?? "").trim(),
           dimensions: String(item.dimensions ?? item.Dimensions ?? "").trim(),
           status: String(item.status ?? item.Status ?? "").trim(),
+          roomId: String(item.roomId ?? item.RoomId ?? "").trim(),
         }))
         .filter((item) => item.id && item.bedNumber);
       setBedRecords(mapped);
@@ -363,6 +403,23 @@ export default function BedForm({
           ? "تم تعديل بيانات السرير بنجاح"
           : "تم حفظ بيانات السرير بنجاح",
       });
+
+      const attachmentIdsToDelete = Array.from(removedServerPaths)
+        .map((path) => (serverAttachmentIdByPath[path] ?? "").trim())
+        .filter(Boolean);
+      if (attachmentIdsToDelete.length > 0) {
+        const delResult = await deleteBedAttachmentsRange(attachmentIdsToDelete);
+        if ((delResult as { error?: string })?.error) {
+          toast({
+            variant: "destructive",
+            title: "تعذر حذف بعض الصور",
+            description:
+              (delResult as { message?: string })?.message ||
+              "تعذر حذف الصور المُزالة من الخادم",
+          });
+        }
+      }
+
       await loadBedRecords();
       resetFormAfterSave();
 
@@ -400,7 +457,7 @@ export default function BedForm({
     }
   };
 
-  const handleRowEdit = async (id: string) => {
+  const handleRowEdit = async (id: string, fallbackRoomId?: string) => {
     if (!id || editLoading) return;
     try {
       setEditLoading(true);
@@ -418,7 +475,16 @@ export default function BedForm({
       const raw = (result as { data?: unknown }).data ?? result;
       if (!raw || typeof raw !== "object") return;
       const mapped = mapApiBedToFormDefaults(raw as Record<string, unknown>);
-      setEditDefaults(mapped as Partial<BedFormValues>);
+      const merged: Partial<BedFormValues> = {
+        ...(mapped as Partial<BedFormValues>),
+      };
+      if (
+        (!merged.roomId || String(merged.roomId).trim() === "") &&
+        fallbackRoomId
+      ) {
+        merged.roomId = fallbackRoomId;
+      }
+      setEditDefaults(merged);
       setEditModalOpen(true);
     } finally {
       setEditLoading(false);
@@ -468,7 +534,8 @@ export default function BedForm({
   useEffect(() => {
     let cancelled = false;
     const loadRoomOptions = async () => {
-      const result = await getRooms(routeApartmentId);
+      const apartmentFilter = currentId ? "" : routeApartmentId;
+      const result = await getRooms(apartmentFilter);
       if (cancelled) return;
       if ((result as { error?: string })?.error) {
         console.error("[bed-form] getRooms failed", result);
@@ -496,7 +563,7 @@ export default function BedForm({
     return () => {
       cancelled = true;
     };
-  }, [routeApartmentId]);
+  }, [routeApartmentId, currentId]);
 
   useEffect(() => {
     const currentRoomId = form.getValues("roomId");
@@ -531,6 +598,7 @@ export default function BedForm({
     setRemovedServerPaths(new Set());
     setServerPrimaryMap({});
     setServerIdByPath({});
+    setServerAttachmentIdByPath({});
     if (bedImagesInputRef.current) bedImagesInputRef.current.value = "";
 
     form.reset(
@@ -739,6 +807,7 @@ export default function BedForm({
               <FormItem className="w-full">
                 <FormLabel>الغرفة</FormLabel>
                 <Select
+                  key={`room-select-${roomOptions.length}`}
                   dir="rtl"
                   value={field.value ?? ""}
                   onValueChange={field.onChange}

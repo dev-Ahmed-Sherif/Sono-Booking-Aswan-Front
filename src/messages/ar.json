@@ -10,7 +10,10 @@
     "reservation": "الحجز",
     "housingReceiver": "لوحة تحكم مسؤول القاهرة",
     "housingSender": "لوحة تحكم مسؤول أسوان",
-    "settings": "الاعدادات"
+    "settings": "الاعدادات",
+    "welcome": "مرحباً،",
+    "accountFallback": "حسابى",
+    "logout": "تسجيل الخروج"
   },
   "Chat": {
     "title": "المحادثات",
