@@ -1,6 +1,8 @@
 import createMiddleware from "next-intl/middleware";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+
+import { accessTokenCookieName, localeCookieName } from "@/lib/auth-cookies";
 // export default createMiddleware({
 //   // A list of all locales that are supported
 //   locales: ["en", "ar"],
@@ -22,6 +24,19 @@ function isLocaleRootPath(pathname: string) {
 
 function isValidLastRoute(pathname: string, currentPathname: string) {
   return !isLocaleRootPath(pathname) && pathname !== currentPathname;
+}
+
+function hasAuthSession(req: NextRequest): boolean {
+  const access = req.cookies.get(accessTokenCookieName())?.value?.trim();
+  return Boolean(access);
+}
+
+function defaultLocale(req: NextRequest): string {
+  const locale = req.cookies.get(localeCookieName())?.value?.trim();
+  if (locale === "ar" || locale === "en") return locale;
+  const segment = req.nextUrl.pathname.split("/")[1];
+  if (segment === "ar" || segment === "en") return segment;
+  return "ar";
 }
 
 const intlMiddleware = createMiddleware({
@@ -50,28 +65,11 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  let accessCookie = cookies.get(`${process.env.ACCESS_TOKEN_COOKIE}`);
-  // console.log("accessCookie", accessCookie);
-  let refreshCookie = cookies.get(
-    `${process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE}`,
-  );
-  // get the current cookie for local language
-  let locale = cookies.get(`${process.env.NEXT_LOCALE}`);
+  const authenticated = hasAuthSession(req);
+  const activeLocale = defaultLocale(req);
 
-  // Read user information from cookies
-  const userId = cookies.get(
-    `${process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE}`,
-  )?.value;
-  // Check if user is authenticated
-  if (
-    (accessCookie == null || accessCookie === undefined) &&
-    !publicPages.includes(nextUrl.pathname)
-  ) {
-    console.log("accessCookie is undefined");
-    // Build redirect URL with reload parameter
-    const redirectUrl = new URL(
-      locale ? `${origin}/${locale?.value}` : `${origin}/ar`,
-    );
+  if (!authenticated && !publicPages.includes(nextUrl.pathname)) {
+    const redirectUrl = new URL(`${origin}/${activeLocale}`);
     // Add reload parameter to trigger client-side reload
     redirectUrl.searchParams.set("reload", "true");
 
@@ -87,7 +85,7 @@ export async function middleware(req: NextRequest) {
     return response;
   }
 
-  // if (accessCookie !== null && publicPages.includes(nextUrl.pathname)) {
+  // if (authenticated && publicPages.includes(nextUrl.pathname)) {
   //   const localeFromPath = nextUrl.pathname.split("/")[1];
   //   const activeLocale =
   //     localeFromPath === "ar" || localeFromPath === "en"

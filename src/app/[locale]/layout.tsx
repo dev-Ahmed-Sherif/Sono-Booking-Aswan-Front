@@ -7,6 +7,7 @@ import { getMessages, getLocale } from "next-intl/server";
 import "@/styles/globals.css";
 
 import Navbar from "@/components/layout/navbar";
+import { accessTokenCookieName } from "@/lib/auth-cookies";
 import Footer from "@/components/layout/footer";
 
 import ThemeProvider from "@/providers/theme-provider";
@@ -50,7 +51,7 @@ export default async function RootLayout({
   const locale = await getLocale();
 
   // Get the access token cookie - check if it exists (not just the name)
-  const accessCookie = backEndCookies.get(`${process.env.ACCESS_TOKEN_COOKIE}`);
+  const accessCookie = backEndCookies.get(accessTokenCookieName());
   const access = accessCookie ? accessCookie.value : null;
 
   return (

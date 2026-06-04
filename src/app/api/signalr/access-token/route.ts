@@ -1,15 +1,10 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-export async function GET() {
-  const cookieName = process.env.ACCESS_TOKEN_COOKIE;
-  if (!cookieName) {
-    return NextResponse.json(
-      { error: "Server misconfiguration", message: "ACCESS_TOKEN_COOKIE is not set" },
-      { status: 500 },
-    );
-  }
+import { accessTokenCookieName } from "@/lib/auth-cookies";
 
+export async function GET() {
+  const cookieName = accessTokenCookieName();
   const store = await cookies();
   const token = store.get(cookieName)?.value;
 

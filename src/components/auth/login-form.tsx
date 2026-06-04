@@ -46,6 +46,11 @@ import { ToastAction } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 import { getUserData, Login, verifyAccessTokenCookie } from "@/actions/auth";
+import {
+  accessTokenCookieName,
+  guideCookieName,
+  refreshTokenCookieName,
+} from "@/lib/auth-cookies";
 import type { AvailableUnitType } from "@/actions/availabilityService";
 import { getGenders } from "@/actions/settings/genderService";
 import { getAllocationTypes } from "@/actions/settings/allocationTypeService";
@@ -129,25 +134,18 @@ function delayMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function accessTokenCookieName(): string {
-  return (
-    (process.env.NEXT_PUBLIC_ACCESS_TOKEN_COOKIE ?? "").trim() ||
-    "Acc_Tok_Sono_Booking"
-  );
-}
-
-function refreshTokenCookieName(): string {
-  return (
-    (process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE ?? "").trim() ||
-    "Ref_Tok_Sono_Booking"
-  );
-}
-
-function guideCookieName(): string {
-  return (
-    (process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE ?? "").trim() ||
-    "Ref_Guid_Sono_Booking"
-  );
+async function syncServerAccessToken(accessToken: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/auth/set-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ accessToken }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 function getClientCookie(name: string): string | null {
@@ -225,6 +223,7 @@ async function ensureLoginCookiesReady(tokens: {
   refreshToken?: string;
   userId?: string;
 }): Promise<boolean> {
+  await syncServerAccessToken(tokens.accessToken);
   setLoginAuthCookies(tokens);
 
   const clientExpected: Array<{ name: string; value: string }> = [
@@ -751,10 +750,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
             dispatch(setGovernorateId(governorateId ?? ""));
             const targetRoute = getPostLoginPath(locale, role);
             nav.setItem(targetRoute);
-            setTimeout(() => {
-              router.push(targetRoute);
-              setTimeout(() => window.location.reload(), 700);
-            }, 35);
+            router.replace(targetRoute);
           } catch (err) {
             console.error("Error getting user data:", err);
             toast({

@@ -47,6 +47,11 @@ import { Logout, getUserData } from "@/actions/auth";
 import { setLink } from "@/redux/navSiteReducer";
 import { setUserId, setOrganizationId, setRole } from "@/redux/userReducer";
 import {
+  accessTokenCookieName,
+  guideCookieName,
+  refreshTokenCookieName,
+} from "@/lib/auth-cookies";
+import {
   canAccessHousingReceiverFromCandidates,
   canAccessHousingSenderFromCandidates,
   HOUSING_SENDER_ROLE,
@@ -56,27 +61,6 @@ import {
 /** Avoids SSR + first client paint reading `localStorage` (hydration mismatch). */
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
-
-function accessTokenCookieName(): string {
-  return (
-    (process.env.NEXT_PUBLIC_ACCESS_TOKEN_COOKIE ?? "").trim() ||
-    "Acc_Tok_Sono_Booking"
-  );
-}
-
-function refreshTokenCookieName(): string {
-  return (
-    (process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE ?? "").trim() ||
-    "Ref_Tok_Sono_Booking"
-  );
-}
-
-function guideCookieName(): string {
-  return (
-    (process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE ?? "").trim() ||
-    "Ref_Guid_Sono_Booking"
-  );
-}
 
 function isLocaleLoginPath(pathname: string): boolean {
   return pathname === "/ar" || pathname === "/en";

@@ -1,6 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
+import { accessTokenCookieName, refreshTokenCookieName } from "@/lib/auth-cookies";
 
 // Helper to get cookies (handles both sync and async)
 const getCookies = async () => {
@@ -11,16 +12,12 @@ const getCookies = async () => {
 
 export const getAccessToken = async () => {
   const backEndCookies = await getCookies();
-  return backEndCookies.get(`${process.env.ACCESS_TOKEN_COOKIE}`)?.value;
+  return backEndCookies.get(accessTokenCookieName())?.value;
 };
 
 export const getRefreshToken = async () => {
   const backEndCookies = await getCookies();
-  const name =
-    process.env.REFRESH_TOKEN_COOKIE ??
-    process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE;
-  if (!name) return undefined;
-  return backEndCookies.get(name)?.value;
+  return backEndCookies.get(refreshTokenCookieName())?.value;
 };
 
 // Cookie maxAge/expires: env value is in SECONDS (e.g. 604800 = 7 days)
@@ -37,21 +34,23 @@ const getAccessTokenLifeSeconds = () => {
 export const setAccessToken = async (token: string) => {
   const backEndCookies = await getCookies();
   const maxAgeSeconds = getAccessTokenLifeSeconds();
+  const isProduction = process.env.NODE_ENV === "production";
+
   backEndCookies.set({
-    name: `${process.env.ACCESS_TOKEN_COOKIE}`,
+    name: accessTokenCookieName(),
     value: token,
     httpOnly: true,
-    secure: true,
+    secure: isProduction,
     path: "/",
-    sameSite: "strict",
+    sameSite: "lax",
     expires: new Date(Date.now() + maxAgeSeconds * 1000),
     maxAge: maxAgeSeconds,
-    domain: process.env.NODE_ENV === "production" ? ".sono.net" : "localhost",
+    ...(isProduction ? { domain: ".sono.net" } : {}),
     priority: "high",
   });
 };
 
 export const clearAccessToken = async () => {
   const backEndCookies = await getCookies();
-  backEndCookies.delete(`${process.env.ACCESS_TOKEN_COOKIE}`);
+  backEndCookies.delete(accessTokenCookieName());
 };

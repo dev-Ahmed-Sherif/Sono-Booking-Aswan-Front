@@ -2,10 +2,11 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/auth/login-form";
+import { accessTokenCookieName } from "@/lib/auth-cookies";
 
 export default async function Home() {
   const backEndCookies = cookies();
-  const access = backEndCookies.get(`${process.env.ACCESS_TOKEN_COOKIE}`);
+  const access = backEndCookies.get(accessTokenCookieName());
   // if (access) {
   //   redirect("/ar/dashboard");
   // }
