@@ -57,6 +57,31 @@ import {
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
 
+function accessTokenCookieName(): string {
+  return (
+    (process.env.NEXT_PUBLIC_ACCESS_TOKEN_COOKIE ?? "").trim() ||
+    "Acc_Tok_Sono_Booking"
+  );
+}
+
+function refreshTokenCookieName(): string {
+  return (
+    (process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE ?? "").trim() ||
+    "Ref_Tok_Sono_Booking"
+  );
+}
+
+function guideCookieName(): string {
+  return (
+    (process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE ?? "").trim() ||
+    "Ref_Guid_Sono_Booking"
+  );
+}
+
+function isLocaleLoginPath(pathname: string): boolean {
+  return pathname === "/ar" || pathname === "/en";
+}
+
 type StoredUserBrief = RoleCandidates & { name?: string };
 
 type NavbarProps = {
@@ -206,43 +231,14 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
           });
         }
 
-        // Get all cookies
-        const cookies = document.cookie.split(";");
-
-        // Delete each cookie by setting it to expire in the past
-        cookies.forEach((cookie) => {
-          const eqPos = cookie.indexOf("=");
-          const name =
-            eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
-
-          if (!name) return;
-
-          paths.forEach((path) => {
-            domains.forEach((domain) => {
-              try {
-                if (domain) {
-                  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=${path};domain=${domain};SameSite=None;Secure`;
-                  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=${path};domain=${domain}`;
-                } else {
-                  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=${path};SameSite=None;Secure`;
-                  document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=${path}`;
-                }
-              } catch (e) {
-                // Ignore errors for specific cookie deletion attempts
-              }
-            });
-          });
-        });
-
-        // Also try to clear cookies by name if we know them
+        // Only clear known auth cookies (never wipe every document.cookie — that removed fresh login tokens).
         const knownCookieNames = [
-          process.env.ACCESS_TOKEN_COOKIE,
-          process.env.REFRESH_TOKEN_COOKIE,
-          process.env.REFRESH_GUDIE_COOKIE,
-          process.env.NEXT_LOCALE,
-          "Ref_guid_SMS", // Explicitly clear Ref_guid_SMS_SMS cookie
-          "Ref_Tok_SMS", // Explicitly clear Ref_Tok_SMS cookie
-        ].filter(Boolean);
+          accessTokenCookieName(),
+          refreshTokenCookieName(),
+          guideCookieName(),
+          "Ref_guid_SMS",
+          "Ref_Tok_SMS",
+        ];
 
         knownCookieNames.forEach((cookieName) => {
           if (cookieName) {
@@ -310,15 +306,17 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
       return;
     }
 
-    // Check if cookie changed from a value to null (token expired/deleted)
-    if (prevCookieRef.current !== null && cookie === null) {
-      // Cookie was deleted/expired - clear cookies and local storage
-      console.log("Cookie expired/deleted, clearing data...");
-      // Clear all client-side cookies (only once) - use ref to avoid dependency
+    // Server session ended — clear client auth only outside login/register pages.
+    if (
+      prevCookieRef.current !== null &&
+      cookie === null &&
+      !isLocaleLoginPath(pathname) &&
+      !pathname.endsWith("/register")
+    ) {
+      console.log("Server access cookie cleared, clearing client auth data...");
       if (clearAllClientCookiesRef.current) {
         clearAllClientCookiesRef.current();
       }
-      // Clear local storage
       nav.removeItem();
       user.removeItem();
     }
@@ -329,13 +327,17 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     if (cookieValue !== cookie) {
       setCookieValue(cookie);
     }
-  }, [cookie, cookieValue, nav.removeItem, nav.getItem, user.removeItem]);
+  }, [cookie, cookieValue, nav.removeItem, nav.getItem, user.removeItem, pathname]);
 
   React.useEffect(() => {
-    if (pathname === "/ar" || pathname === "/en") {
+    if (isLocaleLoginPath(pathname) && !cookie) {
       setCookieValue(null);
+      return;
     }
-  }, [pathname]);
+    if (cookie) {
+      setCookieValue(cookie);
+    }
+  }, [pathname, cookie]);
 
   // Read activeTab from localStorage on mount and whenever nav/cookieValue allows
   React.useEffect(() => {
@@ -372,115 +374,92 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     }
   }, [role, user.getItem]);
 
-  // Helper function to check if Acc_Tok_SMS cookie exists
   const checkAccTokCookie = React.useCallback(() => {
     if (typeof document === "undefined") return false;
-    const cookies = document.cookie.split(";");
-    return cookies.some((cookie) =>
-      cookie.trim().startsWith(`${process.env.ACCESS_TOKEN_COOKIE}=`),
-    );
+    const name = accessTokenCookieName();
+    return document.cookie
+      .split(";")
+      .some((c) => c.trim().startsWith(`${name}=`));
   }, []);
 
-  // Periodic check for user data every 2 minutes
+  const hydrateUserFromServer = React.useCallback(async (): Promise<boolean> => {
+    try {
+      const result = await getUserData();
+      if (result?.error) {
+        console.error("Error getting user data:", result.message);
+        return false;
+      }
+      if (!result.data?.data) return false;
+
+      const d = result.data.data;
+      const resolvedEmployeeId = d.employeeId ?? d.EmployeeId;
+      user.setItem({
+        id: d.id,
+        name: d.name,
+        role: d.role,
+        organizationId: d.organizationId,
+        ...(resolvedEmployeeId != null && resolvedEmployeeId !== ""
+          ? { employeeId: resolvedEmployeeId }
+          : {}),
+      });
+      dispatch(setUserId(d.id));
+      dispatch(setOrganizationId(d.organizationId));
+      dispatch(setRole(d.role));
+      return true;
+    } catch (error) {
+      console.error("Error fetching user data:", error);
+      return false;
+    }
+  }, [dispatch, user]);
+
+  const redirectToLoginClearingAuth = React.useCallback(() => {
+    if (
+      !isClearingCookiesRef.current &&
+      clearAllClientCookiesRef.current
+    ) {
+      clearAllClientCookiesRef.current();
+    }
+    nav.removeItem();
+    user.removeItem();
+    router.push(`/${locale}`);
+  }, [locale, nav, router, user]);
+
+  // Periodic check: refill local user when server session exists; never wipe cookies on false client-only check.
   React.useEffect(() => {
     if (typeof window === "undefined") return;
-
-    // Skip if cookie is null (user not authenticated) - no need to check user data
-    if (cookieValue === null) {
-      return;
-    }
+    if (isLocaleLoginPath(pathname)) return;
 
     const checkUserData = async () => {
-      // Double check cookie is still valid before proceeding
-      if (cookieValue === null) {
+      if (user.getItem()) return;
+
+      const serverSession = Boolean(cookie);
+      const clientSession = checkAccTokCookie();
+
+      if (serverSession || clientSession) {
+        const ok = await hydrateUserFromServer();
+        if (!ok && !Boolean(cookie) && !checkAccTokCookie()) {
+          redirectToLoginClearingAuth();
+        }
         return;
       }
 
-      const userData = user.getItem();
-
-      // If user data doesn't exist
-      if (!userData) {
-        const hasAccTokCookie = checkAccTokCookie();
-
-        if (hasAccTokCookie) {
-          // Cookie exists but user data is missing - fetch user data
-          try {
-            const result = await getUserData();
-
-            if (result?.error) {
-              // If there's an error getting user data, redirect to login
-              console.error("Error getting user data:", result.message);
-              if (
-                !isClearingCookiesRef.current &&
-                clearAllClientCookiesRef.current
-              ) {
-                clearAllClientCookiesRef.current();
-              }
-              nav.removeItem();
-              user.removeItem();
-              router.push(`/${locale}`);
-              return;
-            }
-
-            // Update user data if successful
-            if (result.data?.data) {
-              const d = result.data.data;
-              const resolvedEmployeeId = d.employeeId ?? d.EmployeeId;
-              user.setItem({
-                id: d.id,
-                name: d.name,
-                role: d.role,
-                organizationId: d.organizationId,
-                ...(resolvedEmployeeId != null && resolvedEmployeeId !== ""
-                  ? { employeeId: resolvedEmployeeId }
-                  : {}),
-              });
-
-              // Update Redux state
-              dispatch(setUserId(result.data.data.id));
-              dispatch(setOrganizationId(result.data.data.organizationId));
-              dispatch(setRole(result.data.data.role));
-            }
-          } catch (error) {
-            console.error("Error fetching user data:", error);
-            // On error, redirect to login
-            if (
-              !isClearingCookiesRef.current &&
-              clearAllClientCookiesRef.current
-            ) {
-              clearAllClientCookiesRef.current();
-            }
-            nav.removeItem();
-            user.removeItem();
-            router.push(`/${locale}`);
-          }
-        } else {
-          // No cookie and no user data - redirect to login
-          if (
-            !isClearingCookiesRef.current &&
-            clearAllClientCookiesRef.current
-          ) {
-            clearAllClientCookiesRef.current();
-          }
-          nav.removeItem();
-          user.removeItem();
-          router.push(`/${locale}`);
-        }
+      if (cookieValue === null) {
+        redirectToLoginClearingAuth();
       }
     };
 
-    // Run check immediately
     checkUserData();
-
-    // Set up interval to check every 2 minutes (120000ms)
     const intervalId = setInterval(checkUserData, 120000);
-
-    // Cleanup interval on unmount
-    return () => {
-      clearInterval(intervalId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cookieValue]); // Only depend on cookieValue - other deps are stable or accessed via refs
+    return () => clearInterval(intervalId);
+  }, [
+    checkAccTokCookie,
+    cookie,
+    cookieValue,
+    hydrateUserFromServer,
+    pathname,
+    redirectToLoginClearingAuth,
+    user,
+  ]);
 
   const routes = React.useMemo(() => {
     const allRoutes = [
