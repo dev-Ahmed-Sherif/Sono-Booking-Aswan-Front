@@ -91,6 +91,12 @@ const Logout = async (userId: string) => {
   }
 };
 
+/** Returns whether the access-token cookie is visible to the server (for post-login polling). */
+const verifyAccessTokenCookie = async () => {
+  const token = await getAccessToken();
+  return { ok: Boolean(token?.trim()) };
+};
+
 const getUserData = async () => {
   try {
     const accessToken = await getAccessToken();
@@ -255,4 +261,11 @@ const refreshTokenData = async (values: RefreshTokenInput) => {
   }
 };
 
-export { Login, Logout, Register, getUserData, refreshTokenData };
+export {
+  Login,
+  Logout,
+  Register,
+  getUserData,
+  refreshTokenData,
+  verifyAccessTokenCookie,
+};

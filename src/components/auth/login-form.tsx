@@ -45,7 +45,7 @@ import {
 import { ToastAction } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
-import { getUserData, Login } from "@/actions/auth";
+import { getUserData, Login, verifyAccessTokenCookie } from "@/actions/auth";
 import type { AvailableUnitType } from "@/actions/availabilityService";
 import { getGenders } from "@/actions/settings/genderService";
 import { getAllocationTypes } from "@/actions/settings/allocationTypeService";
@@ -92,21 +92,160 @@ type LoginActionResult =
 
 function extractLoginPayload(
   data: LoginActionResult,
-): { isLogedIn: boolean; refreshToken?: string } | null {
+): {
+  isLogedIn: boolean;
+  accessToken?: string;
+  refreshToken?: string;
+  userId?: string;
+} | null {
   if ("error" in data && data.error) return null;
   const root = data as Record<string, unknown>;
   const payload = (root.data ?? root) as Record<string, unknown>;
   const isLogedIn = Boolean(payload.isLogedIn ?? payload.isLoggedIn);
+  const accessTokenRaw =
+    payload.accessToken ??
+    payload.AccessToken ??
+    (payload as { access_token?: string }).access_token;
+  const accessToken =
+    typeof accessTokenRaw === "string" && accessTokenRaw.trim()
+      ? accessTokenRaw.trim()
+      : undefined;
   const refreshToken =
-    typeof payload.refreshToken === "string" ? payload.refreshToken : undefined;
-  return { isLogedIn, refreshToken };
+    typeof payload.refreshToken === "string" && payload.refreshToken.trim()
+      ? payload.refreshToken.trim()
+      : undefined;
+  const userIdRaw = payload.userId ?? payload.UserId ?? payload.id ?? payload.Id;
+  const userId =
+    typeof userIdRaw === "string" && userIdRaw.trim()
+      ? userIdRaw.trim()
+      : undefined;
+  return { isLogedIn, accessToken, refreshToken, userId };
 }
 
-/** Wait for login server action to persist access token before tokendata. */
-const POST_LOGIN_TOKEN_DELAY_MS = 1000;
+const AUTH_COOKIE_VERIFY_TIMEOUT_MS = 4000;
+const AUTH_COOKIE_VERIFY_INTERVAL_MS = 75;
 
 function delayMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function accessTokenCookieName(): string {
+  return (
+    (process.env.NEXT_PUBLIC_ACCESS_TOKEN_COOKIE ?? "").trim() ||
+    "Acc_Tok_Sono_Booking"
+  );
+}
+
+function refreshTokenCookieName(): string {
+  return (
+    (process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE ?? "").trim() ||
+    "Ref_Tok_Sono_Booking"
+  );
+}
+
+function guideCookieName(): string {
+  return (
+    (process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE ?? "").trim() ||
+    "Ref_Guid_Sono_Booking"
+  );
+}
+
+function getClientCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const prefix = `${name}=`;
+  const hit = document.cookie
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(prefix));
+  if (!hit) return null;
+  const raw = hit.slice(prefix.length);
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function setLoginAuthCookies(tokens: {
+  accessToken: string;
+  refreshToken?: string;
+  userId?: string;
+}): void {
+  setClientCookie(
+    accessTokenCookieName(),
+    tokens.accessToken,
+    process.env.NEXT_PUBLIC_ACCESS_TOKEN_LIFE ?? "",
+  );
+  if (tokens.refreshToken) {
+    setClientCookie(
+      refreshTokenCookieName(),
+      tokens.refreshToken,
+      process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE_LIFE ?? "",
+    );
+  }
+  if (tokens.userId) {
+    setClientCookie(
+      guideCookieName(),
+      tokens.userId,
+      process.env.NEXT_PUBLIC_REFRESH_GUDIE_LIFE ?? "",
+    );
+  }
+}
+
+async function waitForClientCookieValues(
+  expected: Array<{ name: string; value: string }>,
+  timeoutMs = AUTH_COOKIE_VERIFY_TIMEOUT_MS,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const allMatch = expected.every(
+      ({ name, value }) => getClientCookie(name) === value,
+    );
+    if (allMatch) return true;
+    await delayMs(AUTH_COOKIE_VERIFY_INTERVAL_MS);
+  }
+  return false;
+}
+
+async function waitForServerAccessTokenCookie(
+  timeoutMs = AUTH_COOKIE_VERIFY_TIMEOUT_MS,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { ok } = await verifyAccessTokenCookie();
+    if (ok) return true;
+    await delayMs(AUTH_COOKIE_VERIFY_INTERVAL_MS);
+  }
+  return false;
+}
+
+/** Sets login cookies, verifies client + server visibility, then returns success. */
+async function ensureLoginCookiesReady(tokens: {
+  accessToken: string;
+  refreshToken?: string;
+  userId?: string;
+}): Promise<boolean> {
+  setLoginAuthCookies(tokens);
+
+  const clientExpected: Array<{ name: string; value: string }> = [
+    { name: accessTokenCookieName(), value: tokens.accessToken },
+  ];
+  if (tokens.refreshToken) {
+    clientExpected.push({
+      name: refreshTokenCookieName(),
+      value: tokens.refreshToken,
+    });
+  }
+  if (tokens.userId) {
+    clientExpected.push({ name: guideCookieName(), value: tokens.userId });
+  }
+
+  const [clientOk, serverOk] = await Promise.all([
+    waitForClientCookieValues(clientExpected),
+    waitForServerAccessTokenCookie(),
+  ]);
+
+  return clientOk && serverOk;
 }
 
 type AvailabilitySearchStatus = "idle" | "loading" | "success" | "error";
@@ -538,8 +677,29 @@ export function LoginForm({ Cookie }: LoginFormProps) {
           const login = extractLoginPayload(data as LoginActionResult);
           if (!login?.isLogedIn) return;
 
-          const { refreshToken } = login;
-          await delayMs(POST_LOGIN_TOKEN_DELAY_MS);
+          if (!login.accessToken) {
+            toast({
+              variant: "destructive",
+              title: "خطأ",
+              description: "لم يتم استلام رمز الدخول من الخادم",
+            });
+            return;
+          }
+
+          const cookiesReady = await ensureLoginCookiesReady({
+            accessToken: login.accessToken,
+            refreshToken: login.refreshToken,
+            userId: login.userId,
+          });
+
+          if (!cookiesReady) {
+            toast({
+              variant: "destructive",
+              title: "خطأ",
+              description: "فشل في حفظ بيانات الجلسة، يرجى المحاولة مرة أخرى",
+            });
+            return;
+          }
 
           try {
             const result = await getUserData();
@@ -563,6 +723,18 @@ export function LoginForm({ Cookie }: LoginFormProps) {
               EmployeeId,
             } = result.data.data;
             const resolvedEmployeeId = employeeId ?? EmployeeId;
+
+            if (id) {
+              setClientCookie(
+                guideCookieName(),
+                String(id),
+                process.env.NEXT_PUBLIC_REFRESH_GUDIE_LIFE ?? "",
+              );
+              await waitForClientCookieValues([
+                { name: guideCookieName(), value: String(id) },
+              ]);
+            }
+
             user.setItem({
               id,
               role,
@@ -577,26 +749,6 @@ export function LoginForm({ Cookie }: LoginFormProps) {
             dispatch(setOrganizationId(organizationId));
             dispatch(setRole(role));
             dispatch(setGovernorateId(governorateId ?? ""));
-            if (refreshToken && typeof refreshToken === "string") {
-              const cookieName =
-                (process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE ?? "").trim() ||
-                "Ref_Tok_Housing_Aswan";
-              const cookieLife =
-                process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE_LIFE ?? "";
-              setTimeout(() => {
-                setClientCookie(cookieName, refreshToken, cookieLife);
-              }, 0);
-            }
-            if (id) {
-              const guideCookieName =
-                (process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE ?? "").trim() ||
-                "Ref_Guid_Housing_Aswan";
-              const guideCookieLife =
-                process.env.NEXT_PUBLIC_REFRESH_GUDIE_LIFE ?? "";
-              setTimeout(() => {
-                setClientCookie(guideCookieName, String(id), guideCookieLife);
-              }, 0);
-            }
             const targetRoute = getPostLoginPath(locale, role);
             nav.setItem(targetRoute);
             setTimeout(() => {
