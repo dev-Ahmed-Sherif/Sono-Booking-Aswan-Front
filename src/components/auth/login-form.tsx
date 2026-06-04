@@ -99,6 +99,13 @@ function extractLoginPayload(
   return { isLogedIn, refreshToken };
 }
 
+/** Wait for login server action to persist access token before tokendata. */
+const POST_LOGIN_TOKEN_DELAY_MS = 400;
+
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 type AvailabilitySearchStatus = "idle" | "loading" | "success" | "error";
 
 type AvailabilityErrors = {
@@ -518,90 +525,84 @@ export function LoginForm({ Cookie }: LoginFormProps) {
   const onSubmit = (values: z.infer<typeof LoginSchema>) => {
     startTransition(() => {
       Login(values)
-        .then((data) => {
-          const login = extractLoginPayload(
-            data as LoginActionResult,
-          );
+        .then(async (data) => {
+          const login = extractLoginPayload(data as LoginActionResult);
           if (!login?.isLogedIn) return;
+
           const { refreshToken } = login;
-          getUserData()
-            .then((result) => {
-              if (result.error) {
-                toast({
-                  variant: "destructive",
-                  title: "خطأ",
-                  description: result.message || "فشل في جلب بيانات المستخدم",
-                });
-                return;
-              }
-              if (result.data?.data) {
-                const {
-                  id,
-                  role,
-                  name,
-                  organizationId,
-                  governorateId,
-                  employeeId,
-                  EmployeeId,
-                } = result.data.data;
-                const resolvedEmployeeId = employeeId ?? EmployeeId;
-                user.setItem({
-                  id,
-                  role,
-                  name,
-                  organizationId: organizationId ?? "",
-                  governorateId: governorateId ?? "",
-                  ...(resolvedEmployeeId != null && resolvedEmployeeId !== ""
-                    ? { employeeId: resolvedEmployeeId }
-                    : {}),
-                });
-                dispatch(setUserId(id));
-                dispatch(setOrganizationId(organizationId));
-                dispatch(setRole(role));
-                dispatch(setGovernorateId(governorateId ?? ""));
-                if (refreshToken && typeof refreshToken === "string") {
-                  const cookieName =
-                    (
-                      process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE ?? ""
-                    ).trim() || "Ref_Tok_Housing_Aswan";
-                  const cookieLife =
-                    process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE_LIFE ?? "";
-                  setTimeout(() => {
-                    setClientCookie(cookieName, refreshToken, cookieLife);
-                  }, 0);
-                }
-                if (id) {
-                  const guideCookieName =
-                    (
-                      process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE ?? ""
-                    ).trim() || "Ref_Guid_Housing_Aswan";
-                  const guideCookieLife =
-                    process.env.NEXT_PUBLIC_REFRESH_GUDIE_LIFE ?? "";
-                  setTimeout(() => {
-                    setClientCookie(
-                      guideCookieName,
-                      String(id),
-                      guideCookieLife,
-                    );
-                  }, 0);
-                }
-                const targetRoute = getPostLoginPath(locale, role);
-                nav.setItem(targetRoute);
-                setTimeout(() => {
-                  router.push(targetRoute);
-                  setTimeout(() => window.location.reload(), 700);
-                }, 35);
-              }
-            })
-            .catch((err) => {
-              console.error("Error getting user data:", err);
+          await delayMs(POST_LOGIN_TOKEN_DELAY_MS);
+
+          try {
+            const result = await getUserData();
+            if (result.error) {
               toast({
                 variant: "destructive",
-                title: "حدث خطأ !",
-                description: "يرجى تسجيل الدخول مرة أخرى",
+                title: "خطأ",
+                description: result.message || "فشل في جلب بيانات المستخدم",
               });
-              setTimeout(() => router.push(`/${locale}`), 42);
+              return;
+            }
+            if (!result.data?.data) return;
+
+            const {
+              id,
+              role,
+              name,
+              organizationId,
+              governorateId,
+              employeeId,
+              EmployeeId,
+            } = result.data.data;
+            const resolvedEmployeeId = employeeId ?? EmployeeId;
+            user.setItem({
+              id,
+              role,
+              name,
+              organizationId: organizationId ?? "",
+              governorateId: governorateId ?? "",
+              ...(resolvedEmployeeId != null && resolvedEmployeeId !== ""
+                ? { employeeId: resolvedEmployeeId }
+                : {}),
             });
+            dispatch(setUserId(id));
+            dispatch(setOrganizationId(organizationId));
+            dispatch(setRole(role));
+            dispatch(setGovernorateId(governorateId ?? ""));
+            if (refreshToken && typeof refreshToken === "string") {
+              const cookieName =
+                (process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE ?? "").trim() ||
+                "Ref_Tok_Housing_Aswan";
+              const cookieLife =
+                process.env.NEXT_PUBLIC_REFRESH_TOKEN_COOKIE_LIFE ?? "";
+              setTimeout(() => {
+                setClientCookie(cookieName, refreshToken, cookieLife);
+              }, 0);
+            }
+            if (id) {
+              const guideCookieName =
+                (process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE ?? "").trim() ||
+                "Ref_Guid_Housing_Aswan";
+              const guideCookieLife =
+                process.env.NEXT_PUBLIC_REFRESH_GUDIE_LIFE ?? "";
+              setTimeout(() => {
+                setClientCookie(guideCookieName, String(id), guideCookieLife);
+              }, 0);
+            }
+            const targetRoute = getPostLoginPath(locale, role);
+            nav.setItem(targetRoute);
+            setTimeout(() => {
+              router.push(targetRoute);
+              setTimeout(() => window.location.reload(), 700);
+            }, 35);
+          } catch (err) {
+            console.error("Error getting user data:", err);
+            toast({
+              variant: "destructive",
+              title: "حدث خطأ !",
+              description: "يرجى تسجيل الدخول مرة أخرى",
+            });
+            setTimeout(() => router.push(`/${locale}`), 42);
+          }
         })
         .catch((err) => {
           if (err.message?.includes("401") || err.message?.includes("404")) {
