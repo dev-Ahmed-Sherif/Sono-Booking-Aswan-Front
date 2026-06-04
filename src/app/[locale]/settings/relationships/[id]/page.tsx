@@ -3,6 +3,10 @@ import RelationshipForm from "@/components/settings/relationships/relationships-
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import UnitDataHeader from "@/components/settings/unit-data-header";
+import {
+  settingsLookupFromApiResult,
+  type SettingsLookupInitialData,
+} from "@/lib/settings-lookup-initial-data";
 
 type PageProps = {
   params: { locale: string; id: string };
@@ -10,12 +14,9 @@ type PageProps = {
 
 const RelationshipPage = async ({ params }: PageProps) => {
   const { id } = params;
-  let initialData: unknown = null;
+  let initialData: SettingsLookupInitialData = null;
   if (id && id !== "new") {
-    const result = await getRelationshipById(id);
-    if (result && !(result as { error?: string }).error) {
-      initialData = (result as { data?: unknown }).data ?? result;
-    }
+    initialData = settingsLookupFromApiResult(await getRelationshipById(id));
   }
 
   return (

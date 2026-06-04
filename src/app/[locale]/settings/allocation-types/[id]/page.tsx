@@ -2,12 +2,13 @@ import AllocationTypeForm from "@/components/settings/allocation-types/allocatio
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import UnitDataHeader from "@/components/settings/unit-data-header";
+import type { SettingsLookupInitialData } from "@/lib/settings-lookup-initial-data";
 
 type PageProps = { params: { locale: string; id: string } };
 
 const AllocationTypePage = async ({ params }: PageProps) => {
   const { id } = params;
-  let initialData: unknown = null;
+  let initialData: SettingsLookupInitialData = null;
   if (id && id !== "new") {
     initialData = null;
   }

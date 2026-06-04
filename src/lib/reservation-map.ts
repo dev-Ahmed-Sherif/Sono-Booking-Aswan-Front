@@ -4,8 +4,11 @@ import {
   toYmd,
 } from "@/lib/housing-request-list";
 
-/** Mirrors `SonoBooking.Domain.ReservationStatus` (current backend values). */
-export type ReservationStatus = 1 | 2 | 3 | 4;
+/**
+ * Mirrors `SonoBooking.Domain.ReservationStatus`.
+ * Keep backward-compatible numeric support because existing DB rows may contain legacy values.
+ */
+export type ReservationStatus = 1 | 2 | 3 | 4 | 5;
 
 export const RESERVATION_STATUS_RESERVED = 1 as const satisfies ReservationStatus;
 export const RESERVATION_STATUS_COMPLETED = 2 as const satisfies ReservationStatus;
@@ -26,6 +29,7 @@ export function reservationStatusToApiName(
     case RESERVATION_STATUS_CANCELED:
       return "Canceled";
     case RESERVATION_STATUS_NO_SHOW:
+    case 5:
       return "NoShow";
     default:
       return "Reserved";
@@ -58,6 +62,7 @@ export type AddReservationDtoPayload = {
   endDate: string;
   checkInDate?: string | null;
   actualCheckOutDate?: string | null;
+  cancelationReason?: string | null;
   status: ReservationStatus;
   /** Ignored by API on add/update — send `0` or a preview value. */
   totalAmount: number;
@@ -65,7 +70,9 @@ export type AddReservationDtoPayload = {
 };
 
 /** Mirrors `SonoBooking.Common.DTO.Housing.Reservation.ReservationDto`. */
-export type ReservationDtoPayload = AddReservationDtoPayload & {
+export type ReservationDtoPayload = Omit<AddReservationDtoPayload, "requestId"> & {
+  requestId?: string;
+  cancelationReason?: string;
   userId?: string;
   createdAt?: string;
   createdById?: string;
@@ -114,7 +121,7 @@ function pickReservationStatus(
   r: Record<string, unknown>,
 ): ReservationStatus | undefined {
   const n = pickNum(r, "status", "Status");
-  if (n != null && n >= 1 && n <= 4) return n as ReservationStatus;
+  if (n != null && n >= 1 && n <= 5) return n as ReservationStatus;
 
   const raw = pickStr(r, "status", "Status");
   if (!raw) return undefined;
@@ -167,12 +174,19 @@ export function parseReservationFromApi(
   raw: Record<string, unknown>,
 ): ReservationDtoPayload | null {
   const id = pickStr(raw, "id", "Id");
-  const requestId = pickStr(raw, "requestId", "RequestId");
+  const nestedRequest = (raw.request ?? raw.Request) as
+    | Record<string, unknown>
+    | undefined;
+  const requestId =
+    pickStr(raw, "requestId", "RequestId") ||
+    (nestedRequest
+      ? pickStr(nestedRequest, "id", "Id", "requestId", "RequestId")
+      : "");
   const startDate = pickIsoDate(raw, "startDate", "StartDate");
   const endDate = pickIsoDate(raw, "endDate", "EndDate");
   const status = pickReservationStatus(raw);
 
-  if (!id || !requestId || !startDate || !endDate || status == null) {
+  if (!id || !startDate || !endDate || status == null) {
     return null;
   }
 
@@ -180,11 +194,13 @@ export function parseReservationFromApi(
 
   return {
     id,
-    requestId,
+    requestId: requestId || undefined,
     startDate,
     endDate,
     status,
     totalAmount,
+    cancelationReason:
+      pickStr(raw, "cancelationReason", "CancelationReason") || undefined,
     checkInDate: pickIsoDateTime(raw, "checkInDate", "CheckInDate"),
     actualCheckOutDate: pickIsoDateTime(
       raw,
@@ -221,6 +237,9 @@ export function serializeAddReservationDtoForApi(
   if (payload.actualCheckOutDate) {
     body.actualCheckOutDate = payload.actualCheckOutDate;
   }
+  if (payload.cancelationReason != null) {
+    body.cancelationReason = payload.cancelationReason.trim();
+  }
 
   return body;
 }
@@ -246,7 +265,7 @@ export function validateAddReservationDto(
   if (!Number.isFinite(payload.totalAmount) || payload.totalAmount < 0) {
     return { ok: false, message: "المبلغ الإجمالي يجب أن يكون صفراً أو أكبر." };
   }
-  if (payload.status < 1 || payload.status > 4) {
+  if (payload.status < 1 || payload.status > 5) {
     return { ok: false, message: "حالة الحجز غير صالحة." };
   }
   return { ok: true };

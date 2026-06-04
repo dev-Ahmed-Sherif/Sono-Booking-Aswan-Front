@@ -1,0 +1,131 @@
+"use server";
+
+import { loadReservationForMutation } from "@/actions/housingReservationMutation";
+import { addPayment } from "@/actions/settings/paymentService";
+import { updateReservationById } from "@/actions/reservationService";
+import {
+  isRequestServiceSuccess,
+  parseRequestServiceError,
+} from "@/lib/housing-request-map";
+import {
+  PAYMENT_METHOD_CASH,
+  PAYMENT_STATUS_PAID,
+  serializeAddPaymentDtoForApi,
+} from "@/lib/payment-map";
+import { computeFinalAmountAfterDiscount } from "@/lib/reservation-discount";
+import {
+  RESERVATION_STATUS_COMPLETED,
+  serializeAddReservationDtoForApi,
+} from "@/lib/reservation-map";
+
+export type CheckInHousingReservationInput = {
+  id: string;
+  requestId?: string;
+  startDateYmd?: string;
+  endDateYmd?: string;
+  /** 0–100 */
+  discountPercent: number;
+  /** Base amount before discount (from reservation row). */
+  baseTotalAmount: number;
+};
+
+export type CheckInHousingReservationResult =
+  | { ok: true; paymentWarning?: string }
+  | { ok: false; message: string };
+
+function isDuplicatePaymentError(res: unknown): boolean {
+  const err = res as {
+    error?: string;
+    message?: string;
+    status?: number;
+  };
+  const msg = String(err.message ?? "").toLowerCase();
+  return (
+    err.status === 409 ||
+    msg.includes("409") ||
+    msg.includes("duplicate") ||
+    msg.includes("already exists") ||
+    msg.includes("موجود") ||
+    msg.includes("مسجل")
+  );
+}
+
+/**
+ * `PUT /Reservations/update` with `status: "Completed"` and `checkInDate` set to now,
+ * then `POST /Payments/add` for the discounted amount.
+ */
+export async function checkInHousingReservation(
+  input: CheckInHousingReservationInput,
+): Promise<CheckInHousingReservationResult> {
+  const discountPercent = Number(input.discountPercent);
+  if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
+    return { ok: false, message: "نسبة الخصم يجب أن تكون بين 0 و 100." };
+  }
+
+  const loaded = await loadReservationForMutation(input.id, input);
+  if (!loaded.ok) return loaded;
+
+  const { reservation } = loaded;
+  const reservationId = (reservation.id ?? input.id).trim();
+  const requestId =
+    reservation.requestId?.trim() || input.requestId?.trim();
+  if (!requestId) {
+    return { ok: false, message: "معرّف الطلب غير موجود." };
+  }
+
+  const nowIso = new Date().toISOString();
+  const totalAmount = computeFinalAmountAfterDiscount(
+    input.baseTotalAmount,
+    discountPercent,
+  );
+
+  const res = await updateReservationById(
+    serializeAddReservationDtoForApi({
+      id: reservationId,
+      requestId,
+      startDate: reservation.startDate,
+      endDate: reservation.endDate,
+      status: RESERVATION_STATUS_COMPLETED,
+      totalAmount,
+      checkInDate: nowIso,
+      actualCheckOutDate: reservation.actualCheckOutDate,
+      cancelationReason: "",
+    }),
+  );
+
+  if (!isRequestServiceSuccess(res)) {
+    return {
+      ok: false,
+      message: parseRequestServiceError(res) ?? "تعذر تأكيد وصول الحجز.",
+    };
+  }
+
+  const paymentRes = await addPayment(
+    serializeAddPaymentDtoForApi({
+      amount: totalAmount,
+      paymentMethod: PAYMENT_METHOD_CASH,
+      paymentStatus: PAYMENT_STATUS_PAID,
+      paymentDate: nowIso,
+      transactionReference: `CHK-${reservationId.slice(0, 8)}-${Date.now()}`,
+      reservationId,
+    }),
+  );
+
+  if (isRequestServiceSuccess(paymentRes)) {
+    return { ok: true };
+  }
+
+  if (isDuplicatePaymentError(paymentRes)) {
+    return { ok: true };
+  }
+
+  const paymentMessage =
+    parseRequestServiceError(paymentRes) ??
+    (paymentRes as { message?: string })?.message ??
+    "تعذر تسجيل الدفع.";
+
+  return {
+    ok: true,
+    paymentWarning: paymentMessage,
+  };
+}

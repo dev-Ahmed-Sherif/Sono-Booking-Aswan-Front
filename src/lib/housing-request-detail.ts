@@ -120,7 +120,7 @@ export function lookupCompanionName(
   if (direct && !isBlankDisplayName(direct)) return direct.trim();
 
   const norm = normalizeGuidLike(id);
-  for (const [key, value] of map) {
+  for (const [key, value] of Array.from(map)) {
     if (normalizeGuidLike(key) === norm && !isBlankDisplayName(value)) {
       return value.trim();
     }
@@ -559,7 +559,7 @@ export function mergeCompanionNameMaps(
     label.trim().toLowerCase() === id.trim().toLowerCase();
 
   for (const source of maps) {
-    for (const [id, label] of source) {
+    for (const [id, label] of Array.from(source)) {
       if (isIdPlaceholder(id, label)) continue;
       const existing = lookupCompanionName(out, id);
       if (!existing) {

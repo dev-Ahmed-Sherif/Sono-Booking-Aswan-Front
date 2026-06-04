@@ -92,6 +92,7 @@ import {
   type HousingRequestDetail,
 } from "@/lib/housing-request-detail";
 import {
+  type AddRequestUnitDtoPayload,
   enrichStoredUnitsWithHierarchyIds,
   formatAddRequestErrorMessage,
   mapStoredUnitToRequestUnitDto,
@@ -459,7 +460,7 @@ export function HousingRequestDetailModal({
 
   const availableCompanions = useMemo(() => {
     const chosen = new Set(companionIds);
-    return [...companionNames.entries()].filter(([id]) => !chosen.has(id));
+    return Array.from(companionNames.entries()).filter(([id]) => !chosen.has(id));
   }, [companionIds, companionNames]);
 
   const handleAddUnit = async (cardKey: string) => {

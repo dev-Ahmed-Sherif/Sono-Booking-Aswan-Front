@@ -33,12 +33,18 @@ export async function checkoutHousingReservation(
   if (!loaded.ok) return loaded;
 
   const { reservation } = loaded;
+  const requestId =
+    reservation.requestId?.trim() || input.requestId?.trim();
+  if (!requestId) {
+    return { ok: false, message: "معرّف الطلب غير موجود." };
+  }
+
   const nowIso = new Date().toISOString();
 
   const res = await updateReservationById(
     serializeAddReservationDtoForApi({
       id: reservation.id,
-      requestId: reservation.requestId,
+      requestId,
       startDate: reservation.startDate,
       endDate: reservation.endDate,
       status: RESERVATION_STATUS_COMPLETED,
@@ -55,9 +61,7 @@ export async function checkoutHousingReservation(
     };
   }
 
-  const releaseResult = await releaseHousingUnitsForRequest(
-    reservation.requestId,
-  );
+  const releaseResult = await releaseHousingUnitsForRequest(requestId);
   if (!releaseResult.ok) {
     return {
       ok: true,

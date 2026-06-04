@@ -112,7 +112,10 @@ export function serializeAddRequestDtoForApi(
         companionId,
       };
     })
-    .filter((c): c is Record<string, unknown> => c != null);
+    .filter(
+      (c): c is { companionId: string; requestId?: string; id?: string } =>
+        c != null,
+    );
 
   const body: Record<string, unknown> = {
     id: requestId,

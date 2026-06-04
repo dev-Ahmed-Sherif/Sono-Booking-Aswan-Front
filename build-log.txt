@@ -1,0 +1,50 @@
+﻿
+> basewithnpm@0.1.0 build
+> next build
+
+  Γû▓ Next.js 14.2.7
+  - Environments: .env
+
+   Creating an optimized production build ...
+ Γ£ô Compiled successfully
+   Linting and checking validity of types ...
+
+./src/components/basic-data/floating-unit-staff/floating-unit-staff-form.tsx
+414:6  Warning: React Hook useEffect has a missing dependency: 'setDelegateAttachment'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/inspections/inspection-clause/inspection-clause-form.tsx
+165:6  Warning: React Hook useMemo has an unnecessary dependency: 'isEdit'. Either exclude it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/layout/navbar.tsx
+332:6  Warning: React Hook React.useEffect has missing dependencies: 'nav' and 'user'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+348:6  Warning: React Hook React.useEffect has a missing dependency: 'nav'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+360:6  Warning: React Hook React.useEffect has a missing dependency: 'nav'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+373:6  Warning: React Hook React.useEffect has a missing dependency: 'user'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/reservation/housing-request-detail-modal.tsx
+422:6  Warning: React Hook useCallback has a missing dependency: 'toast'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/room/room-form.tsx
+550:6  Warning: React Hook useEffect has a missing dependency: 'loadRoomRecords'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules
+node.exe : Failed to compile.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Failed to compile.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+./src/components/permissions/user/user-form.tsx:287:18
+Type error: Property 'error' does not exist on type 'AccountUpdateRemoteResult'.
+  Property 'error' does not exist on type '{ success: true; }'.
+
+[0m [90m 285 |[39m         console[33m.[39mlog(res)[33m;[39m[0m
+[0m [90m 286 |[39m[0m
+[0m[31m[1m>[22m[39m[90m 287 |[39m         [36mif[39m (res[33m?[39m[33m.[39merror) {[0m
+[0m [90m     |[39m                  [31m[1m^[22m[39m[0m
+[0m [90m 288 |[39m           [36mthrow[39m [36mnew[39m [33mError[39m(res[33m.[39mmessage [33m||[39m 
+res[33m.[39merror)[33m;[39m[0m
+[0m [90m 289 |[39m         }[0m
+[0m [90m 290 |[39m       } [36melse[39m {[0m

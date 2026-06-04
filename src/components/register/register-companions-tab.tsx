@@ -243,6 +243,10 @@ const RegisterCompanionsTab = ({
       };
     }
 
+    if (!companion.documentType) {
+      return { ok: false, message: "نوع المستند مطلوب" };
+    }
+
     const fd = new FormData();
     if (companion.id) {
       fd.append("Id", companion.id);

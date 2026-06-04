@@ -37,7 +37,7 @@ import {
   softDeleteTouristMarinaById,
   updateTouristMarinaById,
 } from "@/actions/basic-data/touristMarinaService";
-import { getCities } from "@/actions/basic-data/cityService";
+import { getCities } from "@/actions/settings/cityService";
 import { normalizeAllCitiesResponse } from "@/lib/governorate-cities";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { isSuperAdminRoleCandidates, RoleCandidates } from "@/lib/role-utils";

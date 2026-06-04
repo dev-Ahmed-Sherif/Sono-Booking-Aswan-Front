@@ -6,7 +6,7 @@ import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { isSuperAdminRoleCandidates, RoleCandidates } from "@/lib/role-utils";
 import { Pencil, Trash } from "lucide-react";
 
-import type { CityColumn } from "@/components/basic-data/city/columns";
+import type { CityColumn } from "@/components/settings/cities/columns";
 
 import { Button } from "@/components/ui/button";
 import AlertModal from "@/components/modals/alert-modal";
@@ -14,7 +14,7 @@ import useToggleState from "@/hooks/use-toggle-state";
 import {
   deleteCityById,
   softDeleteCityById,
-} from "@/actions/basic-data/cityService";
+} from "@/actions/settings/cityService";
 
 type CellActionProps = {
   data: CityColumn;

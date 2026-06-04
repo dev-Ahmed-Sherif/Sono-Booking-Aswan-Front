@@ -3,17 +3,18 @@ import RequestTypeForm from "@/components/settings/request-types/request-types-f
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import UnitDataHeader from "@/components/settings/unit-data-header";
+import {
+  settingsLookupFromApiResult,
+  type SettingsLookupInitialData,
+} from "@/lib/settings-lookup-initial-data";
 
 type PageProps = { params: { locale: string; id: string } };
 
 const RequestTypePage = async ({ params }: PageProps) => {
   const { id } = params;
-  let initialData: unknown = null;
+  let initialData: SettingsLookupInitialData = null;
   if (id && id !== "new") {
-    const result = await getRequestTypeById(id);
-    if (result && !(result as { error?: string }).error) {
-      initialData = (result as { data?: unknown }).data ?? result;
-    }
+    initialData = settingsLookupFromApiResult(await getRequestTypeById(id));
   }
   return (
     <main className="container mx-auto mt-2 sm:mt-4 px-2 sm:px-4 md:px-6 lg:px-8 min-h-screen">

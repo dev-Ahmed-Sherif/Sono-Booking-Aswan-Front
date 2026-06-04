@@ -1,40 +1,33 @@
 "use server";
 
 import { loadReservationForMutation } from "@/actions/housingReservationMutation";
-import { releaseHousingUnitsForRequest } from "@/actions/reserveHousingUnits";
 import { updateReservationById } from "@/actions/reservationService";
 import {
   isRequestServiceSuccess,
   parseRequestServiceError,
 } from "@/lib/housing-request-map";
 import {
-  RESERVATION_STATUS_CANCELED,
+  RESERVATION_STATUS_RESERVED,
   serializeAddReservationDtoForApi,
 } from "@/lib/reservation-map";
 
-export type CancelHousingReservationInput = {
+export type RestoreHousingReservationInput = {
   id: string;
   requestId?: string;
   startDateYmd?: string;
   endDateYmd?: string;
-  cancelationReason?: string;
 };
 
-export type CancelHousingReservationResult =
-  | { ok: true; unitReleaseWarning?: string }
+export type RestoreHousingReservationResult =
+  | { ok: true }
   | { ok: false; message: string };
 
 /**
- * `PUT /Reservations/update` with `status: "Canceled"`.
+ * `PUT /Reservations/update` with `status: "Reserved"` and empty `cancelationReason`.
  */
-export async function cancelHousingReservation(
-  input: CancelHousingReservationInput,
-): Promise<CancelHousingReservationResult> {
-  const cancelationReason = input.cancelationReason?.trim();
-  if (!cancelationReason) {
-    return { ok: false, message: "سبب الإلغاء مطلوب." };
-  }
-
+export async function restoreHousingReservation(
+  input: RestoreHousingReservationInput,
+): Promise<RestoreHousingReservationResult> {
   const loaded = await loadReservationForMutation(input.id, input);
   if (!loaded.ok) return loaded;
 
@@ -51,26 +44,18 @@ export async function cancelHousingReservation(
       requestId,
       startDate: reservation.startDate,
       endDate: reservation.endDate,
-      status: RESERVATION_STATUS_CANCELED,
+      status: RESERVATION_STATUS_RESERVED,
       totalAmount: reservation.totalAmount,
       checkInDate: reservation.checkInDate,
       actualCheckOutDate: reservation.actualCheckOutDate,
-      cancelationReason,
+      cancelationReason: "",
     }),
   );
 
   if (!isRequestServiceSuccess(res)) {
     return {
       ok: false,
-      message: parseRequestServiceError(res) ?? "تعذر إلغاء الحجز.",
-    };
-  }
-
-  const releaseResult = await releaseHousingUnitsForRequest(requestId);
-  if (!releaseResult.ok) {
-    return {
-      ok: true,
-      unitReleaseWarning: releaseResult.message,
+      message: parseRequestServiceError(res) ?? "تعذر إعادة الحجز إلى محجوز.",
     };
   }
 

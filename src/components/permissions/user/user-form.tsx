@@ -281,10 +281,9 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
           delete updateData.password;
         }
 
-        let res = await updateUserById(updateData);
-        console.log(res);
+        const res = await updateUserById(updateData);
 
-        if (res?.error) {
+        if ("error" in res) {
           throw new Error(res.message || res.error);
         }
       } else {

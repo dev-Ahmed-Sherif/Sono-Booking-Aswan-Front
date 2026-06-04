@@ -88,35 +88,37 @@ export function parseStoredReservationUnits(
   raw: unknown,
 ): ReservationStoredUnitSnapshot[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const o = item as Record<string, unknown>;
-      const id = pickStr(o, "id", "Id");
-      const unitKind = pickStr(o, "unitKind", "UnitKind") as AvailableUnitType;
-      const title = pickStr(o, "title", "Title");
-      if (!id || !title) return null;
-      if (unitKind !== "bed" && unitKind !== "room" && unitKind !== "apartment") {
-        return null;
-      }
-      const apartmentId =
-        pickStr(o, "apartmentId", "ApartmentId") || undefined;
-      const roomId = pickStr(o, "roomId", "RoomId") || undefined;
-      return {
-        id,
-        unitKind,
-        title,
-        subtitle: pickStr(o, "subtitle", "Subtitle") || "—",
-        ...(apartmentId ? { apartmentId } : {}),
-        ...(roomId ? { roomId } : {}),
-        genderType: pickStr(o, "genderType", "GenderType") || undefined,
-        buildingNumberAr:
-          pickStr(o, "buildingNumberAr", "BuildingNumberAr") || undefined,
-        city: pickStr(o, "city", "City") || undefined,
-        priceLabel: pickStr(o, "priceLabel", "PriceLabel") || undefined,
-      };
-    })
-    .filter((x): x is ReservationStoredUnitSnapshot => x != null);
+  const out: ReservationStoredUnitSnapshot[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const id = pickStr(o, "id", "Id");
+    const unitKind = pickStr(o, "unitKind", "UnitKind") as AvailableUnitType;
+    const title = pickStr(o, "title", "Title");
+    if (!id || !title) continue;
+    if (unitKind !== "bed" && unitKind !== "room" && unitKind !== "apartment") {
+      continue;
+    }
+    const apartmentId = pickStr(o, "apartmentId", "ApartmentId");
+    const roomId = pickStr(o, "roomId", "RoomId");
+    const genderType = pickStr(o, "genderType", "GenderType");
+    const buildingNumberAr = pickStr(o, "buildingNumberAr", "BuildingNumberAr");
+    const city = pickStr(o, "city", "City");
+    const priceLabel = pickStr(o, "priceLabel", "PriceLabel");
+    out.push({
+      id,
+      unitKind,
+      title,
+      subtitle: pickStr(o, "subtitle", "Subtitle") || "—",
+      ...(apartmentId ? { apartmentId } : {}),
+      ...(roomId ? { roomId } : {}),
+      ...(genderType ? { genderType } : {}),
+      ...(buildingNumberAr ? { buildingNumberAr } : {}),
+      ...(city ? { city } : {}),
+      ...(priceLabel ? { priceLabel } : {}),
+    });
+  }
+  return out;
 }
 
 export function parseInquiryGenders(
@@ -149,7 +151,11 @@ export function parseInquiryGenders(
   if (legacy === "male" || legacy === "female") return [legacy];
   pushUnique(parseGuestGenderStrict(legacy));
   const legacyLabel = form.genderLabel ?? form.GenderLabel;
-  pushUnique(normalizeUnitGender(legacyLabel));
+  pushUnique(
+    normalizeUnitGender(
+      typeof legacyLabel === "string" ? legacyLabel : String(legacyLabel ?? ""),
+    ),
+  );
   return out;
 }
 

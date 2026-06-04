@@ -7,7 +7,7 @@ import { GovernorateColumn } from "@/components/settings/governorates/columns";
 import { Button } from "@/components/ui/button";
 import AlertModal from "@/components/modals/alert-modal";
 import useToggleState from "@/hooks/use-toggle-state";
-import { deleteGovernorateById } from "@/actions/basic-data/governorateService";
+import { deleteGovernorateById } from "@/actions/settings/governorateService";
 
 type CellActionProps = { data: GovernorateColumn };
 
