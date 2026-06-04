@@ -59,7 +59,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { LoginSchema } from "@/schemas";
-import type { AvailabilityUnitCard, GenericOption } from "@/lib/availability-inquiry";
+import type {
+  AvailabilityUnitCard,
+  GenericOption,
+} from "@/lib/availability-inquiry";
 import {
   ALL_UNIT_TYPE_OPTIONS,
   getUnavailableUnitTypesMessage,
@@ -100,7 +103,7 @@ function extractLoginPayload(
 }
 
 /** Wait for login server action to persist access token before tokendata. */
-const POST_LOGIN_TOKEN_DELAY_MS = 400;
+const POST_LOGIN_TOKEN_DELAY_MS = 1000;
 
 function delayMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -165,13 +168,13 @@ export function LoginForm({ Cookie }: LoginFormProps) {
   // Availability check state
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [nights, setNights] = useState("");
-  const [selectedUnitTypes, setSelectedUnitTypes] = useState<AvailableUnitType[]>(
-    [],
-  );
+  const [selectedUnitTypes, setSelectedUnitTypes] = useState<
+    AvailableUnitType[]
+  >([]);
   const [requestType, setRequestType] = useState("");
-  const [selectedGenders, setSelectedGenders] = useState<GenderOption["value"][]>(
-    [],
-  );
+  const [selectedGenders, setSelectedGenders] = useState<
+    GenderOption["value"][]
+  >([]);
   const [allocationType, setAllocationType] = useState("");
   const [isChecking, setIsChecking] = useState(false);
   const [availabilitySearchStatus, setAvailabilitySearchStatus] =
@@ -284,7 +287,14 @@ export function LoginForm({ Cookie }: LoginFormProps) {
     setAvailabilityCards([]);
     setSelectedAvailabilityKeys([]);
     setAvailabilityErrors({});
-  }, [startDate, nights, selectedUnitTypes, requestType, selectedGenders, allocationType]);
+  }, [
+    startDate,
+    nights,
+    selectedUnitTypes,
+    requestType,
+    selectedGenders,
+    allocationType,
+  ]);
 
   useEffect(() => {
     const normalizeGenderValue = (raw: unknown): "male" | "female" | null => {
@@ -479,8 +489,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
     }
 
     const unitTypeLabels = selectedUnitTypes.map(
-      (value) =>
-        UNIT_TYPE_LABEL_AR[value] ?? value,
+      (value) => UNIT_TYPE_LABEL_AR[value] ?? value,
     );
     const unitTypeLabel = unitTypeLabels.join("، ");
     const requestTypeLabel =
