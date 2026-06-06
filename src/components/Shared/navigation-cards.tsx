@@ -17,6 +17,7 @@ type NavigationItem = {
 type NavigationCardsProps = {
   items: NavigationItem[];
   locale: string;
+  columns?: 2 | 3;
 };
 
 const iconMap: Record<string, LucideIcon> = {
@@ -43,9 +44,11 @@ const iconMap: Record<string, LucideIcon> = {
   ClipboardCheck,
 };
 
-export function NavigationCards({ items, locale }: NavigationCardsProps) {
+export function NavigationCards({ items, locale, columns = 2 }: NavigationCardsProps) {
   return (
-    <div className="pb-24 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 lg:gap-8">
+    <div
+      className={`pb-24 grid grid-cols-1 gap-4 sm:gap-6 lg:gap-8 ${columns === 3 ? "md:grid-cols-3" : "md:grid-cols-2"}`}
+    >
       {items.map((item, index) => {
         const Icon = iconMap[item.icon] || Users;
         return (

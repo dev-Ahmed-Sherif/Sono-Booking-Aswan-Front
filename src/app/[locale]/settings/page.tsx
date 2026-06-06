@@ -95,7 +95,7 @@ async function Settings({ params }: SettingsProps) {
         </p>
       </div>
 
-      <NavigationCards items={navigationItems} locale={locale} />
+      <NavigationCards items={navigationItems} locale={locale} columns={3} />
     </main>
   );
 }

@@ -29,7 +29,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { apartmentSchema, type ApartmentFormValues } from "@/schemas";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -115,7 +119,8 @@ export default function ApartmentForm({
   const [governorateSearch, setGovernorateSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const currentId =
-    typeof (defaultValues as Record<string, unknown> | undefined)?.id === "string"
+    typeof (defaultValues as Record<string, unknown> | undefined)?.id ===
+    "string"
       ? String((defaultValues as Record<string, unknown>).id)
       : "";
 
@@ -155,13 +160,21 @@ export default function ApartmentForm({
 
   const serverImagePathsKey = serverImagePaths.join("|");
 
-  const [removedServerPaths, setRemovedServerPaths] = useState(() => new Set<string>());
-  const [serverPrimaryMap, setServerPrimaryMap] = useState<Record<string, boolean>>({});
-  const [serverIdByPath, setServerIdByPath] = useState<Record<string, string>>({});
+  const [removedServerPaths, setRemovedServerPaths] = useState(
+    () => new Set<string>(),
+  );
+  const [serverPrimaryMap, setServerPrimaryMap] = useState<
+    Record<string, boolean>
+  >({});
+  const [serverIdByPath, setServerIdByPath] = useState<Record<string, string>>(
+    {},
+  );
   const [serverAttachmentIdByPath, setServerAttachmentIdByPath] = useState<
     Record<string, string>
   >({});
-  const [newPrimaryMap, setNewPrimaryMap] = useState<Record<string, boolean>>({});
+  const [newPrimaryMap, setNewPrimaryMap] = useState<Record<string, boolean>>(
+    {},
+  );
 
   useEffect(() => {
     setRemovedServerPaths(new Set());
@@ -200,10 +213,11 @@ export default function ApartmentForm({
       status:
         (preferredStatus as ApartmentFormValues["status"] | undefined) || "1",
       gender:
-        (genderOptions[0]?.id as ApartmentFormValues["gender"] | undefined) ?? "1",
-      allocationType:
-        (allocationTypeOptions[0]?.id as ApartmentFormValues["allocationType"]) ??
+        (genderOptions[0]?.id as ApartmentFormValues["gender"] | undefined) ??
         "1",
+      allocationType:
+        (allocationTypeOptions[0]
+          ?.id as ApartmentFormValues["allocationType"]) ?? "1",
       street: "",
       buildingNumber: "",
       floor: "",
@@ -228,14 +242,19 @@ export default function ApartmentForm({
   const submitHandler = async (values: ApartmentFormValues) => {
     try {
       setLoading(true);
-      const resolveLookupSubmitValue = (selected: string, options: LookupOption[]) => {
+      const resolveLookupSubmitValue = (
+        selected: string,
+        options: LookupOption[],
+      ) => {
         const item = options.find((option) => option.id === selected);
         if (!item) return selected;
         return String(item.nameEn ?? item.nameAr ?? selected).trim();
       };
       const payload = new FormData();
       if (currentId) payload.append("id", currentId);
-      const trimmedApartmentNumber = String(values.apartmentNumber ?? "").trim();
+      const trimmedApartmentNumber = String(
+        values.apartmentNumber ?? "",
+      ).trim();
       if (trimmedApartmentNumber.length > 0) {
         payload.append("apartmentNumber", trimmedApartmentNumber);
       }
@@ -287,7 +306,8 @@ export default function ApartmentForm({
           variant: "destructive",
           title: "حدث خطأ",
           description:
-            (result as { message?: string })?.message || "تعذر حفظ بيانات الشقة",
+            (result as { message?: string })?.message ||
+            "تعذر حفظ بيانات الشقة",
         });
         return;
       }
@@ -335,7 +355,8 @@ export default function ApartmentForm({
           variant: "destructive",
           title: "حدث خطأ",
           description:
-            (result as { message?: string })?.message || "تعذر حذف بيانات الشقة",
+            (result as { message?: string })?.message ||
+            "تعذر حذف بيانات الشقة",
         });
         return;
       }
@@ -350,7 +371,8 @@ export default function ApartmentForm({
 
   const selectedGovernorate = form.watch("governorateId");
   const selectedGovernorateLabel =
-    governorateOptions.find((item) => item.id === selectedGovernorate)?.nameAr ?? "";
+    governorateOptions.find((item) => item.id === selectedGovernorate)
+      ?.nameAr ?? "";
   const availableCities = cityOptions.filter(
     (city) =>
       normalizeLookupValue(city.governorateId) ===
@@ -365,7 +387,9 @@ export default function ApartmentForm({
     if (!currentStatus) return;
     const matchedById = statusOptions.some((item) => item.id === currentStatus);
     if (matchedById) return;
-    const matchedByName = statusOptions.find((item) => item.nameAr === currentStatus);
+    const matchedByName = statusOptions.find(
+      (item) => item.nameAr === currentStatus,
+    );
     if (matchedByName) {
       form.setValue("status", matchedByName.id, {
         shouldDirty: true,
@@ -380,7 +404,9 @@ export default function ApartmentForm({
     if (!currentGender) return;
     const matchedById = genderOptions.some((item) => item.id === currentGender);
     if (matchedById) return;
-    const matchedByName = genderOptions.find((item) => item.nameAr === currentGender);
+    const matchedByName = genderOptions.find(
+      (item) => item.nameAr === currentGender,
+    );
     if (matchedByName) {
       form.setValue("gender", matchedByName.id, {
         shouldDirty: true,
@@ -455,7 +481,9 @@ export default function ApartmentForm({
     const cityMatchedById = cityOptions.some((item) => item.id === currentCity);
     if (cityMatchedById) return;
 
-    const cityMatchedByName = cityOptions.find((item) => item.nameAr === currentCity);
+    const cityMatchedByName = cityOptions.find(
+      (item) => item.nameAr === currentCity,
+    );
     if (cityMatchedByName) {
       form.setValue("cityId", cityMatchedByName.id, {
         shouldDirty: true,
@@ -571,8 +599,7 @@ export default function ApartmentForm({
     if (!open) setViewerSrc(null);
   };
 
-  const totalImageSlots =
-    visibleServerPaths.length + apartmentImages.length;
+  const totalImageSlots = visibleServerPaths.length + apartmentImages.length;
   const remainingNewSlots = Math.max(
     0,
     MAX_NEW_IMAGES - visibleServerPaths.length,
@@ -631,7 +658,11 @@ export default function ApartmentForm({
             render={({ field }) => (
               <FormItem className="w-full md:max-w-[240px]">
                 <FormLabel>الحالة</FormLabel>
-                <Select dir="rtl" value={field.value} onValueChange={field.onChange}>
+                <Select
+                  dir="rtl"
+                  value={field.value}
+                  onValueChange={field.onChange}
+                >
                   <FormControl>
                     <SelectTrigger className="w-full text-right [&>span]:w-full [&>span]:text-right">
                       <SelectValue placeholder="اختر الحالة" />
@@ -658,8 +689,12 @@ export default function ApartmentForm({
             name="gender"
             render={({ field }) => (
               <FormItem className="w-full md:max-w-[220px]">
-                <FormLabel>النوع</FormLabel>
-                <Select dir="rtl" value={field.value} onValueChange={field.onChange}>
+                <FormLabel>التخصيص</FormLabel>
+                <Select
+                  dir="rtl"
+                  value={field.value}
+                  onValueChange={field.onChange}
+                >
                   <FormControl>
                     <SelectTrigger className="w-full text-right [&>span]:w-full [&>span]:text-right">
                       <SelectValue placeholder="اختر النوع" />
@@ -687,7 +722,11 @@ export default function ApartmentForm({
             render={({ field }) => (
               <FormItem className="w-full md:max-w-[220px]">
                 <FormLabel>نوع التخصيص</FormLabel>
-                <Select dir="rtl" value={field.value} onValueChange={field.onChange}>
+                <Select
+                  dir="rtl"
+                  value={field.value}
+                  onValueChange={field.onChange}
+                >
                   <FormControl>
                     <SelectTrigger className="w-full text-right [&>span]:w-full [&>span]:text-right">
                       <SelectValue placeholder="اختر نوع التخصيص" />
@@ -718,7 +757,11 @@ export default function ApartmentForm({
             render={({ field }) => (
               <FormItem className="w-full md:max-w-[260px]">
                 <FormLabel>نوع الشقة</FormLabel>
-                <Select dir="rtl" value={field.value} onValueChange={field.onChange}>
+                <Select
+                  dir="rtl"
+                  value={field.value}
+                  onValueChange={field.onChange}
+                >
                   <FormControl>
                     <SelectTrigger className="w-full text-right [&>span]:w-full [&>span]:text-right">
                       <SelectValue placeholder="اختر نوع الشقة" />
@@ -769,7 +812,10 @@ export default function ApartmentForm({
               render={({ field }) => (
                 <FormItem className="w-full md:max-w-[260px]">
                   <FormLabel className="font-extrabold">المحافظة</FormLabel>
-                  <Popover open={governorateOpen} onOpenChange={setGovernorateOpen}>
+                  <Popover
+                    open={governorateOpen}
+                    onOpenChange={setGovernorateOpen}
+                  >
                     <PopoverTrigger asChild>
                       <FormControl>
                         <Button
@@ -793,7 +839,9 @@ export default function ApartmentForm({
                     >
                       <Input
                         value={governorateSearch}
-                        onChange={(event) => setGovernorateSearch(event.target.value)}
+                        onChange={(event) =>
+                          setGovernorateSearch(event.target.value)
+                        }
                         placeholder="ابحث عن المحافظة..."
                         className="mb-2 h-9"
                       />
@@ -819,7 +867,9 @@ export default function ApartmentForm({
                             <Check
                               className={cn(
                                 "h-4 w-4",
-                                option.id === field.value ? "opacity-100" : "opacity-0",
+                                option.id === field.value
+                                  ? "opacity-100"
+                                  : "opacity-0",
                               )}
                             />
                           </Button>
@@ -890,11 +940,7 @@ export default function ApartmentForm({
                 <FormItem className="w-full md:max-w-[300px]">
                   <FormLabel>الشارع</FormLabel>
                   <FormControl>
-                    <Input
-                      {...field}
-                      className="w-full"
-                      placeholder="الشارع"
-                    />
+                    <Input {...field} className="w-full" placeholder="الشارع" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -924,11 +970,7 @@ export default function ApartmentForm({
                 <FormItem className="w-full md:max-w-[220px]">
                   <FormLabel>الدور</FormLabel>
                   <FormControl>
-                    <Input
-                      {...field}
-                      className="w-full"
-                      placeholder="الدور"
-                    />
+                    <Input {...field} className="w-full" placeholder="الدور" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -1038,8 +1080,7 @@ export default function ApartmentForm({
                                     getFullFileUrl(path || "") ||
                                     displaySrc ||
                                     "";
-                                  if (url)
-                                    downloadFromUrl(url, basename(path));
+                                  if (url) downloadFromUrl(url, basename(path));
                                 }}
                                 className="bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-2 rounded opacity-90 flex items-center gap-1"
                               >
@@ -1060,68 +1101,72 @@ export default function ApartmentForm({
                       {apartmentImages.map((image, index) => {
                         const isPrimary = Boolean(newPrimaryMap[image.key]);
                         return (
-                        <div
-                          key={image.key}
-                          className="relative rounded-md border overflow-hidden w-full border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-900/40"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={image.previewUrl}
-                            alt={image.file.name}
-                            className="h-44 w-full object-cover bg-white"
-                          />
-                          {isPrimary ? (
-                            <div className="absolute bottom-2 right-2 rounded bg-black/70 px-3 py-1.5 text-sm text-white">
-                              صورة أساسية
-                            </div>
-                          ) : null}
-                          <label className="absolute top-2 right-2 flex items-center gap-2 rounded bg-white/90 px-3 py-1.5 text-sm font-medium">
-                            <input
-                              type="checkbox"
-                              className="h-5 w-5 accent-violet-600 cursor-pointer"
-                              checked={isPrimary}
-                              onChange={(event) =>
-                                setNewPrimaryMap((prev) => ({
-                                  ...prev,
-                                  [image.key]: event.target.checked,
-                                }))
-                              }
+                          <div
+                            key={image.key}
+                            className="relative rounded-md border overflow-hidden w-full border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-900/40"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={image.previewUrl}
+                              alt={image.file.name}
+                              className="h-44 w-full object-cover bg-white"
                             />
-                            أساسية
-                          </label>
-                          <div className="absolute top-2 left-2 flex gap-1">
-                            <button
-                              type="button"
-                              title="عرض"
-                              onClick={() => {
-                                setViewerSrc(image.previewUrl);
-                                setViewerOpen(true);
-                              }}
-                              className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-2 rounded opacity-90 flex items-center gap-1"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              title="تحميل"
-                              onClick={() =>
-                                downloadFromUrl(image.previewUrl, image.file.name)
-                              }
-                              className="bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-2 rounded opacity-90 flex items-center gap-1"
-                            >
-                              <Download className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              title="حذف"
-                              onClick={() => removeApartmentImageAt(index)}
-                              className="bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-2 rounded opacity-90 flex items-center gap-1"
-                            >
-                              <Trash className="w-4 h-4" />
-                            </button>
+                            {isPrimary ? (
+                              <div className="absolute bottom-2 right-2 rounded bg-black/70 px-3 py-1.5 text-sm text-white">
+                                صورة أساسية
+                              </div>
+                            ) : null}
+                            <label className="absolute top-2 right-2 flex items-center gap-2 rounded bg-white/90 px-3 py-1.5 text-sm font-medium">
+                              <input
+                                type="checkbox"
+                                className="h-5 w-5 accent-violet-600 cursor-pointer"
+                                checked={isPrimary}
+                                onChange={(event) =>
+                                  setNewPrimaryMap((prev) => ({
+                                    ...prev,
+                                    [image.key]: event.target.checked,
+                                  }))
+                                }
+                              />
+                              أساسية
+                            </label>
+                            <div className="absolute top-2 left-2 flex gap-1">
+                              <button
+                                type="button"
+                                title="عرض"
+                                onClick={() => {
+                                  setViewerSrc(image.previewUrl);
+                                  setViewerOpen(true);
+                                }}
+                                className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-2 rounded opacity-90 flex items-center gap-1"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                title="تحميل"
+                                onClick={() =>
+                                  downloadFromUrl(
+                                    image.previewUrl,
+                                    image.file.name,
+                                  )
+                                }
+                                className="bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-2 rounded opacity-90 flex items-center gap-1"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
+                              <button
+                                type="button"
+                                title="حذف"
+                                onClick={() => removeApartmentImageAt(index)}
+                                className="bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-2 rounded opacity-90 flex items-center gap-1"
+                              >
+                                <Trash className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      )})}
+                        );
+                      })}
                     </div>
                   ) : null}
 
