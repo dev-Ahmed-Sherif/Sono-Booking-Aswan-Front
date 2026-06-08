@@ -30,6 +30,8 @@ import {
   softDeleteRequestById,
   updateRequestById,
 } from "@/actions/requestService";
+import AlertModal from "@/components/modals/alert-modal";
+import useToggleState from "@/hooks/use-toggle-state";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -1119,10 +1121,23 @@ export function HousingRequestRowActions({
   onDelete,
   deleting,
 }: HousingRequestRowActionsProps) {
+  const [open, toggleOpen] = useToggleState(false);
   const locked =
     row.status === "مرفوض" || row.status === "ملغى";
 
+  const onConfirmDelete = async () => {
+    await onDelete(row.id);
+    toggleOpen();
+  };
+
   return (
+    <>
+      <AlertModal
+        isOpen={open}
+        loading={Boolean(deleting)}
+        onClose={toggleOpen}
+        onConfirm={onConfirmDelete}
+      />
     <div className="flex flex-wrap items-center justify-center gap-1">
       <Button
         type="button"
@@ -1153,7 +1168,7 @@ export function HousingRequestRowActions({
             className="h-9 w-9 text-destructive hover:text-destructive"
             title="حذف"
             disabled={deleting}
-            onClick={() => onDelete(row.id)}
+            onClick={toggleOpen}
           >
             {deleting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1164,6 +1179,7 @@ export function HousingRequestRowActions({
         </>
       ) : null}
     </div>
+    </>
   );
 }
 

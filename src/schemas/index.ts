@@ -1,6 +1,8 @@
 // import { UserRole } from "@prisma/client";
 import * as z from "zod";
 
+import { isImageFile } from "@/lib/image-file";
+
 export const RegisterSchema = z.object({
   email: z
     .string()
@@ -30,27 +32,6 @@ const birthDateSchema = z.date({
   invalid_type_error: "تاريخ الميلاد غير صالح",
 });
 
-const ALLOWED_IDENTITY_MIME_TYPES = [
-  "image/jpeg",
-  "image/jpg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "image/bmp",
-  "image/svg+xml",
-  "application/pdf",
-];
-const ALLOWED_IDENTITY_EXTENSIONS = [
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".svg",
-  ".pdf",
-];
-
 const identityFileSchema = z
   .any()
   .refine((val) => val instanceof File, {
@@ -61,13 +42,7 @@ const identityFileSchema = z
       if (!(val instanceof File)) return false;
       const type = (val.type || "").toLowerCase();
       const name = (val.name || "").toLowerCase();
-      const byType =
-        type.startsWith("image/") ||
-        ALLOWED_IDENTITY_MIME_TYPES.includes(type);
-      const byExt = ALLOWED_IDENTITY_EXTENSIONS.some((ext) =>
-        name.endsWith(ext),
-      );
-      return byType || byExt;
+      return isImageFile(val) || type === "application/pdf" || name.endsWith(".pdf");
     },
     {
       message: "يُسمح برفع الصور أو ملفات PDF فقط",
@@ -1335,7 +1310,12 @@ export const apartmentAllocationTypeEnum = z.enum(["ثابت", "مرن"], {
 });
 
 export const apartmentSchema = z.object({
-  apartmentNumber: z.string().max(20).optional().default(""),
+  apartmentNumber: z.coerce
+    .number({
+      required_error: "رقم الشقة مطلوب",
+      invalid_type_error: "رقم الشقة غير صالح",
+    })
+    .positive({ message: "رقم الشقة يجب أن يكون أكبر من صفر" }),
   description: z
     .string()
     .min(1, { message: "وصف الشقة مطلوب" })
@@ -1401,7 +1381,12 @@ export const roomStatusEnum = z.enum(
 );
 
 export const roomSchema = z.object({
-  roomNumber: z.string().max(20).optional().default(""),
+  roomNumber: z.coerce
+    .number({
+      required_error: "رقم الغرفة مطلوب",
+      invalid_type_error: "رقم الغرفة غير صالح",
+    })
+    .positive({ message: "رقم الغرفة يجب أن يكون أكبر من صفر" }),
   description: z
     .string()
     .min(1, { message: "وصف الغرفة مطلوب" })
@@ -1436,7 +1421,12 @@ export const bedStatusEnum = z.enum(
 );
 
 export const bedSchema = z.object({
-  bedNumber: z.string().max(20).optional().default(""),
+  bedNumber: z.coerce
+    .number({
+      required_error: "رقم السرير مطلوب",
+      invalid_type_error: "رقم السرير غير صالح",
+    })
+    .positive({ message: "رقم السرير يجب أن يكون أكبر من صفر" }),
   description: z
     .string()
     .min(1, { message: "وصف السرير مطلوب" })

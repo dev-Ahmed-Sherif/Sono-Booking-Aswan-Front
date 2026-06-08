@@ -41,6 +41,7 @@ import {
 } from "@/actions/settings/governorateService";
 import { ToastAction } from "@radix-ui/react-toast";
 import { getFullFileUrl } from "@/lib/file-viewer";
+import { IMAGE_FILE_ACCEPT, isImageFile } from "@/lib/image-file";
 import { cn } from "@/lib/utils";
 import type { GovernorateCityRow } from "@/lib/governorate-cities";
 import CityForm from "@/components/settings/cities/city-form";
@@ -168,8 +169,7 @@ const GovernorateForm = ({
       return;
     }
 
-    const isImage = file.type.startsWith("image/");
-    if (!isImage) {
+    if (!isImageFile(file)) {
       toast({ variant: "destructive", description: "يُسمح فقط بملفات الصور" });
       return;
     }
@@ -681,7 +681,7 @@ const GovernorateForm = ({
                                   }}
                                   disabled={loading}
                                   type="file"
-                                  accept="image/*"
+                                  accept={IMAGE_FILE_ACCEPT}
                                   className="hidden"
                                   onChange={(e) => {
                                     const file = e.target.files?.[0] ?? null;
@@ -857,7 +857,7 @@ const GovernorateForm = ({
                                       اسحب وأفلت الشعار هنا أو اضغط للاختيار
                                     </p>
                                     <p className="text-sm text-blue-500 dark:text-blue-500 mt-1 text-center">
-                                      PNG / JPG / WEBP
+                                      جميع صيغ الصور
                                     </p>
                                   </div>
                                 )}

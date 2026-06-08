@@ -3,7 +3,6 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getRoomTypes } from "@/actions/settings/roomTypeService";
 import type { RoomTypeColumn } from "@/components/settings/room-types/columns";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 
 const RoomTypesClient = dynamic(() => import("@/components/settings/room-types/client"), {
   loading: () => <div className="p-4">جاري التحميل...</div>,
@@ -29,7 +28,6 @@ const RoomTypesPage = async ({ params }: RoomTypesPageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <RoomTypesClient data={data} path={`/${locale}/settings/room-types/new`} />
       </div>
     </main>

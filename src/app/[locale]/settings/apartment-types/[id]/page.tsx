@@ -2,7 +2,6 @@ import { getApartmentTypeById } from "@/actions/settings/apartmentTypeService";
 import ApartmentTypeForm from "@/components/settings/apartment-types/apartment-types-form";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 import {
   settingsLookupFromApiResult,
   type SettingsLookupInitialData,
@@ -29,7 +28,6 @@ const ApartmentTypePage = async ({ params }: PageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <div className="flex-1 space-y-4 pt-6">
           <ApartmentTypeForm initialData={initialData} name="نوع الشقة" />
         </div>

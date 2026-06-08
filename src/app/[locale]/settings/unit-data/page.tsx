@@ -3,7 +3,6 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { getApartments } from "@/actions/settings/apartmentService";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 import type { ApartmentColumn } from "@/components/settings/unit-data/columns";
 
 const UnitDataClient = dynamic(
@@ -46,7 +45,6 @@ const UnitDataPage = async ({ params }: UnitDataPageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <UnitDataClient
           data={data}
           path={`/${locale}/settings/unit-data/new`}

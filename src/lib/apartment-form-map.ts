@@ -213,7 +213,8 @@ export function mapApiApartmentToFormDefaults(
     apartmentImageMeta?: ApartmentImageMeta[];
   } = {
     id,
-    apartmentNumber: pickStr(api, ["apartmentNumber", "ApartmentNumber"]),
+    apartmentNumber:
+      Number(pickStr(api, ["apartmentNumber", "ApartmentNumber"])) || undefined,
     description: pickStr(api, ["description", "Description"]),
     price: Number.isFinite(price) ? price : 0,
     status,

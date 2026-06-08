@@ -1,7 +1,6 @@
 import PaymentMethodForm from "@/components/settings/payment-methods/payment-methods-form";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 import type { SettingsLookupInitialData } from "@/lib/settings-lookup-initial-data";
 
 type PageProps = { params: { locale: string; id: string } };
@@ -22,7 +21,6 @@ const PaymentMethodPage = async ({ params }: PageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <div className="flex-1 space-y-4 pt-6">
           <PaymentMethodForm initialData={initialData} name="طريقة الدفع" />
         </div>

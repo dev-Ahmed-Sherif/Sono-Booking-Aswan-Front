@@ -163,7 +163,7 @@ export function mapApiBedToFormDefaults(
     bedImageMeta?: BedImageMeta[];
   } = {
     id,
-    bedNumber: pickStr(api, ["bedNumber", "BedNumber"]),
+    bedNumber: Number(pickStr(api, ["bedNumber", "BedNumber"])) || undefined,
     description: pickStr(api, ["description", "Description"]),
     dimensions: pickStr(api, ["dimensions", "Dimensions"]),
     price: Number.isFinite(price) ? price : 0,

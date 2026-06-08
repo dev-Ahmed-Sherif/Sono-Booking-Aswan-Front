@@ -3,7 +3,6 @@ import { getGovernorateById } from "@/actions/settings/governorateService";
 import GovernorateForm from "@/components/settings/governorates/governorate-form";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 import { normalizeGovernorateCitiesResponse } from "@/lib/governorate-cities";
 
 type PageProps = { params: { locale: string; id: string } };
@@ -33,7 +32,6 @@ const GovernorateIdPage = async ({ params }: PageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <div className="flex-1 space-y-4 pt-6">
           <GovernorateForm
             initialData={initialData}

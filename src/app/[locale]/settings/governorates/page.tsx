@@ -3,7 +3,6 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getGovernorates } from "@/actions/settings/governorateService";
 import type { GovernorateColumn } from "@/components/settings/governorates/columns";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 
 const GovernorateClient = dynamic(
   () => import("@/components/settings/governorates/client"),
@@ -30,7 +29,6 @@ const GovernoratePage = async ({ params }: PageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <div className="flex-1 space-y-4 pt-6">
           <GovernorateClient
             data={data}

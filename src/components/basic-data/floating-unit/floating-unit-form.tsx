@@ -81,6 +81,7 @@ import type { FloatingUnitStaffColumn } from "@/components/basic-data/floating-u
 import { ToastAction } from "@radix-ui/react-toast";
 import { cn } from "@/lib/utils";
 import { getFullFileUrl } from "@/lib/file-viewer";
+import { IMAGE_FILE_ACCEPT, isImageFile } from "@/lib/image-file";
 import type { FloatingUnitFormValues } from "@/actions/basic-data/floatingUnitService";
 import type { NumericLookupRow } from "@/lib/numeric-lookup";
 
@@ -500,7 +501,7 @@ const FloatingUnitForm = ({
       });
       return;
     }
-    if (!file.type.startsWith("image/")) {
+    if (!isImageFile(file)) {
       toast({ variant: "destructive", description: "يُسمح فقط بملفات الصور" });
       return;
     }
@@ -1262,7 +1263,7 @@ const FloatingUnitForm = ({
                                     fileInputRef.current = el;
                                   }}
                                   type="file"
-                                  accept="image/*"
+                                  accept={IMAGE_FILE_ACCEPT}
                                   className="hidden"
                                   disabled={loading}
                                   onChange={(e) => {

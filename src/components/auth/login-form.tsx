@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { useDispatch } from "react-redux";
@@ -47,7 +48,6 @@ import { cn } from "@/lib/utils";
 
 import { getUserData, Login, verifyAccessTokenCookie } from "@/actions/auth";
 import {
-  accessTokenCookieName,
   guideCookieName,
   refreshTokenCookieName,
 } from "@/lib/auth-cookies";
@@ -120,11 +120,21 @@ function extractLoginPayload(
       ? payload.refreshToken.trim()
       : undefined;
   const userIdRaw = payload.userId ?? payload.UserId ?? payload.id ?? payload.Id;
-  const userId =
-    typeof userIdRaw === "string" && userIdRaw.trim()
-      ? userIdRaw.trim()
-      : undefined;
+  const userId = normalizeAuthUserId(userIdRaw);
   return { isLogedIn, accessToken, refreshToken, userId };
+}
+
+/** Login API may return user id as string or number. */
+function normalizeAuthUserId(raw: unknown): string | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    return trimmed || undefined;
+  }
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return String(raw);
+  }
+  return undefined;
 }
 
 const AUTH_COOKIE_VERIFY_TIMEOUT_MS = 4000;
@@ -169,11 +179,7 @@ function setLoginAuthCookies(tokens: {
   refreshToken?: string;
   userId?: string;
 }): void {
-  setClientCookie(
-    accessTokenCookieName(),
-    tokens.accessToken,
-    process.env.NEXT_PUBLIC_ACCESS_TOKEN_LIFE ?? "",
-  );
+  // Access token is httpOnly and set server-side (Login action + /api/auth/set-session).
   if (tokens.refreshToken) {
     setClientCookie(
       refreshTokenCookieName(),
@@ -226,21 +232,19 @@ async function ensureLoginCookiesReady(tokens: {
   await syncServerAccessToken(tokens.accessToken);
   setLoginAuthCookies(tokens);
 
-  const clientExpected: Array<{ name: string; value: string }> = [
-    { name: accessTokenCookieName(), value: tokens.accessToken },
-  ];
+  // Only non-httpOnly cookies are visible to document.cookie.
+  const clientExpected: Array<{ name: string; value: string }> = [];
   if (tokens.refreshToken) {
     clientExpected.push({
       name: refreshTokenCookieName(),
       value: tokens.refreshToken,
     });
   }
-  if (tokens.userId) {
-    clientExpected.push({ name: guideCookieName(), value: tokens.userId });
-  }
 
   const [clientOk, serverOk] = await Promise.all([
-    waitForClientCookieValues(clientExpected),
+    clientExpected.length > 0
+      ? waitForClientCookieValues(clientExpected)
+      : Promise.resolve(true),
     waitForServerAccessTokenCookie(),
   ]);
 
@@ -568,6 +572,9 @@ export function LoginForm({ Cookie }: LoginFormProps) {
 
     try {
       const inquiryStartYmd = normalizeInquiryStartYmd(startDate);
+      const inquiryGenders = selectedGenders.filter(
+        (g): g is "male" | "female" => g === "male" || g === "female",
+      );
       const { cards, fatalError, partialFailure } =
         await fetchMergedAvailabilityCards(
           kinds,
@@ -575,6 +582,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
             ? {
                 startDateYmd: inquiryStartYmd,
                 nights: nightsNumber,
+                genders: inquiryGenders,
               }
             : undefined,
         );
@@ -723,15 +731,22 @@ export function LoginForm({ Cookie }: LoginFormProps) {
             } = result.data.data;
             const resolvedEmployeeId = employeeId ?? EmployeeId;
 
-            if (id) {
+            if (id != null && String(id).trim()) {
+              const guideId = String(id).trim();
               setClientCookie(
                 guideCookieName(),
-                String(id),
+                guideId,
                 process.env.NEXT_PUBLIC_REFRESH_GUDIE_LIFE ?? "",
               );
-              await waitForClientCookieValues([
-                { name: guideCookieName(), value: String(id) },
+              const guideReady = await waitForClientCookieValues([
+                { name: guideCookieName(), value: guideId },
               ]);
+              if (!guideReady) {
+                console.warn(
+                  "Guide cookie was not readable after set:",
+                  guideCookieName(),
+                );
+              }
             }
 
             user.setItem({
@@ -796,30 +811,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
       transition={{ duration: 0.6 }}
     >
       {/* ── Background ── */}
-      <div className="absolute inset-0 bg-gray-50 z-0" aria-hidden />
-
-      {/* ── Header ── */}
-      <motion.header
-        className="relative z-10 flex items-center justify-center gap-3 py-5 px-6 border-b border-[#00004a] shadow-sm mt-8"
-        style={{ backgroundColor: "#00005c" }}
-        initial={{ y: -40, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2, duration: 0.6 }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-gradient-to-br from-green-500 to-blue-600 shadow-lg">
-            <Home className="h-6 w-6 text-white" />
-          </div>
-          <div className="text-center">
-            <h1 className="text-xl md:text-3xl font-bold text-white tracking-wide">
-              نظام إدارة إسكان محافظة أسوان
-            </h1>
-            {/* <p className="text-xs md:text-sm text-white/70 mt-0.5">
-              Aswan Governorate Housing Management System
-            </p> */}
-          </div>
-        </div>
-      </motion.header>
+      <div className="absolute inset-0 bg-muted z-0" aria-hidden />
 
       {/* ── Main Content ── */}
       <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-8">
@@ -837,17 +829,17 @@ export function LoginForm({ Cookie }: LoginFormProps) {
               stiffness: 90,
             }}
           >
-            <Card className="h-full border-2 border-blue-200 rounded-3xl shadow-lg bg-white text-gray-800">
+            <Card className="h-full border-2 border-border rounded-3xl shadow-lg bg-card text-card-foreground">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-lg bg-blue-50 border border-blue-200">
-                    <Search className="h-5 w-5 text-blue-600" />
+                  <div className="p-2 rounded-lg bg-brand-muted border border-border">
+                    <Search className="h-5 w-5 text-brand" />
                   </div>
-                  <CardTitle className="text-lg md:text-xl text-gray-800">
+                  <CardTitle className="text-lg md:text-xl">
                     استعلام عن الوحدات المتاحة
                   </CardTitle>
                 </div>
-                <p className="text-gray-500 text-sm mt-1 pe-1">
+                <p className="text-muted-foreground text-sm mt-1 pe-1">
                   تحقق من توفر الوحدات السكنية في التاريخ المطلوب
                 </p>
               </CardHeader>
@@ -855,7 +847,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
               <CardContent className="space-y-4">
                 {/* Start Date */}
                 <div className="space-y-1.5">
-                  <Label className="text-gray-700 flex items-center gap-1.5 text-base">
+                  <Label className="text-foreground flex items-center gap-1.5 text-base">
                     <CalendarDays className="h-4 w-4 text-blue-500" />
                     تاريخ البدء
                   </Label>
@@ -865,7 +857,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                         variant="outline"
                         dir="rtl"
                         className={cn(
-                          "w-full justify-between text-right font-normal bg-white border-2 border-black dark:border-white text-gray-800 hover:bg-gray-50",
+                          "w-full justify-between text-right font-normal bg-background border-2 border-border text-foreground hover:bg-muted",
                           !startDate && "text-muted-foreground",
                         )}
                       >
@@ -905,7 +897,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
 
                 {/* Number of nights */}
                 <div className="space-y-1.5">
-                  <Label className="text-gray-700 flex items-center gap-1.5 text-base">
+                  <Label className="text-foreground flex items-center gap-1.5 text-base">
                     <Moon className="h-4 w-4 text-blue-500" />
                     عدد الليالي
                   </Label>
@@ -916,7 +908,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                     placeholder="أدخل عدد الليالي"
                     value={nights}
                     onChange={(e) => setNights(e.target.value)}
-                    className="bg-white border-black text-gray-800 placeholder:text-sm placeholder:text-gray-400 focus:border-blue-400 focus:ring-blue-400/30"
+                    className="bg-background border-border text-foreground placeholder:text-sm placeholder:text-muted-foreground focus:border-brand focus:ring-brand/30"
                   />
                   {availabilityErrors.nights ? (
                     <p className="text-xs text-red-600">
@@ -927,7 +919,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
 
                 {/* Unit Type */}
                 <div className="space-y-1.5">
-                  <Label className="text-gray-700 flex items-center gap-1.5 text-base">
+                  <Label className="text-foreground flex items-center gap-1.5 text-base">
                     <Building2 className="h-4 w-4 text-blue-500" />
                     نوع الوحدة
                     <span className="text-red-500 text-xs">*</span>
@@ -956,8 +948,8 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                           selectedUnitTypes.includes(
                             opt.value as AvailableUnitType,
                           )
-                            ? "bg-[#00005c] border-[#00005c] text-white shadow-md shadow-[#00005c]/25 scale-[1.02]"
-                            : "bg-slate-50 border-slate-200 text-slate-800 hover:bg-blue-50 hover:border-blue-300"
+                            ? "bg-brand border-brand text-brand-foreground shadow-md shadow-brand/25 scale-[1.02]"
+                            : "bg-muted border-border text-foreground hover:bg-brand-muted hover:border-brand/40"
                         }`}
                       >
                         {opt.label}
@@ -973,7 +965,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
 
                 {/* Request Type */}
                 <div className="space-y-1.5">
-                  <Label className="text-gray-700 text-base flex items-center gap-1">
+                  <Label className="text-foreground text-base flex items-center gap-1">
                     نوع الطلب
                     <span className="text-red-500 text-xs">*</span>
                   </Label>
@@ -991,8 +983,8 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                         }}
                         className={`py-2.5 px-3 rounded-xl border-2 font-medium text-sm transition-all duration-200 whitespace-nowrap shrink-0 min-w-[calc((100%-1rem)/3)] ${
                           requestType === opt.value
-                            ? "bg-blue-500 border-blue-500 text-white shadow-lg shadow-blue-500/30 scale-[1.02]"
-                            : "bg-white border-gray-300 text-gray-600 hover:bg-blue-50 hover:border-blue-300"
+                            ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
+                            : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40"
                         }`}
                       >
                         {opt.label}
@@ -1008,7 +1000,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
 
                 {/* Gender — required */}
                 <div className="space-y-1.5">
-                  <Label className="text-gray-700 text-base flex items-center gap-1">
+                  <Label className="text-foreground text-base flex items-center gap-1">
                     الجنس
                     <span className="text-red-500 text-xs">*</span>
                   </Label>
@@ -1030,8 +1022,8 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                         }}
                         className={`py-2.5 rounded-xl border-2 font-medium text-sm transition-all duration-200 ${
                           selectedGenders.includes(opt.value)
-                            ? "bg-blue-500 border-blue-500 text-white shadow-lg shadow-blue-500/30 scale-[1.02]"
-                            : "bg-white border-gray-300 text-gray-600 hover:bg-blue-50 hover:border-blue-300"
+                            ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
+                            : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40"
                         }`}
                       >
                         {opt.label}
@@ -1047,7 +1039,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
 
                 {/* Allocation Type */}
                 <div className="space-y-1.5">
-                  <Label className="text-gray-700 text-base flex items-center gap-1">
+                  <Label className="text-foreground text-base flex items-center gap-1">
                     نوع الحجز
                     <span className="text-red-500 text-xs">*</span>
                   </Label>
@@ -1065,8 +1057,8 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                         }}
                         className={`py-2.5 rounded-xl border-2 font-medium text-sm transition-all duration-200 ${
                           allocationType === opt.value
-                            ? "bg-blue-500 border-blue-500 text-white shadow-lg shadow-blue-500/30 scale-[1.02]"
-                            : "bg-white border-gray-300 text-gray-600 hover:bg-blue-50 hover:border-blue-300"
+                            ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
+                            : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40"
                         }`}
                       >
                         {opt.label}
@@ -1086,8 +1078,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                   type="button"
                   onClick={handleCheckAvailability}
                   disabled={isChecking}
-                  className="w-full py-5 rounded-2xl font-semibold text-base text-white shadow-lg transition-all duration-300 hover:scale-[1.02] hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
-                  style={{ backgroundColor: "#00005c" }}
+                  className="w-full py-5 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-lg transition-all duration-300 hover:scale-[1.02] hover:bg-brand-hover hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isChecking ? (
                     <span className="flex items-center gap-2">
@@ -1174,7 +1165,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                                 card.unitKind === "apartment" &&
                                   "bg-gradient-to-br from-violet-50 via-white to-slate-50/80 border-violet-200",
                                 isSelected &&
-                                  "ring-2 ring-offset-1 ring-blue-500 border-blue-300",
+                                  "ring-2 ring-offset-1 ring-brand border-brand/50",
                               )}
                             >
                               <label
@@ -1189,7 +1180,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                                   type="checkbox"
                                   checked={isSelected}
                                   onChange={() => toggleAvailabilityCard(cKey)}
-                                  className="h-4 w-4 shrink-0 rounded border-slate-400 text-[#00005c] focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+                                  className="h-4 w-4 shrink-0 rounded border-slate-400 text-brand focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
                                 />
                               </label>
                               <div className="flex items-start gap-3">
@@ -1271,8 +1262,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                         <Button
                           type="button"
                           onClick={handleSaveReservationSelection}
-                          className="w-full py-4 rounded-2xl font-semibold text-base text-white shadow-md transition-all duration-300 hover:opacity-95"
-                          style={{ backgroundColor: "#00005c" }}
+                          className="w-full py-4 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-md transition-all duration-300 hover:bg-brand-hover hover:opacity-95"
                         >
                           <span className="inline-flex items-center justify-center gap-2">
                             <Bookmark className="h-4 w-4 shrink-0" />
@@ -1304,22 +1294,22 @@ export function LoginForm({ Cookie }: LoginFormProps) {
             }}
             className="h-[32rem] md:h-[36rem]"
           >
-            <Card className="h-full w-full border-2 border-green-200 rounded-3xl shadow-lg bg-white text-gray-800 flex flex-col">
+            <Card className="h-full w-full border-2 border-border rounded-3xl shadow-lg bg-card text-card-foreground flex flex-col">
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-lg bg-green-50 border border-green-200">
-                    <LogIn className="h-5 w-5 text-green-600" />
+                  <div className="p-2 rounded-lg bg-brand-muted border border-border">
+                    <LogIn className="h-5 w-5 text-brand" />
                   </div>
-                  <CardTitle className="text-lg md:text-xl text-gray-800">
+                  <CardTitle className="text-lg md:text-xl">
                     دخول المستخدمين
                   </CardTitle>
                 </div>
-                <p className="text-gray-500 text-sm mt-1">
+                <p className="text-muted-foreground text-sm mt-1">
                   خاص بإدارة المستخدمين والموظفين المعتمدين
                 </p>
               </CardHeader>
 
-              <CardContent className="flex-1 flex flex-col justify-center overflow-hidden">
+              <CardContent className="flex-1 flex flex-col justify-center overflow-y-auto">
                 <Form {...form}>
                   <form
                     onSubmit={form.handleSubmit(onSubmit)}
@@ -1331,7 +1321,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                       name="email"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-gray-700 text-base">
+                          <FormLabel className="text-foreground text-base">
                             البريد الإلكتروني
                           </FormLabel>
                           <FormControl>
@@ -1340,7 +1330,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                               disabled={isPending}
                               placeholder="example@aswan.gov.eg"
                               type="email"
-                              className="bg-white border-black text-gray-800 placeholder:text-sm placeholder:text-gray-400 focus:border-green-400 focus:ring-green-400/30"
+                              className="bg-background border-border text-foreground placeholder:text-sm placeholder:text-muted-foreground focus:border-brand focus:ring-brand/30"
                             />
                           </FormControl>
                           <FormMessage />
@@ -1354,7 +1344,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                       name="password"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-gray-700 text-base">
+                          <FormLabel className="text-foreground text-base">
                             كلمة المرور
                           </FormLabel>
                           <FormControl>
@@ -1363,7 +1353,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                               disabled={isPending}
                               placeholder="••••••••"
                               type="password"
-                              className="bg-white border-black text-gray-800 placeholder:text-sm placeholder:text-gray-400 focus:border-green-400 focus:ring-green-400/30"
+                              className="bg-background border-border text-foreground placeholder:text-sm placeholder:text-muted-foreground focus:border-brand focus:ring-brand/30"
                             />
                           </FormControl>
                           <FormMessage />
@@ -1374,11 +1364,11 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                     {/* Forgot password link */}
                     <div className="flex justify-start">
                       <span
-                        className="text-xs text-gray-400 cursor-not-allowed select-none"
+                        className="text-xs text-muted-foreground cursor-not-allowed select-none"
                         title="ستكون متاحة في مرحلة قادمة"
                       >
                         نسيت كلمة المرور؟
-                        <span className="ms-1 text-[10px] text-gray-300">
+                        <span className="ms-1 text-[10px] text-muted-foreground/70">
                           (قريباً)
                         </span>
                       </span>
@@ -1388,8 +1378,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                     <Button
                       disabled={isPending}
                       type="submit"
-                      className="w-full py-5 rounded-2xl font-semibold text-base text-white shadow-lg transition-all duration-300 hover:scale-[1.02] hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
-                      style={{ backgroundColor: "#00005c" }}
+                      className="w-full py-5 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-lg transition-all duration-300 hover:scale-[1.02] hover:bg-brand-hover hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       {isPending ? (
                         <span className="flex items-center gap-2">
@@ -1413,22 +1402,21 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                     </Button>
 
                     <div className="relative flex items-center gap-2 py-1">
-                      <div className="flex-1 h-px bg-gray-200" />
-                      <span className="text-gray-400 text-xs shrink-0">أو</span>
-                      <div className="flex-1 h-px bg-gray-200" />
+                      <div className="flex-1 h-px bg-border" />
+                      <span className="text-muted-foreground text-xs shrink-0">أو</span>
+                      <div className="flex-1 h-px bg-border" />
                     </div>
 
                     {/* Register button */}
                     <Button
-                      type="button"
+                      asChild
                       variant="outline"
-                      onClick={() => router.push(`/${locale}/register`)}
-                      className="w-full py-5 rounded-2xl font-semibold text-base border-2 border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all duration-300 hover:scale-[1.02]"
+                      className="w-full py-5 rounded-2xl font-semibold text-base border-2 border-border bg-background text-foreground hover:bg-muted hover:border-brand/40 transition-all duration-300 hover:scale-[1.02]"
                     >
-                      <span className="flex items-center gap-2">
+                      <Link href={`/${locale}/register`}>
                         <UserPlus className="h-4 w-4" />
                         تسجيل جديد
-                      </span>
+                      </Link>
                     </Button>
                   </form>
                 </Form>

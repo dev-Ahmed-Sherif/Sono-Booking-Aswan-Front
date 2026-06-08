@@ -32,6 +32,8 @@ import {
   type GenericOption,
 } from "@/lib/availability-inquiry";
 import { useToast } from "@/hooks/use-toast";
+import AlertModal from "@/components/modals/alert-modal";
+import useToggleState from "@/hooks/use-toggle-state";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -105,6 +107,9 @@ const RegisterCompanionsTab = ({
     [],
   );
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [deleteOpen, toggleDeleteOpen] = useToggleState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const newCompanionForm = useForm<CompanionFormValues>({
     resolver: zodResolver(registrationCompanionSchema),
@@ -379,29 +384,51 @@ const RegisterCompanionsTab = ({
     }
   };
 
-  const handleDelete = async (companionId: string) => {
-    if (!registeredUserId) return;
+  const requestDelete = (companionId: string) => {
+    setPendingDeleteId(companionId);
+    toggleDeleteOpen();
+  };
 
-    const res = await deleteCompanionById(companionId, registeredUserId);
-    if ((res as { error?: string })?.error) {
-      toast({
-        variant: "destructive",
-        title: "تعذر حذف المرافق",
-        description:
-          (res as { message?: string }).message ||
-          "حدث خطأ أثناء حذف المرافق",
-      });
-      return;
+  const confirmDelete = async () => {
+    if (!registeredUserId || !pendingDeleteId) return;
+
+    try {
+      setDeleteLoading(true);
+      const res = await deleteCompanionById(pendingDeleteId, registeredUserId);
+      if ((res as { error?: string })?.error) {
+        toast({
+          variant: "destructive",
+          title: "تعذر حذف المرافق",
+          description:
+            (res as { message?: string }).message ||
+            "حدث خطأ أثناء حذف المرافق",
+        });
+        return;
+      }
+
+      toast({ title: "تم حذف المرافق" });
+      toggleDeleteOpen();
+      setPendingDeleteId(null);
+      await loadData();
+    } finally {
+      setDeleteLoading(false);
     }
-
-    toast({ title: "تم حذف المرافق" });
-    await loadData();
   };
 
   const formDisabled = !registeredUserId || isSaving || isLoading;
 
   return (
     <>
+      <AlertModal
+        isOpen={deleteOpen}
+        loading={deleteLoading}
+        onClose={() => {
+          toggleDeleteOpen();
+          setPendingDeleteId(null);
+        }}
+        onConfirm={confirmDelete}
+      />
+
       <div className="space-y-6">
         {!registeredUserId ? (
           <motion.div
@@ -456,7 +483,7 @@ const RegisterCompanionsTab = ({
                 <motion.div className="flex justify-end pt-2">
                   <Button
                     type="button"
-                    className="bg-[#00005c] hover:bg-[#00004a] text-white"
+                    className="bg-brand hover:bg-brand-hover text-brand-foreground"
                     disabled={
                       formDisabled ||
                       newCompanionRelationshipOptions.length === 0
@@ -549,7 +576,7 @@ const RegisterCompanionsTab = ({
                               className="h-8 w-8 text-destructive hover:text-destructive"
                               disabled={formDisabled}
                               onClick={() =>
-                                companion.id && void handleDelete(companion.id)
+                                companion.id && requestDelete(companion.id)
                               }
                               aria-label="حذف المرافق"
                             >
@@ -598,7 +625,7 @@ const RegisterCompanionsTab = ({
               <DialogFooter className="flex flex-row-reverse justify-start gap-2 sm:justify-start pt-2">
                 <Button
                   type="submit"
-                  className="bg-[#00005c] hover:bg-[#00004a] text-white"
+                  className="bg-brand hover:bg-brand-hover text-brand-foreground"
                   disabled={isSaving}
                 >
                   {isSaving ? (

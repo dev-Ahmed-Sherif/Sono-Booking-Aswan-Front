@@ -81,6 +81,8 @@ type RegistrationProfileFieldsProps<T extends RegistrationProfileFormShape> = {
   documentIdField?: ProfileDocumentIdField;
   /** Bind رقم الموبيل to `mobile` (تسجيل) or `phone` (حساب / DTO). */
   phoneField?: ProfilePhoneField;
+  /** Rendered beside the email field in the same row */
+  afterEmailField?: ReactNode;
   /** Rendered after email/mobile grid, before identity file upload */
   betweenMainFieldsAndIdentity?: ReactNode;
 };
@@ -94,6 +96,7 @@ const RegistrationProfileFields = <T extends RegistrationProfileFormShape>({
   inputClassName = profileFieldInputClassName,
   documentIdField = "nationalId",
   phoneField = "mobile",
+  afterEmailField,
   betweenMainFieldsAndIdentity,
 }: RegistrationProfileFieldsProps<T>) => {
   const dateFnsLocale = locale === "ar" || locale.startsWith("ar-") ? ar : enUS;
@@ -374,6 +377,8 @@ const RegistrationProfileFields = <T extends RegistrationProfileFormShape>({
             </FormItem>
           )}
         />
+
+        {afterEmailField}
       </div>
 
       {betweenMainFieldsAndIdentity ? (

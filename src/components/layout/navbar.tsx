@@ -62,8 +62,22 @@ import {
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
 
-function isLocaleLoginPath(pathname: string): boolean {
-  return pathname === "/ar" || pathname === "/en";
+function normalizePathname(pathname: string): string {
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    return pathname.slice(0, -1);
+  }
+  return pathname;
+}
+
+function isPublicUnauthenticatedPath(pathname: string): boolean {
+  const path = normalizePathname(pathname);
+  return (
+    path === "/ar" ||
+    path === "/en" ||
+    path === "/register" ||
+    path === "/ar/register" ||
+    path === "/en/register"
+  );
 }
 
 type StoredUserBrief = RoleCandidates & { name?: string };
@@ -294,8 +308,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     if (
       prevCookieRef.current !== null &&
       cookie === null &&
-      !isLocaleLoginPath(pathname) &&
-      !pathname.endsWith("/register")
+      !isPublicUnauthenticatedPath(pathname)
     ) {
       console.log("Server access cookie cleared, clearing client auth data...");
       if (clearAllClientCookiesRef.current) {
@@ -314,7 +327,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
   }, [cookie, cookieValue, nav.removeItem, nav.getItem, user.removeItem, pathname]);
 
   React.useEffect(() => {
-    if (isLocaleLoginPath(pathname) && !cookie) {
+    if (isPublicUnauthenticatedPath(pathname) && !cookie) {
       setCookieValue(null);
       return;
     }
@@ -411,7 +424,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
   // Periodic check: refill local user when server session exists; never wipe cookies on false client-only check.
   React.useEffect(() => {
     if (typeof window === "undefined") return;
-    if (isLocaleLoginPath(pathname)) return;
+    if (isPublicUnauthenticatedPath(pathname)) return;
 
     const checkUserData = async () => {
       if (user.getItem()) return;
@@ -643,7 +656,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
   // If cookie is null/undefined (user not authenticated), still show navigation links
   if (cookie == null) {
     return (
-      <header className="sticky top-0 z-[9999] w-full max-w-full min-w-0 overflow-hidden py-10 h-20 flex items-center gap-2 sm:gap-4 border-b bg-background px-4 md:px-6 lg:px-8">
+      <header className="w-full max-w-full min-w-0 overflow-hidden py-10 h-20 flex items-center gap-2 sm:gap-4 border-b bg-background px-4 md:px-6 lg:px-8">
         <div className="flex w-full items-center justify-end gap-4 md:ml-auto md:gap-2 lg:gap-4">
           <ModeToggle />
         </div>
@@ -653,7 +666,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
 
   // If cookie exists (user authenticated), show full navbar
   return (
-    <header className="sticky top-0 z-[9999] w-full max-w-full min-w-0 overflow-hidden py-10 h-20 flex items-center gap-2 sm:gap-4 border-b bg-background px-4 md:px-6 lg:px-8">
+    <header className="w-full max-w-full min-w-0 overflow-hidden py-10 h-20 flex items-center gap-2 sm:gap-4 border-b bg-background px-4 md:px-6 lg:px-8">
       <Link
         href={navHomeHref}
         className="hidden min-[771px]:flex md:shrink-0 md:items-center md:gap-2 md:font-semibold md:text-lg"

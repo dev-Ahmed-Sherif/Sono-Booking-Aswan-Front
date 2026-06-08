@@ -30,6 +30,7 @@ import { useToast } from "@/hooks/use-toast";
 import useToggleState from "@/hooks/use-toggle-state";
 import { useRestoreFullscreenAfterFilePick } from "@/hooks/useRestoreFullscreenAfterFilePick";
 import { getFullFileUrl } from "@/lib/file-viewer";
+import { IMAGE_FILE_ACCEPT, isImageFile } from "@/lib/image-file";
 import { touristMarinaSchema } from "@/schemas";
 import {
   addTouristMarina,
@@ -285,8 +286,7 @@ const TouristMarinasForm = ({
       return;
     }
 
-    const isImage = file.type.startsWith("image/");
-    if (!isImage) {
+    if (!isImageFile(file)) {
       toast({ variant: "destructive", description: "يُسمح فقط بملفات الصور" });
       return;
     }
@@ -631,7 +631,7 @@ const TouristMarinasForm = ({
                                 }}
                                 disabled={loading}
                                 type="file"
-                                accept="image/*"
+                                accept={IMAGE_FILE_ACCEPT}
                                 className="hidden"
                                 onChange={(e) => {
                                   const file = e.target.files?.[0] ?? null;
@@ -750,7 +750,7 @@ const TouristMarinasForm = ({
                                     اسحب وأفلت أو اضغط للاختيار
                                   </p>
                                   <p className="text-sm text-blue-500 dark:text-blue-500 mt-1 text-center">
-                                    PNG / JPG / WEBP
+                                    جميع صيغ الصور
                                   </p>
                                 </div>
                               )}

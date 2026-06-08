@@ -438,7 +438,7 @@ const FloatingUnitOrganizationForm = ({
           onSubmit={form.handleSubmit(onSubmit)}
           className="space-y-8 w-full"
         >
-          <section className="space-y-4 rounded-lg border border-blue-200/60 bg-blue-50/40 p-4">
+          <section className="space-y-4 rounded-lg border border-blue-200/60 bg-blue-50/40 p-4 dark:border-blue-900/40 dark:bg-blue-950/20">
             <div
               className={
                 lockFloatingUnitId

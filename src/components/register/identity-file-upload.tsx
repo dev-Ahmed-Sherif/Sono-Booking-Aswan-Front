@@ -11,35 +11,19 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { getFullFileUrl } from "@/lib/file-viewer";
+import {
+  IMAGE_FILE_ACCEPT,
+  isImageFile,
+  pathLooksLikeImage,
+} from "@/lib/image-file";
 
 const MAX_FILE_SIZE_BYTES = 1 * 1024 * 1024;
 const MAX_FILE_SIZE_LABEL = "1 ميجابايت";
 
-const ALLOWED_EXTENSIONS = [
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".gif",
-  ".webp",
-  ".bmp",
-  ".svg",
-  ".pdf",
-] as const;
-
-const isImageFile = (file: File): boolean =>
-  (file.type || "").toLowerCase().startsWith("image/");
-
 const isAllowedFile = (file: File): boolean => {
   const type = (file.type || "").toLowerCase();
   const name = (file.name || "").toLowerCase();
-  if (type.startsWith("image/") || type === "application/pdf") return true;
-  return ALLOWED_EXTENSIONS.some((ext) => name.endsWith(ext));
-};
-
-/** Path or URL string — extension only, ignores query string. */
-const urlLooksLikeImage = (url: string): boolean => {
-  const path = url.split("?")[0].toLowerCase();
-  return /\.(jpe?g|png|gif|webp|bmp|svg)$/.test(path);
+  return isImageFile(file) || type === "application/pdf" || name.endsWith(".pdf");
 };
 
 const urlLooksLikePdf = (url: string): boolean =>
@@ -136,7 +120,7 @@ export function IdentityFileUpload({
   const viewerIsImage = hasNewFile && value
     ? isImageFile(value)
     : resolvedExistingUrl
-      ? urlLooksLikeImage(resolvedExistingUrl)
+      ? pathLooksLikeImage(resolvedExistingUrl)
       : false;
   const viewerIsPdf = hasNewFile && value
     ? !isImageFile(value)
@@ -149,7 +133,7 @@ export function IdentityFileUpload({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,.pdf"
+        accept={`${IMAGE_FILE_ACCEPT},.pdf`}
         className="hidden"
         disabled={disabled}
         onChange={(event) => {
@@ -210,7 +194,7 @@ export function IdentityFileUpload({
       ) : showServerPreview && resolvedExistingUrl ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <div className="relative rounded-md border overflow-hidden w-full border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-900/40">
-            {urlLooksLikeImage(resolvedExistingUrl) ? (
+            {pathLooksLikeImage(resolvedExistingUrl) ? (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={resolvedExistingUrl}
@@ -266,7 +250,7 @@ export function IdentityFileUpload({
               : "اضغط لاختيار صورة البطاقة / شهادة الميلاد"}
         </p>
         <p className="mt-1 text-base font-semibold text-muted-foreground">
-          {`PNG / JPG / PDF — حد أقصى ملف واحد و${MAX_FILE_SIZE_LABEL}`}
+          {`جميع صيغ الصور أو PDF — حد أقصى ملف واحد و${MAX_FILE_SIZE_LABEL}`}
         </p>
       </div>
 

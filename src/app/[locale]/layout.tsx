@@ -6,6 +6,7 @@ import { getMessages, getLocale } from "next-intl/server";
 
 import "@/styles/globals.css";
 
+import { AppHeader } from "@/components/layout/app-header";
 import Navbar from "@/components/layout/navbar";
 import { accessTokenCookieName } from "@/lib/auth-cookies";
 import Footer from "@/components/layout/footer";
@@ -69,7 +70,10 @@ export default async function RootLayout({
           <ThemeProvider attribute="class" enableSystem>
             <NextIntlClientProvider messages={messages}>
               <FullscreenProvider>
-                <Navbar cookie={access} locale={locale} />
+                <div className="sticky top-0 z-[9999] w-full max-w-full min-w-0">
+                  <AppHeader />
+                  <Navbar cookie={access} locale={locale} />
+                </div>
                 {children}
                 <Footer />
                 {/* <Emergency /> */}

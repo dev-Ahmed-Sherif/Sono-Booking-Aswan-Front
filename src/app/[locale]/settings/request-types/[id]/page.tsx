@@ -2,7 +2,6 @@ import { getRequestTypeById } from "@/actions/settings/requestTypeService";
 import RequestTypeForm from "@/components/settings/request-types/request-types-form";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 import {
   settingsLookupFromApiResult,
   type SettingsLookupInitialData,
@@ -26,7 +25,6 @@ const RequestTypePage = async ({ params }: PageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <div className="flex-1 space-y-4 pt-6">
           <RequestTypeForm initialData={initialData} name="نوع الطلب" />
         </div>

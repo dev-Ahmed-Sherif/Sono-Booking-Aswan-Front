@@ -3,7 +3,6 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getAllocationTypes } from "@/actions/settings/allocationTypeService";
 import type { AllocationTypeColumn } from "@/components/settings/allocation-types/columns";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 
 const AllocationTypesClient = dynamic(
   () => import("@/components/settings/allocation-types/client"),
@@ -30,7 +29,6 @@ const AllocationTypesPage = async ({ params }: AllocationTypesPageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <AllocationTypesClient data={data} path={`/${locale}/settings/allocation-types/new`} />
       </div>
     </main>

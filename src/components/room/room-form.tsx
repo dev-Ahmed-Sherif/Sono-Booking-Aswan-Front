@@ -31,6 +31,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { roomSchema, type RoomFormValues } from "@/schemas";
+import AlertModal from "@/components/modals/alert-modal";
+import useToggleState from "@/hooks/use-toggle-state";
 import { useToast } from "@/hooks/use-toast";
 import {
   addRoom,
@@ -43,6 +45,10 @@ import {
 import { getRoomTypes } from "@/actions/settings/roomTypeService";
 import { DataTable } from "@/components/ui/data-table";
 import { getFullFileUrl } from "@/lib/file-viewer";
+import {
+  IMAGE_FILE_ACCEPT,
+  filterImageFiles,
+} from "@/lib/image-file";
 import {
   MAX_IMAGE_SIZE_LABEL,
   MAX_NEW_IMAGES,
@@ -86,8 +92,9 @@ type RoomRecordRow = {
 
 function buildRoomRecordColumns(
   onEdit: (id: string) => void,
-  onDelete: (id: string) => void,
+  onDelete: (id: string) => void | Promise<void>,
   roomTypeNameById: Record<string, string>,
+  deletingId?: string | null,
 ): ColumnDef<RoomRecordRow>[] {
   return [
     {
@@ -128,6 +135,7 @@ function buildRoomRecordColumns(
           }}
           onEdit={onEdit}
           onDelete={onDelete}
+          deleting={deletingId === row.original.id}
         />
       ),
     },
@@ -161,6 +169,8 @@ export default function RoomForm({
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerSrc, setViewerSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteOpen, toggleDeleteOpen] = useToggleState(false);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [roomRecords, setRoomRecords] = useState<RoomRecordRow[]>([]);
   const [roomTypeOptions, setRoomTypeOptions] = useState<RoomTypeOption[]>([]);
@@ -258,7 +268,6 @@ export default function RoomForm({
   const form = useForm<RoomFormValues>({
     resolver: zodResolver(roomSchema),
     defaultValues: {
-      roomNumber: "",
       description: "",
       price: 0,
       status: (preferredStatus as RoomFormValues["status"] | undefined) || "1",
@@ -357,10 +366,7 @@ export default function RoomForm({
       setLoading(true);
       const payload = new FormData();
       if (currentId) payload.append("id", currentId);
-      const trimmedRoomNumber = String(values.roomNumber ?? "").trim();
-      if (trimmedRoomNumber.length > 0) {
-        payload.append("roomNumber", trimmedRoomNumber);
-      }
+      payload.append("roomNumber", String(values.roomNumber ?? ""));
       payload.append("description", String(values.description ?? ""));
       payload.append("price", String(values.price ?? ""));
       payload.append("status", String(values.status ?? ""));
@@ -449,8 +455,6 @@ export default function RoomForm({
 
   const deleteHandler = async () => {
     if (!currentId || loading) return;
-    const confirmed = window.confirm("هل أنت متأكد من حذف بيانات الغرفة؟");
-    if (!confirmed) return;
 
     try {
       setLoading(true);
@@ -467,6 +471,7 @@ export default function RoomForm({
       }
 
       toast({ description: "تم حذف بيانات الغرفة بنجاح" });
+      toggleDeleteOpen();
       await loadRoomRecords();
       router.push(`/${params.locale}/settings/unit-data`);
       router.refresh();
@@ -502,9 +507,8 @@ export default function RoomForm({
 
   const handleRowDelete = async (id: string) => {
     if (!id || loading) return;
-    const confirmed = window.confirm("هل أنت متأكد من حذف بيانات الغرفة؟");
-    if (!confirmed) return;
     try {
+      setDeletingId(id);
       setLoading(true);
       const result = await softDeleteRoomById(id);
       if ((result as { error?: string })?.error) {
@@ -520,6 +524,7 @@ export default function RoomForm({
       toast({ description: "تم حذف بيانات الغرفة بنجاح" });
       await loadRoomRecords();
     } finally {
+      setDeletingId(null);
       setLoading(false);
     }
   };
@@ -534,9 +539,14 @@ export default function RoomForm({
 
   const recordColumns = useMemo(
     () =>
-      buildRoomRecordColumns(handleRowEdit, handleRowDelete, roomTypeNameById),
+      buildRoomRecordColumns(
+        handleRowEdit,
+        handleRowDelete,
+        roomTypeNameById,
+        deletingId,
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [editLoading, loading, roomTypeNameById],
+    [deletingId, editLoading, loading, roomTypeNameById],
   );
 
   useEffect(() => {
@@ -616,7 +626,6 @@ export default function RoomForm({
     if (roomImagesInputRef.current) roomImagesInputRef.current.value = "";
 
     form.reset({
-      roomNumber: "",
       description: "",
       price: 0,
       status: (preferredStatus as RoomFormValues["status"] | undefined) || "1",
@@ -712,6 +721,7 @@ export default function RoomForm({
       ? (errors[firstKey] as { message?: string } | undefined)
       : undefined;
     const fallbackByKey: Record<string, string> = {
+      roomNumber: "رقم الغرفة مطلوب ويجب أن يكون أكبر من صفر.",
       apartmentId: "الشقة مطلوبة (لم يتم تحديد الشقة من الرابط).",
       roomTypeId: "نوع الغرفة مطلوب.",
       description: "وصف الغرفة مطلوب.",
@@ -744,11 +754,13 @@ export default function RoomForm({
                 <FormLabel>رقم الغرفة</FormLabel>
                 <FormControl>
                   <Input
-                    {...field}
-                    disabled
-                    readOnly
-                    className="w-full bg-muted cursor-not-allowed"
-                    placeholder="يُنشأ تلقائياً"
+                    type="number"
+                    min={1}
+                    step={1}
+                    className="w-full"
+                    placeholder="أدخل رقم الغرفة"
+                    value={field.value ?? ""}
+                    onChange={(event) => field.onChange(event.target.value)}
                   />
                 </FormControl>
                 <FormMessage />
@@ -884,15 +896,12 @@ export default function RoomForm({
                     name={field.name}
                     type="file"
                     multiple
-                    accept="image/*"
+                    accept={IMAGE_FILE_ACCEPT}
                     className="hidden"
                     onBlur={field.onBlur}
                     onChange={(event) => {
                       const selected = Array.from(event.target.files ?? []);
-                      const imageFiles = selected.filter((file) =>
-                        file.type.startsWith("image/"),
-                      );
-                      setRoomImageFiles(imageFiles);
+                      setRoomImageFiles(filterImageFiles(selected));
                       event.target.value = "";
                     }}
                   />
@@ -1063,7 +1072,7 @@ export default function RoomForm({
                     <p className="mt-1 text-base font-semibold text-muted-foreground">
                       {totalImageSlots > 0
                         ? `${totalImageSlots} صورة معروضة (${visibleServerPaths.length} محفوظة، ${roomImages.length} جديدة) — متبقي ${remainingNewSlots} من أصل ${MAX_NEW_IMAGES} و${MAX_IMAGE_SIZE_LABEL} لكل صورة`
-                        : `PNG / JPG / WEBP — حد أقصى ${MAX_NEW_IMAGES} صور و${MAX_IMAGE_SIZE_LABEL} لكل صورة`}
+                        : `جميع صيغ الصور — حد أقصى ${MAX_NEW_IMAGES} صور و${MAX_IMAGE_SIZE_LABEL} لكل صورة`}
                     </p>
                   </div>
 
@@ -1102,19 +1111,26 @@ export default function RoomForm({
           </DialogContent>
         </Dialog>
 
+        <AlertModal
+          isOpen={deleteOpen}
+          loading={loading}
+          onClose={toggleDeleteOpen}
+          onConfirm={deleteHandler}
+        />
+
         <div className="flex justify-start gap-2">
           {currentId ? (
             <Button
               type="button"
               variant="destructive"
-              onClick={deleteHandler}
+              onClick={toggleDeleteOpen}
               disabled={loading}
             >
               حذف بيانات الغرفة
             </Button>
           ) : null}
           <Button
-            className="bg-[#00005c] hover:bg-[#00004a] text-white"
+            className="bg-brand hover:bg-brand-hover text-brand-foreground"
             type="submit"
             disabled={loading}
           >
@@ -1135,6 +1151,7 @@ export default function RoomForm({
                 columns={recordColumns}
                 data={roomRecords}
                 searchKey="roomNumber"
+                className="text-base [&_th]:text-base [&_td]:text-base"
               />
             )}
           </div>
@@ -1151,7 +1168,7 @@ export default function RoomForm({
           }}
         >
           <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
+            <DialogHeader className="items-center text-center">
               <DialogTitle>تعديل بيانات الغرفة</DialogTitle>
             </DialogHeader>
             {editDefaults ? (

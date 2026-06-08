@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion } from "framer-motion";
-import { Home, Loader2, Eye, EyeOff } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 
 import {
   registrationSchema,
@@ -184,28 +184,6 @@ const RegisterForm = () => {
 
   return (
     <>
-      <motion.header
-        className="relative z-10 flex items-center justify-center gap-3 py-5 px-6 border-b border-[#00004a] shadow-sm"
-        style={{ backgroundColor: "#00005c" }}
-        initial={{ y: -40, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.2, duration: 0.6 }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-gradient-to-br from-green-500 to-blue-600 shadow-lg">
-            <Home className="h-6 w-6 text-white" />
-          </div>
-          <div className="text-center">
-            <h1 className="text-xl md:text-3xl font-bold text-white tracking-wide">
-              نظام إدارة إسكان محافظة أسوان
-            </h1>
-            {/* <p className="text-xs md:text-sm text-white/70 mt-0.5">
-              Aswan Governorate Housing Management System
-            </p> */}
-          </div>
-        </div>
-      </motion.header>
-
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
@@ -271,7 +249,7 @@ const RegisterForm = () => {
                     disabled={isSubmitting}
                     nameField="fullName"
                     identityRequired
-                    betweenMainFieldsAndIdentity={
+                    afterEmailField={
                       <FormField
                         control={form.control}
                         name="password"
@@ -281,7 +259,7 @@ const RegisterForm = () => {
                               كلمة المرور
                             </FormLabel>
                             <FormControl>
-                              <motion.div className="relative w-full">
+                              <div className="relative w-full">
                                 <Input
                                   {...field}
                                   type={showPassword ? "text" : "password"}
@@ -311,7 +289,7 @@ const RegisterForm = () => {
                                     <Eye className="h-4 w-4" />
                                   )}
                                 </button>
-                              </motion.div>
+                              </div>
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -352,7 +330,7 @@ const RegisterForm = () => {
                 <Button
                   type="submit"
                   form="register-form-main"
-                  className="ml-4 w-auto bg-[#00005c] hover:bg-[#00004a] text-white"
+                  className="ml-4 w-auto bg-brand hover:bg-brand-hover text-brand-foreground"
                   disabled={isSubmitting}
                 >
                   {isSubmitting ? (
@@ -392,7 +370,7 @@ const RegisterForm = () => {
           <DialogFooter className="flex flex-row-reverse justify-start gap-2 sm:justify-start">
             <Button
               type="button"
-              className="bg-[#00005c] hover:bg-[#00004a] text-white"
+              className="bg-brand hover:bg-brand-hover text-brand-foreground"
               onClick={handleContinueToCompanions}
             >
               نعم، إضافة مرافقين

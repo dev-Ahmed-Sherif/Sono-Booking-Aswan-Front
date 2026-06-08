@@ -35,6 +35,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { apartmentSchema, type ApartmentFormValues } from "@/schemas";
+import AlertModal from "@/components/modals/alert-modal";
+import useToggleState from "@/hooks/use-toggle-state";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -44,6 +46,10 @@ import {
   updateApartmentById,
 } from "@/actions/settings/apartmentService";
 import { getFullFileUrl } from "@/lib/file-viewer";
+import {
+  IMAGE_FILE_ACCEPT,
+  filterImageFiles,
+} from "@/lib/image-file";
 import {
   MAX_IMAGE_SIZE_LABEL,
   MAX_NEW_IMAGES,
@@ -118,6 +124,7 @@ export default function ApartmentForm({
   const [governorateOpen, setGovernorateOpen] = useState(false);
   const [governorateSearch, setGovernorateSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [deleteOpen, toggleDeleteOpen] = useToggleState(false);
   const currentId =
     typeof (defaultValues as Record<string, unknown> | undefined)?.id ===
     "string"
@@ -207,7 +214,6 @@ export default function ApartmentForm({
   const form = useForm<ApartmentFormValues>({
     resolver: zodResolver(apartmentSchema),
     defaultValues: {
-      apartmentNumber: "",
       description: "",
       price: 0,
       status:
@@ -252,12 +258,10 @@ export default function ApartmentForm({
       };
       const payload = new FormData();
       if (currentId) payload.append("id", currentId);
-      const trimmedApartmentNumber = String(
-        values.apartmentNumber ?? "",
-      ).trim();
-      if (trimmedApartmentNumber.length > 0) {
-        payload.append("apartmentNumber", trimmedApartmentNumber);
-      }
+      payload.append(
+        "apartmentNumber",
+        String(values.apartmentNumber ?? ""),
+      );
       payload.append("description", String(values.description ?? ""));
       payload.append("price", String(values.price ?? ""));
       payload.append(
@@ -344,8 +348,6 @@ export default function ApartmentForm({
 
   const deleteHandler = async () => {
     if (!currentId || loading) return;
-    const confirmed = window.confirm("هل أنت متأكد من حذف بيانات الشقة؟");
-    if (!confirmed) return;
 
     try {
       setLoading(true);
@@ -362,6 +364,7 @@ export default function ApartmentForm({
       }
 
       toast({ description: "تم حذف بيانات الشقة بنجاح" });
+      toggleDeleteOpen();
       router.push(`/${params.locale}/settings/unit-data`);
       router.refresh();
     } finally {
@@ -621,11 +624,13 @@ export default function ApartmentForm({
                 <FormLabel>رقم الشقة</FormLabel>
                 <FormControl>
                   <Input
-                    {...field}
-                    disabled
-                    readOnly
-                    className="w-full bg-muted cursor-not-allowed"
-                    placeholder="يُنشأ تلقائياً"
+                    type="number"
+                    min={1}
+                    step={1}
+                    className="w-full"
+                    placeholder="أدخل رقم الشقة"
+                    value={field.value ?? ""}
+                    onChange={(event) => field.onChange(event.target.value)}
                   />
                 </FormControl>
                 <FormMessage />
@@ -1012,15 +1017,12 @@ export default function ApartmentForm({
                     name={field.name}
                     type="file"
                     multiple
-                    accept="image/*"
+                    accept={IMAGE_FILE_ACCEPT}
                     className="hidden"
                     onBlur={field.onBlur}
                     onChange={(event) => {
                       const selected = Array.from(event.target.files ?? []);
-                      const imageFiles = selected.filter((file) =>
-                        file.type.startsWith("image/"),
-                      );
-                      setApartmentImageFiles(imageFiles);
+                      setApartmentImageFiles(filterImageFiles(selected));
                       event.target.value = "";
                     }}
                   />
@@ -1191,7 +1193,7 @@ export default function ApartmentForm({
                     <p className="mt-1 text-base font-semibold text-muted-foreground">
                       {totalImageSlots > 0
                         ? `${totalImageSlots} صورة معروضة (${visibleServerPaths.length} محفوظة، ${apartmentImages.length} جديدة) — متبقي ${remainingNewSlots} من أصل ${MAX_NEW_IMAGES} و${MAX_IMAGE_SIZE_LABEL} لكل صورة`
-                        : `PNG / JPG / WEBP — حد أقصى ${MAX_NEW_IMAGES} صور و${MAX_IMAGE_SIZE_LABEL} لكل صورة`}
+                        : `جميع صيغ الصور — حد أقصى ${MAX_NEW_IMAGES} صور و${MAX_IMAGE_SIZE_LABEL} لكل صورة`}
                     </p>
                   </div>
 
@@ -1230,19 +1232,26 @@ export default function ApartmentForm({
           </DialogContent>
         </Dialog>
 
+        <AlertModal
+          isOpen={deleteOpen}
+          loading={loading}
+          onClose={toggleDeleteOpen}
+          onConfirm={deleteHandler}
+        />
+
         <div className="flex justify-start gap-2">
           {currentId ? (
             <Button
               type="button"
               variant="destructive"
-              onClick={deleteHandler}
+              onClick={toggleDeleteOpen}
               disabled={loading}
             >
               حذف بيانات الشقة
             </Button>
           ) : null}
           <Button
-            className="bg-[#00005c] hover:bg-[#00004a] text-white"
+            className="bg-brand hover:bg-brand-hover text-brand-foreground"
             type="submit"
             disabled={loading}
           >

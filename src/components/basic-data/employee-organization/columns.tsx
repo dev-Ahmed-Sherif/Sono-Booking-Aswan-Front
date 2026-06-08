@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getFullFileUrl } from "@/lib/file-viewer";
+import { pathLooksLikeImage } from "@/lib/image-file";
 
 export type EmployeeOrganizationColumn = {
   id: string;
@@ -50,8 +51,7 @@ function delegateAttachmentPathFromRow(
 }
 
 function isLikelyImagePath(path: string): boolean {
-  const base = (path.split("?")[0] ?? "").toLowerCase();
-  return /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(base);
+  return pathLooksLikeImage(path);
 }
 
 function DelegateAttachmentPreviewCell({

@@ -31,6 +31,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { bedSchema, type BedFormValues } from "@/schemas";
+import AlertModal from "@/components/modals/alert-modal";
+import useToggleState from "@/hooks/use-toggle-state";
 import { useToast } from "@/hooks/use-toast";
 import {
   addBed,
@@ -43,6 +45,10 @@ import {
 import { getRooms } from "@/actions/settings/roomService";
 import { DataTable } from "@/components/ui/data-table";
 import { getFullFileUrl } from "@/lib/file-viewer";
+import {
+  IMAGE_FILE_ACCEPT,
+  filterImageFiles,
+} from "@/lib/image-file";
 import {
   MAX_IMAGE_SIZE_LABEL,
   MAX_NEW_IMAGES,
@@ -84,7 +90,8 @@ type BedRecordRow = {
 
 function buildBedRecordColumns(
   onEdit: (id: string, roomId?: string) => void,
-  onDelete: (id: string) => void,
+  onDelete: (id: string) => void | Promise<void>,
+  deletingId?: string | null,
 ): ColumnDef<BedRecordRow>[] {
   return [
     {
@@ -115,6 +122,7 @@ function buildBedRecordColumns(
           }}
           onEdit={() => onEdit(row.original.id, row.original.roomId)}
           onDelete={onDelete}
+          deleting={deletingId === row.original.id}
         />
       ),
     },
@@ -148,6 +156,8 @@ export default function BedForm({
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerSrc, setViewerSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteOpen, toggleDeleteOpen] = useToggleState(false);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [bedRecords, setBedRecords] = useState<BedRecordRow[]>([]);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -247,7 +257,6 @@ export default function BedForm({
   const form = useForm<BedFormValues>({
     resolver: zodResolver(bedSchema),
     defaultValues: {
-      bedNumber: "",
       description: "",
       dimensions: "",
       price: 0,
@@ -359,10 +368,7 @@ export default function BedForm({
       setLoading(true);
       const payload = new FormData();
       if (currentId) payload.append("id", currentId);
-      const trimmedBedNumber = String(values.bedNumber ?? "").trim();
-      if (trimmedBedNumber.length > 0) {
-        payload.append("bedNumber", trimmedBedNumber);
-      }
+      payload.append("bedNumber", String(values.bedNumber ?? ""));
       payload.append("description", String(values.description ?? ""));
       payload.append("dimensions", String(values.dimensions ?? ""));
       payload.append("price", String(values.price ?? ""));
@@ -431,8 +437,6 @@ export default function BedForm({
 
   const deleteHandler = async () => {
     if (!currentId || loading) return;
-    const confirmed = window.confirm("هل أنت متأكد من حذف بيانات السرير؟");
-    if (!confirmed) return;
 
     try {
       setLoading(true);
@@ -449,6 +453,7 @@ export default function BedForm({
       }
 
       toast({ description: "تم حذف بيانات السرير بنجاح" });
+      toggleDeleteOpen();
       await loadBedRecords();
       router.push(`/${params.locale}/settings/unit-data`);
       router.refresh();
@@ -493,9 +498,8 @@ export default function BedForm({
 
   const handleRowDelete = async (id: string) => {
     if (!id || loading) return;
-    const confirmed = window.confirm("هل أنت متأكد من حذف بيانات السرير؟");
-    if (!confirmed) return;
     try {
+      setDeletingId(id);
       setLoading(true);
       const result = await softDeleteBedById(id);
       if ((result as { error?: string })?.error) {
@@ -511,14 +515,15 @@ export default function BedForm({
       toast({ description: "تم حذف بيانات السرير بنجاح" });
       await loadBedRecords();
     } finally {
+      setDeletingId(null);
       setLoading(false);
     }
   };
 
   const recordColumns = useMemo(
-    () => buildBedRecordColumns(handleRowEdit, handleRowDelete),
+    () => buildBedRecordColumns(handleRowEdit, handleRowDelete, deletingId),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [editLoading, loading],
+    [deletingId, editLoading, loading],
   );
 
   useEffect(() => {
@@ -603,7 +608,6 @@ export default function BedForm({
 
     form.reset(
       {
-        bedNumber: "",
         description: "",
         dimensions: "",
         price: 0,
@@ -717,11 +721,13 @@ export default function BedForm({
                 <FormLabel>رقم السرير</FormLabel>
                 <FormControl>
                   <Input
-                    {...field}
-                    disabled
-                    readOnly
-                    className="w-full bg-muted cursor-not-allowed"
-                    placeholder="يُنشأ تلقائياً"
+                    type="number"
+                    min={1}
+                    step={1}
+                    className="w-full"
+                    placeholder="أدخل رقم السرير"
+                    value={field.value ?? ""}
+                    onChange={(event) => field.onChange(event.target.value)}
                   />
                 </FormControl>
                 <FormMessage />
@@ -875,15 +881,12 @@ export default function BedForm({
                     name={field.name}
                     type="file"
                     multiple
-                    accept="image/*"
+                    accept={IMAGE_FILE_ACCEPT}
                     className="hidden"
                     onBlur={field.onBlur}
                     onChange={(event) => {
                       const selected = Array.from(event.target.files ?? []);
-                      const imageFiles = selected.filter((file) =>
-                        file.type.startsWith("image/"),
-                      );
-                      setBedImageFiles(imageFiles);
+                      setBedImageFiles(filterImageFiles(selected));
                       event.target.value = "";
                     }}
                   />
@@ -1054,7 +1057,7 @@ export default function BedForm({
                     <p className="mt-1 text-base font-semibold text-muted-foreground">
                       {totalImageSlots > 0
                         ? `${totalImageSlots} صورة معروضة (${visibleServerPaths.length} محفوظة، ${bedImages.length} جديدة) — متبقي ${remainingNewSlots} من أصل ${MAX_NEW_IMAGES} و${MAX_IMAGE_SIZE_LABEL} لكل صورة`
-                        : `PNG / JPG / WEBP — حد أقصى ${MAX_NEW_IMAGES} صور و${MAX_IMAGE_SIZE_LABEL} لكل صورة`}
+                        : `جميع صيغ الصور — حد أقصى ${MAX_NEW_IMAGES} صور و${MAX_IMAGE_SIZE_LABEL} لكل صورة`}
                     </p>
                   </div>
 
@@ -1093,19 +1096,26 @@ export default function BedForm({
           </DialogContent>
         </Dialog>
 
+        <AlertModal
+          isOpen={deleteOpen}
+          loading={loading}
+          onClose={toggleDeleteOpen}
+          onConfirm={deleteHandler}
+        />
+
         <div className="flex justify-start gap-2">
           {currentId ? (
             <Button
               type="button"
               variant="destructive"
-              onClick={deleteHandler}
+              onClick={toggleDeleteOpen}
               disabled={loading}
             >
               حذف بيانات السرير
             </Button>
           ) : null}
           <Button
-            className="bg-[#00005c] hover:bg-[#00004a] text-white"
+            className="bg-brand hover:bg-brand-hover text-brand-foreground"
             type="submit"
             disabled={loading}
           >
@@ -1126,6 +1136,7 @@ export default function BedForm({
                 columns={recordColumns}
                 data={bedRecords}
                 searchKey="bedNumber"
+                className="text-base [&_th]:text-base [&_td]:text-base"
               />
             )}
           </div>
@@ -1142,7 +1153,7 @@ export default function BedForm({
           }}
         >
           <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
+            <DialogHeader className="items-center text-center">
               <DialogTitle>تعديل بيانات السرير</DialogTitle>
             </DialogHeader>
             {editDefaults ? (

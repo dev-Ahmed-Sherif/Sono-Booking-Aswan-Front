@@ -9,7 +9,10 @@ import {
   applyAvailabilityHierarchyFilters,
   type AvailabilityHierarchyFilterInput,
 } from "@/lib/availability-hierarchy";
-import type { AvailabilityInquiryDates } from "@/lib/availability-dates";
+import {
+  formatAvailabilityGenderHeader,
+  type AvailabilityInquiryDates,
+} from "@/lib/availability-dates";
 import {
   buildUnitBlockingEndIndex,
   parseAvailabilityBookingArrays,
@@ -81,6 +84,10 @@ const getAvailableList = async (
     ) {
       headers.Nights = String(Math.trunc(inquiry.nights));
     }
+  }
+  const genderHeader = formatAvailabilityGenderHeader(inquiry?.genders);
+  if (genderHeader) {
+    headers.Gender = genderHeader;
   }
 
   const res = await axios.get(`${process.env.BACK_END}/${path}`, {

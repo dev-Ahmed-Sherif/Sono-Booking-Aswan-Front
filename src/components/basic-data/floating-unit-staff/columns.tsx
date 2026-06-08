@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getFullFileUrl } from "@/lib/file-viewer";
+import { pathLooksLikeImage } from "@/lib/image-file";
 import { formatUtcToCairo } from "@/lib/date-timeOptions";
 import type { NumericLookupRow } from "@/lib/numeric-lookup";
 
@@ -54,8 +55,7 @@ function delegateAttachmentPathFromRow(
 }
 
 function isLikelyImagePath(path: string): boolean {
-  const base = (path.split("?")[0] ?? "").toLowerCase();
-  return /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(base);
+  return pathLooksLikeImage(path);
 }
 
 function DelegateAttachmentPreviewCell({

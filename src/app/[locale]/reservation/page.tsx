@@ -382,13 +382,6 @@ const ReservationPage = () => {
   }, [activeView, loadHistoryRequests]);
 
   const handleDeleteHistoryRequest = async (id: string) => {
-    if (
-      !window.confirm(
-        "هل أنت متأكد من حذف هذا الطلب؟ لا يمكن التراجع عن الحذف.",
-      )
-    ) {
-      return;
-    }
     setDeletingRequestId(id);
     try {
       const result = await deleteHousingRequest(id);
@@ -535,6 +528,9 @@ const ReservationPage = () => {
 
     try {
       const inquiryStartYmd = normalizeInquiryStartYmd(startDate);
+      const inquiryGenders = selectedGenders.filter(
+        (g): g is "male" | "female" => g === "male" || g === "female",
+      );
       const { cards, fatalError, partialFailure } =
         await fetchMergedAvailabilityCards(
           kinds,
@@ -542,6 +538,7 @@ const ReservationPage = () => {
             ? {
                 startDateYmd: inquiryStartYmd,
                 nights: nightsNumber,
+                genders: inquiryGenders,
               }
             : undefined,
         );
@@ -670,24 +667,7 @@ const ReservationPage = () => {
         initial="hidden"
         animate="visible"
       >
-        <Card className="overflow-hidden border-2 border-blue-100 rounded-3xl shadow-xl">
-          <motion.header
-            className="relative z-10 flex items-center justify-center gap-3 py-5 px-6 border-b border-[#00004a] shadow-sm"
-            style={{ backgroundColor: "#00005c" }}
-            variants={mainCardChildrenVariants}
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-green-500 to-blue-600 shadow-lg">
-                <Home className="h-6 w-6 text-white" />
-              </div>
-              <div className="text-center">
-                <h1 className="text-xl md:text-3xl font-bold text-white tracking-wide">
-                  نظام إدارة إسكان محافظة أسوان
-                </h1>
-              </div>
-            </div>
-          </motion.header>
-
+        <Card className="overflow-hidden border-2 border-border rounded-3xl shadow-xl">
           <motion.div
             className="px-2 sm:px-4 md:px-6 lg:px-8 py-4"
             variants={mainCardChildrenVariants}
@@ -700,7 +680,7 @@ const ReservationPage = () => {
             >
               <div className="grid grid-cols-1 lg:grid-cols-[270px_1fr] gap-4">
                 <motion.div variants={sectionVariants}>
-                  <Card className="border-2 border-blue-100 rounded-2xl">
+                  <Card className="border-2 border-border rounded-2xl">
                     <CardHeader>
                       <CardTitle className="text-base">الخدمات</CardTitle>
                     </CardHeader>
@@ -768,26 +748,26 @@ const ReservationPage = () => {
                         stiffness: 90,
                       }}
                     >
-                      <Card className="h-full border-2 border-blue-200 rounded-3xl shadow-lg bg-white text-gray-800">
+                      <Card className="h-full border-2 border-border rounded-3xl shadow-lg bg-card text-card-foreground">
                         <CardHeader className="pb-3">
                           <div className="flex items-center gap-2">
-                            <div className="p-2 rounded-lg bg-blue-50 border border-blue-200">
-                              <Search className="h-5 w-5 text-blue-600" />
+                            <div className="p-2 rounded-lg bg-brand-muted border border-border">
+                              <Search className="h-5 w-5 text-brand" />
                             </div>
-                            <CardTitle className="text-lg md:text-xl text-gray-800">
+                            <CardTitle className="text-lg md:text-xl ">
                               {activeView === "new"
                                 ? "طلب إقامة جديد"
                                 : "تمديد إقامة"}
                             </CardTitle>
                           </div>
-                          <p className="text-gray-500 text-sm mt-1 pe-1">
+                          <p className="text-muted-foreground text-sm mt-1 pe-1">
                             تحقق من توفر الوحدات السكنية في التاريخ المطلوب
                           </p>
                         </CardHeader>
 
                         <CardContent className="space-y-4">
                           <div className="space-y-1.5">
-                            <Label className="text-gray-700 flex items-center gap-1.5 text-base">
+                            <Label className="text-foreground flex items-center gap-1.5 text-base">
                               <CalendarDays className="h-4 w-4 text-blue-500" />
                               تاريخ البدء
                             </Label>
@@ -798,7 +778,7 @@ const ReservationPage = () => {
                                   variant="outline"
                                   dir="rtl"
                                   className={cn(
-                                    "h-[3.75rem] min-h-[3.75rem] w-full justify-between text-right text-base font-normal leading-[3.75rem] bg-white border-2 border-black text-gray-800 hover:bg-gray-50 px-3 py-0",
+                                    "h-[3.75rem] min-h-[3.75rem] w-full justify-between text-right text-base font-normal leading-[3.75rem] bg-background border-2 border-border hover:bg-muted px-3 py-0",
                                     !startDate && "text-muted-foreground",
                                   )}
                                 >
@@ -850,7 +830,7 @@ const ReservationPage = () => {
                           </div>
 
                           <div className="space-y-1.5">
-                            <Label className="text-gray-700 flex items-center gap-1.5 text-base">
+                            <Label className="text-foreground flex items-center gap-1.5 text-base">
                               <Moon className="h-4 w-4 text-blue-500" />
                               عدد الليالي
                             </Label>
@@ -861,7 +841,7 @@ const ReservationPage = () => {
                               placeholder="أدخل عدد الليالي"
                               value={nights}
                               onChange={(e) => setNights(e.target.value)}
-                              className="h-[3.75rem] min-h-[3.75rem] bg-white border-black text-gray-800 text-base leading-[3.75rem] placeholder:text-sm placeholder:text-gray-400 placeholder:leading-[3.75rem] focus:border-blue-400 focus:ring-blue-400/30"
+                              className="h-[3.75rem] min-h-[3.75rem] bg-background border-border text-foreground text-base leading-[3.75rem] placeholder:text-sm placeholder:text-muted-foreground placeholder:leading-[3.75rem] focus:border-brand focus:ring-brand/30"
                             />
                             {availabilityErrors.nights ? (
                               <p className="text-xs text-red-600">
@@ -871,7 +851,7 @@ const ReservationPage = () => {
                           </div>
 
                           <div className="space-y-1.5">
-                            <Label className="text-gray-700 flex items-center gap-1.5 text-base">
+                            <Label className="text-foreground flex items-center gap-1.5 text-base">
                               <Building2 className="h-4 w-4 text-blue-500" />
                               نوع الوحدة
                               <span className="text-red-500 text-xs">*</span>
@@ -904,8 +884,8 @@ const ReservationPage = () => {
                                     selectedUnitTypes.includes(
                                       opt.value as AvailableUnitType,
                                     )
-                                      ? "bg-[#00005c] border-[#00005c] text-white shadow-md shadow-[#00005c]/25 scale-[1.02]"
-                                      : "bg-slate-50 border-slate-200 text-slate-800 hover:bg-blue-50 hover:border-blue-300"
+                                      ? "bg-brand border-brand text-brand-foreground shadow-md shadow-brand/25 scale-[1.02]"
+                                      : "bg-muted border-border text-foreground hover:bg-brand-muted hover:border-brand/40"
                                   }`}
                                 >
                                   {opt.label}
@@ -920,7 +900,7 @@ const ReservationPage = () => {
                           </div>
 
                           <div className="space-y-1.5">
-                            <Label className="text-gray-700 text-base flex items-center gap-1">
+                            <Label className="text-foreground text-base flex items-center gap-1">
                               نوع الطلب
                               <span className="text-red-500 text-xs">*</span>
                             </Label>
@@ -938,8 +918,8 @@ const ReservationPage = () => {
                                   }}
                                   className={`py-2.5 px-3 rounded-xl border-2 font-medium text-sm transition-all duration-200 whitespace-nowrap shrink-0 min-w-[calc((100%-1rem)/3)] ${
                                     requestType === opt.value
-                                      ? "bg-blue-500 border-blue-500 text-white shadow-lg shadow-blue-500/30 scale-[1.02]"
-                                      : "bg-white border-gray-300 text-gray-600 hover:bg-blue-50 hover:border-blue-300"
+                                      ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
+                                      : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40"
                                   }`}
                                 >
                                   {opt.label}
@@ -954,7 +934,7 @@ const ReservationPage = () => {
                           </div>
 
                           <div className="space-y-1.5">
-                            <Label className="text-gray-700 text-base flex items-center gap-1">
+                            <Label className="text-foreground text-base flex items-center gap-1">
                               الجنس
                               <span className="text-red-500 text-xs">*</span>
                             </Label>
@@ -976,8 +956,8 @@ const ReservationPage = () => {
                                   }}
                                   className={`py-2.5 rounded-xl border-2 font-medium text-sm transition-all duration-200 ${
                                     selectedGenders.includes(opt.value)
-                                      ? "bg-blue-500 border-blue-500 text-white shadow-lg shadow-blue-500/30 scale-[1.02]"
-                                      : "bg-white border-gray-300 text-gray-600 hover:bg-blue-50 hover:border-blue-300"
+                                      ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
+                                      : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40"
                                   }`}
                                 >
                                   {opt.label}
@@ -992,7 +972,7 @@ const ReservationPage = () => {
                           </div>
 
                           <div className="space-y-1.5">
-                            <Label className="text-gray-700 text-base flex items-center gap-1">
+                            <Label className="text-foreground text-base flex items-center gap-1">
                               نوع الحجز
                               <span className="text-red-500 text-xs">*</span>
                             </Label>
@@ -1010,8 +990,8 @@ const ReservationPage = () => {
                                   }}
                                   className={`py-2.5 rounded-xl border-2 font-medium text-sm transition-all duration-200 ${
                                     allocationType === opt.value
-                                      ? "bg-blue-500 border-blue-500 text-white shadow-lg shadow-blue-500/30 scale-[1.02]"
-                                      : "bg-white border-gray-300 text-gray-600 hover:bg-blue-50 hover:border-blue-300"
+                                      ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
+                                      : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40"
                                   }`}
                                 >
                                   {opt.label}
@@ -1036,8 +1016,7 @@ const ReservationPage = () => {
                             type="button"
                             onClick={handleCheckAvailability}
                             disabled={isChecking}
-                            className="w-full py-5 rounded-2xl font-semibold text-base text-white shadow-lg transition-all duration-300 hover:scale-[1.02] hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
-                            style={{ backgroundColor: "#00005c" }}
+                            className="w-full py-5 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-lg transition-all duration-300 hover:scale-[1.02] hover:bg-brand-hover hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
                           >
                             {isChecking ? (
                               <span className="flex items-center gap-2">
@@ -1128,7 +1107,7 @@ const ReservationPage = () => {
                                           card.unitKind === "apartment" &&
                                             "bg-gradient-to-br from-violet-50 via-white to-slate-50/80 border-violet-200",
                                           isSelected &&
-                                            "ring-2 ring-offset-1 ring-blue-500 border-blue-300",
+                                            "ring-2 ring-offset-1 ring-brand border-brand/50",
                                         )}
                                       >
                                         <label
@@ -1145,7 +1124,7 @@ const ReservationPage = () => {
                                             onChange={() =>
                                               toggleAvailabilityCard(cKey)
                                             }
-                                            className="h-4 w-4 shrink-0 rounded border-slate-400 text-[#00005c] focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+                                            className="h-4 w-4 shrink-0 rounded border-slate-400 text-brand focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
                                           />
                                         </label>
                                         <div className="flex items-start gap-3">
@@ -1228,8 +1207,7 @@ const ReservationPage = () => {
                                   <Button
                                     type="button"
                                     onClick={handleSaveReservationSelection}
-                                    className="w-full py-4 rounded-2xl font-semibold text-base text-white shadow-md transition-all duration-300 hover:opacity-95"
-                                    style={{ backgroundColor: "#00005c" }}
+                                    className="w-full py-4 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-md transition-all duration-300 hover:bg-brand-hover hover:opacity-95"
                                   >
                                     <span className="inline-flex items-center justify-center gap-2">
                                       <Bookmark className="h-4 w-4 shrink-0" />
@@ -1278,7 +1256,7 @@ const ReservationPage = () => {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ duration: 0.4 }}
                     >
-                      <Card className="border-2 border-blue-100 rounded-2xl">
+                      <Card className="border-2 border-border rounded-2xl">
                         <CardHeader>
                           <CardTitle>آخر طلبات الإقامة</CardTitle>
                         </CardHeader>

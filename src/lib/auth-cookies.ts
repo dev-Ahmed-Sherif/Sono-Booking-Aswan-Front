@@ -22,8 +22,13 @@ export function refreshTokenCookieName(): string {
 
 export function guideCookieName(): string {
   return (
-    (process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE ?? "").trim() ||
-    "Ref_Guid_Sono_Booking"
+    (
+      process.env.REFRESH_GUIDE_COOKIE ??
+      process.env.REFRESH_GUDIE_COOKIE ??
+      process.env.NEXT_PUBLIC_REFRESH_GUIDE_COOKIE ??
+      process.env.NEXT_PUBLIC_REFRESH_GUDIE_COOKIE ??
+      ""
+    ).trim() || "Ref_Guid_Sono_Booking"
   );
 }
 

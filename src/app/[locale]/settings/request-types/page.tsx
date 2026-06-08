@@ -3,7 +3,6 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getRequestTypes } from "@/actions/settings/requestTypeService";
 import type { RequestTypeColumn } from "@/components/settings/request-types/columns";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 
 const RequestTypesClient = dynamic(() => import("@/components/settings/request-types/client"), {
   loading: () => <div className="p-4">جاري التحميل...</div>,
@@ -29,7 +28,6 @@ const RequestTypesPage = async ({ params }: RequestTypesPageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <RequestTypesClient data={data} path={`/${locale}/settings/request-types/new`} />
       </div>
     </main>

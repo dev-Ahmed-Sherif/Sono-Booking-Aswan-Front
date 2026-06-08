@@ -1,5 +1,7 @@
 import * as XLSX from "xlsx";
 
+import { mimeTypeFromFileName } from "@/lib/image-file";
+
 // Type for local files
 export type LocalFile = { file: File; previewUrl?: string; id?: string };
 
@@ -108,22 +110,19 @@ export const convertAttachmentsToLocalFiles = (
       const url = attach;
       const fullUrl = getFullFileUrl(url);
       const fileName = url.split("/").pop() || `file-${index}`;
-      const fileExtension = fileName.split(".").pop()?.toLowerCase() || "";
-
-      // Determine MIME type from extension
-      const mimeTypes: Record<string, string> = {
-        jpg: "image/jpeg",
-        jpeg: "image/jpeg",
-        png: "image/png",
-        gif: "image/gif",
-        pdf: "application/pdf",
-        doc: "application/msword",
-        docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        xls: "application/vnd.ms-excel",
-        xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      };
-
-      const mimeType = mimeTypes[fileExtension] || "application/octet-stream";
+      const mimeType = (() => {
+        const imageMime = mimeTypeFromFileName(fileName);
+        if (imageMime !== "application/octet-stream") return imageMime;
+        const fileExtension = fileName.split(".").pop()?.toLowerCase() || "";
+        const documentMimeTypes: Record<string, string> = {
+          pdf: "application/pdf",
+          doc: "application/msword",
+          docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          xls: "application/vnd.ms-excel",
+          xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        };
+        return documentMimeTypes[fileExtension] || "application/octet-stream";
+      })();
       const isImage = mimeType.startsWith("image/");
 
       // Create a placeholder File object

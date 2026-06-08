@@ -3,7 +3,6 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { getPaymentMethods } from "@/actions/settings/paymentMethodService";
 import type { PaymentMethodColumn } from "@/components/settings/payment-methods/columns";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 
 const PaymentMethodsClient = dynamic(
   () => import("@/components/settings/payment-methods/client"),
@@ -30,7 +29,6 @@ const PaymentMethodsPage = async ({ params }: PaymentMethodsPageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <PaymentMethodsClient data={data} path={`/${locale}/settings/payment-methods/new`} />
       </div>
     </main>

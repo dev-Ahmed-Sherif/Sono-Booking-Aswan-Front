@@ -4,7 +4,6 @@ import { ArrowRight } from "lucide-react";
 
 import { getApartmentTypes } from "@/actions/settings/apartmentTypeService";
 import type { ApartmentTypeColumn } from "@/components/settings/apartment-types/columns";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 
 const ApartmentTypesClient = dynamic(
   () => import("@/components/settings/apartment-types/client"),
@@ -35,7 +34,6 @@ const ApartmentTypesPage = async ({ params }: ApartmentTypesPageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <ApartmentTypesClient
           data={data}
           path={`/${locale}/settings/apartment-types/new`}

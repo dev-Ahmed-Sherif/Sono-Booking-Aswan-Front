@@ -56,6 +56,7 @@ import {
   getFullFileUrl,
   type LocalFile,
 } from "@/lib/file-viewer";
+import { isImageFile } from "@/lib/image-file";
 
 type FormProps = {
   initialData: unknown | null;
@@ -354,7 +355,7 @@ const EmployeeOrganizationForm = ({
       return;
     }
 
-    const previewUrl = file.type.startsWith("image/")
+    const previewUrl = isImageFile(file)
       ? URL.createObjectURL(file)
       : undefined;
 
@@ -474,11 +475,9 @@ const EmployeeOrganizationForm = ({
     try {
       const fileObj = file.file;
       const fileName = fileObj.name.toLowerCase();
-      const fileType = fileObj.type;
-      const isImage =
-        fileType.startsWith("image/") ||
-        /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(fileName);
-      const isPdf = fileType === "application/pdf" || fileName.endsWith(".pdf");
+      const isImage = isImageFile(fileObj);
+      const isPdf =
+        fileObj.type === "application/pdf" || fileName.endsWith(".pdf");
 
       if (isImage) {
         setFileContentType("image");
@@ -855,7 +854,7 @@ const EmployeeOrganizationForm = ({
                                     <div className="flex flex-col items-center justify-center text-gray-600 dark:text-gray-300">
                                       {(() => {
                                         const type = delegateFile.file.type;
-                                        const Icon = type.startsWith("image/")
+                                        const Icon = isImageFile(delegateFile.file)
                                           ? FileImage
                                           : type === "application/pdf"
                                             ? FileText

@@ -83,7 +83,7 @@ export function HousingSenderDecisionDialog({
             type="button"
             className={
               isApprove
-                ? "bg-[#00005c] text-white hover:bg-[#00004a]"
+                ? "bg-brand text-brand-foreground hover:bg-brand-hover"
                 : "bg-red-600 text-white hover:bg-red-700"
             }
             disabled={submitting || (!isApprove && !note.trim())}

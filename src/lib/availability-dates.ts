@@ -1,9 +1,28 @@
 import { toYmd } from "@/lib/housing-request-list";
 
+export type AvailabilityInquiryGender = "male" | "female";
+
 export type AvailabilityInquiryDates = {
   startDateYmd: string;
   nights?: number;
+  /** Selected genders from the inquiry form (maps to apartment `Gender`). */
+  genders?: AvailabilityInquiryGender[];
 };
+
+/** HTTP `Gender` header for Beds/Rooms/Apartments getAll (comma-separated). */
+export function formatAvailabilityGenderHeader(
+  genders: AvailabilityInquiryGender[] | undefined,
+): string | undefined {
+  if (!genders?.length) return undefined;
+  const tokens = [
+    ...new Set(
+      genders
+        .filter((g): g is AvailabilityInquiryGender => g === "male" || g === "female")
+        .map((g) => (g === "male" ? "Male" : "Female")),
+    ),
+  ];
+  return tokens.length > 0 ? tokens.join(",") : undefined;
+}
 
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {

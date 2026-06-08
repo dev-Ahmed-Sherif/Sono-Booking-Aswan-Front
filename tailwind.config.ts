@@ -19,6 +19,14 @@ const config: Config = {
   			sm: 'calc(var(--radius) - 4px)'
   		},
   		colors: {
+  			brand: {
+  				DEFAULT: 'hsl(var(--brand))',
+  				hover: 'hsl(var(--brand-hover))',
+  				foreground: 'hsl(var(--brand-foreground))',
+  				border: 'hsl(var(--brand-border))',
+  				muted: 'hsl(var(--brand-muted))',
+  				accent: 'hsl(var(--brand-accent))',
+  			},
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

@@ -1,7 +1,6 @@
 import AllocationTypeForm from "@/components/settings/allocation-types/allocation-types-form";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 import type { SettingsLookupInitialData } from "@/lib/settings-lookup-initial-data";
 
 type PageProps = { params: { locale: string; id: string } };
@@ -22,7 +21,6 @@ const AllocationTypePage = async ({ params }: PageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <div className="flex-1 space-y-4 pt-6">
           <AllocationTypeForm initialData={initialData} name="نوع التخصيص" />
         </div>

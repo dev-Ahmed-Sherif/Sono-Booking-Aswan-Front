@@ -4,7 +4,6 @@ import { ArrowRight } from "lucide-react";
 
 import { getRelationships } from "@/actions/settings/relationshipService";
 import type { RelationshipColumn } from "@/components/settings/relationships/columns";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 
 const RelationshipsClient = dynamic(
   () => import("@/components/settings/relationships/client"),
@@ -35,7 +34,6 @@ const RelationshipsPage = async ({ params }: RelationshipsPageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <RelationshipsClient data={data} path={`/${locale}/settings/relationships/new`} />
       </div>
     </main>

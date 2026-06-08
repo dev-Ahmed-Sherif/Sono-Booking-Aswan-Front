@@ -881,7 +881,7 @@ const InspectionForm = ({
               <Input
                 ref={attachmentRef}
                 type="file"
-                accept=".pdf,.jpg,.jpeg,.png"
+                accept="image/*,.pdf"
                 disabled={loading}
                 onChange={(e) => {
                   const file = e.target.files?.[0] ?? null;

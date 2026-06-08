@@ -33,9 +33,9 @@ const Modal = ({
   return (
     <Dialog open={isOpen} onOpenChange={onChange}>
       <DialogContent className="flex flex-col items-center justify-center">
-        <DialogHeader>
+        <DialogHeader className="items-center text-center">
           {title ? (
-            <DialogTitle className="text-center">{title}</DialogTitle>
+            <DialogTitle>{title}</DialogTitle>
           ) : (
             <VisuallyHidden>
               <DialogTitle>Dialog</DialogTitle>

@@ -10,8 +10,23 @@ import { accessTokenCookieName, localeCookieName } from "@/lib/auth-cookies";
 //   // Used when no locale matches
 //   defaultLocale: "ar",
 // });
-const publicPages = ["/ar", "/en", "/ar/register", "/en/register"];
+const LOCALES = ["ar", "en"] as const;
 const LAST_ROUTE_COOKIE = "last_route";
+
+function normalizePathname(pathname: string): string {
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    return pathname.slice(0, -1);
+  }
+  return pathname;
+}
+
+function isPublicPage(pathname: string): boolean {
+  const path = normalizePathname(pathname);
+  if (path === "/register") return true;
+  return LOCALES.some(
+    (locale) => path === `/${locale}` || path === `/${locale}/register`,
+  );
+}
 
 function isLocaleRootPath(pathname: string) {
   return (
@@ -68,7 +83,7 @@ export async function middleware(req: NextRequest) {
   const authenticated = hasAuthSession(req);
   const activeLocale = defaultLocale(req);
 
-  if (!authenticated && !publicPages.includes(nextUrl.pathname)) {
+  if (!authenticated && !isPublicPage(nextUrl.pathname)) {
     const redirectUrl = new URL(`${origin}/${activeLocale}`);
     // Add reload parameter to trigger client-side reload
     redirectUrl.searchParams.set("reload", "true");

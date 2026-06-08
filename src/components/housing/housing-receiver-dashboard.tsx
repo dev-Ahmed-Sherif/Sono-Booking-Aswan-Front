@@ -47,7 +47,7 @@ import {
 import { useEffectiveRole } from "@/hooks/use-effective-role";
 import { useRequireRole } from "@/hooks/use-require-role";
 import { motion } from "framer-motion";
-import { ClipboardList, Eye, Home, Loader2 } from "lucide-react";
+import { ClipboardList, Eye, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -609,7 +609,7 @@ export default function HousingReceiverDashboard() {
           onClick={() => openCheckInModal(row)}
           className={cn(
             receiverTableButtonClassName,
-            "bg-[#00005c] text-white hover:bg-[#00004a]",
+            "bg-brand text-brand-foreground hover:bg-brand-hover",
           )}
         >
           تأكيد وصول
@@ -668,7 +668,7 @@ export default function HousingReceiverDashboard() {
           onClick={() => void runRowAction(row, "restore")}
           className={cn(
             receiverTableButtonClassName,
-            "bg-[#00005c] text-white hover:bg-[#00004a]",
+            "bg-brand text-brand-foreground hover:bg-brand-hover",
           )}
         >
           {pendingAction?.id === row.id &&
@@ -704,25 +704,11 @@ export default function HousingReceiverDashboard() {
         animate="visible"
       >
         <Card className="overflow-hidden rounded-3xl border-2 border-blue-100 shadow-xl">
-          <motion.header
-            className="relative z-10 flex items-center justify-center gap-3 border-b border-[#00004a] px-6 py-5 shadow-sm"
-            style={{ backgroundColor: "#00005c" }}
-            variants={mainCardChildrenVariants}
-          >
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-gradient-to-br from-green-500 to-blue-600 p-2 shadow-lg">
-                <Home className="h-6 w-6 text-white" />
-              </div>
-              <div className="text-center">
-                <h1 className="text-xl font-bold tracking-wide text-white md:text-3xl">
-                  نظام إدارة إسكان محافظة أسوان
-                </h1>
-                <p className="mt-1 text-sm text-white/85 md:text-base">
-                  لوحة تحكم مسؤول الاستقبال
-                </p>
-              </div>
-            </div>
-          </motion.header>
+          <div className="border-b border-brand-border/15 bg-brand-muted px-6 py-4 text-center">
+            <h2 className="text-lg font-bold text-brand md:text-xl">
+              لوحة تحكم مسؤول الاستقبال
+            </h2>
+          </div>
 
           <motion.div
             className="px-2 py-4 sm:px-4 md:px-6 lg:px-8"
@@ -773,7 +759,7 @@ export default function HousingReceiverDashboard() {
                   className="min-h-[420px]"
                   variants={sectionVariants}
                 >
-                  <Card className="h-full rounded-3xl border-2 border-blue-200 bg-white text-gray-800 shadow-lg">
+                  <Card className="h-full rounded-3xl border-2 border-border bg-card text-card-foreground shadow-lg">
                     <CardHeader className="pb-3">
                       <div className="flex items-center gap-2">
                         <div className="rounded-lg border border-blue-200 bg-blue-50 p-2">
@@ -1106,7 +1092,7 @@ export default function HousingReceiverDashboard() {
             <Button
               type="button"
               disabled={modalSubmitting}
-              className="bg-[#00005c] text-white hover:bg-[#00004a]"
+              className="bg-brand text-brand-foreground hover:bg-brand-hover"
               onClick={() => void handleCheckInSubmit()}
             >
               {modalSubmitting ? (

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { formatUtcToCairo } from "@/lib/date-timeOptions";
 import { getFullFileUrl } from "@/lib/file-viewer";
+import { pathLooksLikeImage } from "@/lib/image-file";
 
 export type OwningCompanyColumn = {
   id: string;
@@ -51,8 +52,7 @@ function commercialAttachmentPathFromRow(
 }
 
 function isLikelyImagePath(path: string): boolean {
-  const base = (path.split("?")[0] ?? "").toLowerCase();
-  return /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(base);
+  return pathLooksLikeImage(path);
 }
 
 function CommercialAttachmentPreviewCell({

@@ -2,7 +2,6 @@ import { getRelationshipById } from "@/actions/settings/relationshipService";
 import RelationshipForm from "@/components/settings/relationships/relationships-form";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import UnitDataHeader from "@/components/settings/unit-data-header";
 import {
   settingsLookupFromApiResult,
   type SettingsLookupInitialData,
@@ -29,7 +28,6 @@ const RelationshipPage = async ({ params }: PageProps) => {
           <ArrowRight className="h-5 w-5" />
           رجوع
         </Link>
-        <UnitDataHeader />
         <div className="flex-1 space-y-4 pt-6">
           <RelationshipForm initialData={initialData} name="صلة القرابة" />
         </div>

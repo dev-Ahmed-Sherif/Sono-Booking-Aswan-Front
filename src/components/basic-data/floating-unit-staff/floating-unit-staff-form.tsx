@@ -67,6 +67,7 @@ import {
   getFullFileUrl,
   type LocalFile,
 } from "@/lib/file-viewer";
+import { isImageFile } from "@/lib/image-file";
 import type { FloatingUnitStaffFormValues } from "@/actions/basic-data/floatingUnitStaffFormData";
 import {
   resolveNumericLookupId,
@@ -466,11 +467,9 @@ const FloatingUnitStaffForm = ({
     try {
       const fileObj = file.file;
       const fileName = fileObj.name.toLowerCase();
-      const fileType = fileObj.type;
-      const isImage =
-        fileType.startsWith("image/") ||
-        /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(fileName);
-      const isPdf = fileType === "application/pdf" || fileName.endsWith(".pdf");
+      const isImage = isImageFile(fileObj);
+      const isPdf =
+        fileObj.type === "application/pdf" || fileName.endsWith(".pdf");
       if (isImage) {
         setFileContentType("image");
         setFileContent(file.previewUrl || (await fileToBase64(fileObj)));

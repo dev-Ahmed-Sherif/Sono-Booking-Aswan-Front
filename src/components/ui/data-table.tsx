@@ -36,12 +36,14 @@ interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
   searchKey: string;
+  className?: string;
 }
 
 export function DataTable<TData, TValue>({
   columns,
   data,
   searchKey,
+  className,
 }: DataTableProps<TData, TValue>) {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const user = useLocalStorage("user");
@@ -105,7 +107,7 @@ export function DataTable<TData, TValue>({
         />
       </div>
       <div className="rounded-md border">
-        <Table>
+        <Table className={className}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>

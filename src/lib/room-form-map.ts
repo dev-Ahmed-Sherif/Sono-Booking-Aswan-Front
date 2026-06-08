@@ -175,7 +175,7 @@ export function mapApiRoomToFormDefaults(
     roomImageMeta?: RoomImageMeta[];
   } = {
     id,
-    roomNumber: pickStr(api, ["roomNumber", "RoomNumber"]),
+    roomNumber: Number(pickStr(api, ["roomNumber", "RoomNumber"])) || undefined,
     description: pickStr(api, ["description", "Description"]),
     price: Number.isFinite(price) ? price : 0,
     status,
