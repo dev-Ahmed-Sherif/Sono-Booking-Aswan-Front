@@ -43,6 +43,7 @@ const Client = memo(({ data, path }: ClientProps) => {
       <div className="p-2 sm:p-4 flex flex-col sm:flex-row items-center sm:justify-between gap-3 sm:gap-4">
         <div className="w-full sm:w-auto text-center sm:text-right">
           <Heading
+            pageName="المحافظات"
             title={`عدد البيانات (${tableData.length})`}
             description="إدارة المحافظات"
           />

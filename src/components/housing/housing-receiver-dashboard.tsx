@@ -30,6 +30,12 @@ import {
   formatReservationAmountAr,
 } from "@/lib/reservation-discount";
 import {
+  PAYMENT_METHOD_CASH,
+  PAYMENT_METHOD_OPTIONS,
+  parsePaymentMethodInput,
+  type PaymentMethod,
+} from "@/lib/payment-map";
+import {
   RESERVATION_STATUS_CANCELED,
   RESERVATION_STATUS_COMPLETED,
   RESERVATION_STATUS_RESERVED,
@@ -62,6 +68,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -265,6 +278,9 @@ export default function HousingReceiverDashboard() {
     null,
   );
   const [discountPercent, setDiscountPercent] = useState("0");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
+    PAYMENT_METHOD_CASH,
+  );
   const [viewCancelReasonRow, setViewCancelReasonRow] =
     useState<ReceiverReservationRow | null>(null);
 
@@ -539,6 +555,7 @@ export default function HousingReceiverDashboard() {
         endDateYmd: checkInRow.endDateYmd,
         discountPercent: pct,
         baseTotalAmount: checkInRow.totalAmount,
+        paymentMethod,
       });
 
       if (!result.ok) {
@@ -563,8 +580,17 @@ export default function HousingReceiverDashboard() {
         });
       }
 
+      if (result.unitOccupancyWarning) {
+        toast({
+          variant: "destructive",
+          title: "تنبيه: حالة الوحدات",
+          description: String(result.unitOccupancyWarning),
+        });
+      }
+
       setCheckInRow(null);
       setDiscountPercent("0");
+      setPaymentMethod(PAYMENT_METHOD_CASH);
       void loadReceiverData();
     } catch {
       toast({
@@ -575,7 +601,7 @@ export default function HousingReceiverDashboard() {
     } finally {
       setModalSubmitting(false);
     }
-  }, [checkInRow, discountPercent, loadReceiverData, toast]);
+  }, [checkInRow, discountPercent, paymentMethod, loadReceiverData, toast]);
 
   const openCancelModal = useCallback((row: ReceiverReservationRow) => {
     setCancelRow(row);
@@ -585,6 +611,7 @@ export default function HousingReceiverDashboard() {
   const openCheckInModal = useCallback((row: ReceiverReservationRow) => {
     setCheckInRow(row);
     setDiscountPercent("0");
+    setPaymentMethod(PAYMENT_METHOD_CASH);
   }, []);
 
   const renderDetailButton = (row: ReceiverReservationRow) => (
@@ -1035,6 +1062,7 @@ export default function HousingReceiverDashboard() {
           if (!open) {
             setCheckInRow(null);
             setDiscountPercent("0");
+            setPaymentMethod(PAYMENT_METHOD_CASH);
           }
         }}
       >
@@ -1075,6 +1103,35 @@ export default function HousingReceiverDashboard() {
                   {formatReservationAmountAr(checkInFinalAmount)}
                 </p>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="payment-method">طريقة الدفع</Label>
+                <Select
+                  value={String(paymentMethod)}
+                  onValueChange={(value) => {
+                    const parsed = parsePaymentMethodInput(value);
+                    if (parsed != null) setPaymentMethod(parsed);
+                  }}
+                  disabled={modalSubmitting}
+                >
+                  <SelectTrigger
+                    id="payment-method"
+                    className="w-full text-right"
+                    dir="rtl"
+                  >
+                    <SelectValue placeholder="اختر طريقة الدفع" />
+                  </SelectTrigger>
+                  <SelectContent className="text-right" dir="rtl">
+                    {PAYMENT_METHOD_OPTIONS.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={String(option.value)}
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           ) : null}
           <DialogFooter className="gap-2 sm:justify-center">
@@ -1085,6 +1142,7 @@ export default function HousingReceiverDashboard() {
               onClick={() => {
                 setCheckInRow(null);
                 setDiscountPercent("0");
+                setPaymentMethod(PAYMENT_METHOD_CASH);
               }}
             >
               تراجع

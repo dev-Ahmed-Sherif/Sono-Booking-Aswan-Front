@@ -1,6 +1,7 @@
 "use server";
 
 import { loadReservationForMutation } from "@/actions/housingReservationMutation";
+import { occupyHousingUnitsForRequest } from "@/actions/reserveHousingUnits";
 import { addPayment } from "@/actions/settings/paymentService";
 import { updateReservationById } from "@/actions/reservationService";
 import {
@@ -10,7 +11,9 @@ import {
 import {
   PAYMENT_METHOD_CASH,
   PAYMENT_STATUS_PAID,
+  parsePaymentMethodInput,
   serializeAddPaymentDtoForApi,
+  type PaymentMethod,
 } from "@/lib/payment-map";
 import { computeFinalAmountAfterDiscount } from "@/lib/reservation-discount";
 import {
@@ -27,10 +30,11 @@ export type CheckInHousingReservationInput = {
   discountPercent: number;
   /** Base amount before discount (from reservation row). */
   baseTotalAmount: number;
+  paymentMethod?: PaymentMethod;
 };
 
 export type CheckInHousingReservationResult =
-  | { ok: true; paymentWarning?: string }
+  | { ok: true; paymentWarning?: string; unitOccupancyWarning?: string }
   | { ok: false; message: string };
 
 function isDuplicatePaymentError(res: unknown): boolean {
@@ -52,7 +56,7 @@ function isDuplicatePaymentError(res: unknown): boolean {
 
 /**
  * `PUT /Reservations/update` with `status: "Completed"` and `checkInDate` set to now,
- * then `POST /Payments/add` for the discounted amount.
+ * then `POST /Payments/add`, then mark request units as Occupied.
  */
 export async function checkInHousingReservation(
   input: CheckInHousingReservationInput,
@@ -61,6 +65,9 @@ export async function checkInHousingReservation(
   if (!Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
     return { ok: false, message: "نسبة الخصم يجب أن تكون بين 0 و 100." };
   }
+
+  const paymentMethod =
+    parsePaymentMethodInput(input.paymentMethod) ?? PAYMENT_METHOD_CASH;
 
   const loaded = await loadReservationForMutation(input.id, input);
   if (!loaded.ok) return loaded;
@@ -103,7 +110,7 @@ export async function checkInHousingReservation(
   const paymentRes = await addPayment(
     serializeAddPaymentDtoForApi({
       amount: totalAmount,
-      paymentMethod: PAYMENT_METHOD_CASH,
+      paymentMethod,
       paymentStatus: PAYMENT_STATUS_PAID,
       paymentDate: nowIso,
       transactionReference: `CHK-${reservationId.slice(0, 8)}-${Date.now()}`,
@@ -111,21 +118,28 @@ export async function checkInHousingReservation(
     }),
   );
 
-  if (isRequestServiceSuccess(paymentRes)) {
-    return { ok: true };
+  const paymentOk =
+    isRequestServiceSuccess(paymentRes) || isDuplicatePaymentError(paymentRes);
+
+  if (!paymentOk) {
+    const paymentMessage =
+      parseRequestServiceError(paymentRes) ??
+      (paymentRes as { message?: string })?.message ??
+      "تعذر تسجيل الدفع.";
+
+    return {
+      ok: true,
+      paymentWarning: paymentMessage,
+    };
   }
 
-  if (isDuplicatePaymentError(paymentRes)) {
-    return { ok: true };
+  const occupyResult = await occupyHousingUnitsForRequest(requestId);
+  if (!occupyResult.ok) {
+    return {
+      ok: true,
+      unitOccupancyWarning: occupyResult.message,
+    };
   }
 
-  const paymentMessage =
-    parseRequestServiceError(paymentRes) ??
-    (paymentRes as { message?: string })?.message ??
-    "تعذر تسجيل الدفع.";
-
-  return {
-    ok: true,
-    paymentWarning: paymentMessage,
-  };
+  return { ok: true };
 }

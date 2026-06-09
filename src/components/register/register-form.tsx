@@ -12,7 +12,10 @@ import {
   type RegistrationFormValues,
 } from "@/schemas";
 import { Register } from "@/actions/auth";
-import { extractApiResultString } from "@/lib/companion-registration";
+import {
+  extractApiResultString,
+  genderToApiString,
+} from "@/lib/companion-registration";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,21 +75,14 @@ const RegisterForm = () => {
     const formData = new FormData();
     formData.append("Username", values.fullName);
     formData.append("NationalId", values.nationalId);
-    formData.append(
-      "DocumentType",
-      values.documentType === "Passport"
-        ? "2"
-        : values.documentType === "ResidencePermit"
-          ? "3"
-          : "1",
-    );
-    formData.append("Gender", values.gender === "female" ? "2" : "1");
+    formData.append("DocumentType", values.documentType);
+    formData.append("Gender", genderToApiString(values.gender));
     formData.append("BirthDate", toDateOnlyString(values.birthDate));
     formData.append("Phone", values.mobile);
     formData.append("Email", values.email);
     formData.append("Password", values.password);
     if (values.identityAttachment instanceof File) {
-      formData.append("Image", values.identityAttachment);
+      formData.append("DocumentImage", values.identityAttachment);
     }
     return formData;
   };

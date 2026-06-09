@@ -20,9 +20,8 @@ import { getRelationships } from "@/actions/settings/relationshipService";
 import {
   FATHER_MOTHER_DUPLICATE_MESSAGE,
   filterRelationshipOptionsForEditCompanion,
-  documentTypeToApiNumber,
   filterRelationshipOptionsForNewCompanion,
-  genderToApiNumber,
+  genderToApiString,
   isFatherMotherRelationshipTaken,
   mapCompanionDtoToFormEntry,
 } from "@/lib/companion-registration";
@@ -259,11 +258,8 @@ const RegisterCompanionsTab = ({
     fd.append("FullName", companion.fullName);
     fd.append("DocumentNumber", companion.nationalId);
     fd.append("BirthDate", toDateOnlyString(companion.birthDate));
-    fd.append("Gender", String(genderToApiNumber(companion.gender!)));
-    fd.append(
-      "DocumentType",
-      String(documentTypeToApiNumber(companion.documentType)),
-    );
+    fd.append("Gender", genderToApiString(companion.gender!));
+    fd.append("DocumentType", companion.documentType);
     fd.append("RelationshipId", companion.relationshipId);
 
     if (companion.identityAttachment instanceof File) {

@@ -120,6 +120,19 @@ export function extractBlockingEndYmdFromUnitRow(
   return maxYmd(direct, ...nestedEnds);
 }
 
+function isReservedOrOccupiedCatalogStatus(status: unknown): boolean {
+  if (status == null) return false;
+  const n = typeof status === "number" ? status : Number(String(status).trim());
+  if (Number.isFinite(n)) return n === 2 || n === 3;
+  const t = String(status).trim().toLowerCase();
+  return (
+    t.includes("reserv") ||
+    t.includes("occup") ||
+    t === "محجوز" ||
+    t === "مشغول"
+  );
+}
+
 /**
  * Unit is bookable when inquiry start is strictly after the last request/extension end
  * (unit becomes free after that date).
@@ -127,9 +140,32 @@ export function extractBlockingEndYmdFromUnitRow(
 export function isUnitFreeFromInquiryStart(
   inquiryStartYmd: string | undefined,
   ...blockingEndDates: Array<string | undefined>
+): boolean;
+export function isUnitFreeFromInquiryStart(
+  inquiryStartYmd: string | undefined,
+  blockingEnd: string | undefined,
+  catalogStatus?: unknown,
+): boolean;
+export function isUnitFreeFromInquiryStart(
+  inquiryStartYmd: string | undefined,
+  ...args: Array<string | undefined | unknown>
 ): boolean {
   if (!inquiryStartYmd) return true;
+
+  let catalogStatus: unknown;
+  const blockingEndDates: Array<string | undefined> = [];
+  for (const arg of args) {
+    if (typeof arg === "string" || arg === undefined) {
+      blockingEndDates.push(arg);
+    } else if (blockingEndDates.length > 0 && catalogStatus === undefined) {
+      catalogStatus = arg;
+    }
+  }
+
   const blockingEnd = maxYmd(...blockingEndDates);
+  if (isReservedOrOccupiedCatalogStatus(catalogStatus) && !blockingEnd) {
+    return false;
+  }
   if (!blockingEnd) return true;
   return compareYmd(inquiryStartYmd, blockingEnd) > 0;
 }
@@ -146,6 +182,11 @@ export function filterUnitsByInquiryStartDate(
     const row = item as Record<string, unknown>;
     const rowEnd = extractBlockingEndYmdFromUnitRow(row);
     const extraEnd = extraBlockingEndsForRow?.(row);
-    return isUnitFreeFromInquiryStart(inquiryStartYmd, rowEnd, extraEnd);
+    return isUnitFreeFromInquiryStart(
+      inquiryStartYmd,
+      rowEnd,
+      extraEnd,
+      row.status ?? row.Status,
+    );
   });
 }

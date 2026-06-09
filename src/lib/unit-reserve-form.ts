@@ -8,6 +8,9 @@ export const UNIT_STATUS_AVAILABLE = "1";
 /** `UnitStatus.Reserved` — matches bed/room forms (`String(values.status)`). */
 export const UNIT_STATUS_RESERVED = "2";
 
+/** `UnitStatus.Occupied` — matches bed/room forms (`String(values.status)`). */
+export const UNIT_STATUS_OCCUPIED = "3";
+
 function pickStr(record: Record<string, unknown>, keys: string[]): string {
   for (const k of keys) {
     const v = record[k];
@@ -46,6 +49,10 @@ export function buildBedReserveFormData(api: Record<string, unknown>): FormData 
   return buildBedUnitStatusFormData(api, UNIT_STATUS_RESERVED);
 }
 
+export function buildBedOccupiedFormData(api: Record<string, unknown>): FormData {
+  return buildBedUnitStatusFormData(api, UNIT_STATUS_OCCUPIED);
+}
+
 export function buildBedAvailableFormData(api: Record<string, unknown>): FormData {
   return buildBedUnitStatusFormData(api, UNIT_STATUS_AVAILABLE);
 }
@@ -73,6 +80,10 @@ function buildBedUnitStatusFormData(
 
 export function buildRoomReserveFormData(api: Record<string, unknown>): FormData {
   return buildRoomUnitStatusFormData(api, UNIT_STATUS_RESERVED);
+}
+
+export function buildRoomOccupiedFormData(api: Record<string, unknown>): FormData {
+  return buildRoomUnitStatusFormData(api, UNIT_STATUS_OCCUPIED);
 }
 
 export function buildRoomAvailableFormData(api: Record<string, unknown>): FormData {
@@ -110,6 +121,12 @@ export function buildApartmentReserveFormData(
   api: Record<string, unknown>,
 ): FormData {
   return buildApartmentUnitStatusFormData(api, UNIT_STATUS_RESERVED);
+}
+
+export function buildApartmentOccupiedFormData(
+  api: Record<string, unknown>,
+): FormData {
+  return buildApartmentUnitStatusFormData(api, UNIT_STATUS_OCCUPIED);
 }
 
 export function buildApartmentAvailableFormData(

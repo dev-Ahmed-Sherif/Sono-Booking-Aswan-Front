@@ -23,7 +23,8 @@ export type RestoreHousingReservationResult =
   | { ok: false; message: string };
 
 /**
- * `PUT /Reservations/update` with `status: "Reserved"` and empty `cancelationReason`.
+ * `PUT /Reservations/update` with `status: "Reserved"`, empty `cancelationReason`,
+ * and `actualCheckOutDate` cleared.
  */
 export async function restoreHousingReservation(
   input: RestoreHousingReservationInput,
@@ -47,7 +48,7 @@ export async function restoreHousingReservation(
       status: RESERVATION_STATUS_RESERVED,
       totalAmount: reservation.totalAmount,
       checkInDate: reservation.checkInDate,
-      actualCheckOutDate: reservation.actualCheckOutDate,
+      actualCheckOutDate: null,
       cancelationReason: "",
     }),
   );

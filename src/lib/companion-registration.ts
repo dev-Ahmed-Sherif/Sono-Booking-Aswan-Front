@@ -183,6 +183,11 @@ export function genderToApiNumber(gender: "male" | "female"): 1 | 2 {
   return gender === "female" ? 2 : 1;
 }
 
+/** Backend `Gender` enum for multipart register / companion APIs. */
+export function genderToApiString(gender: "male" | "female"): "Male" | "Female" {
+  return gender === "female" ? "Female" : "Male";
+}
+
 export function parseBirthDateValue(value: unknown): Date | undefined {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
   if (typeof value === "string") {

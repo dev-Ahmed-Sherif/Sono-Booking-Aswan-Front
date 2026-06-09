@@ -23,7 +23,11 @@ const Client = memo(({ data, path }: RelationshipClientProps) => {
     <div className="mt-7 sm:mt-0 space-y-4">
       <div className="p-2 sm:p-4 flex flex-col sm:flex-row items-center sm:justify-between gap-3 sm:gap-4">
         <div className="w-full sm:w-auto text-center sm:text-right">
-          <Heading title={`عدد البيانات (${rows.length})`} description="إدارة بيانات الضبط والإعدادات" />
+          <Heading
+            pageName="العلاقات الأسرية"
+            title={`عدد البيانات (${rows.length})`}
+            description="إدارة بيانات الضبط والإعدادات"
+          />
         </div>
         <Button
           onClick={() => router.push(path)}

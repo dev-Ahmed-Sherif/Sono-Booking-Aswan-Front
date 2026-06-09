@@ -25,7 +25,7 @@ export type CancelHousingReservationResult =
   | { ok: false; message: string };
 
 /**
- * `PUT /Reservations/update` with `status: "Canceled"`.
+ * `PUT /Reservations/update` with `status: "Canceled"` and `actualCheckOutDate` set to now.
  */
 export async function cancelHousingReservation(
   input: CancelHousingReservationInput,
@@ -45,6 +45,8 @@ export async function cancelHousingReservation(
     return { ok: false, message: "معرّف الطلب غير موجود." };
   }
 
+  const nowIso = new Date().toISOString();
+
   const res = await updateReservationById(
     serializeAddReservationDtoForApi({
       id: reservation.id,
@@ -54,7 +56,7 @@ export async function cancelHousingReservation(
       status: RESERVATION_STATUS_CANCELED,
       totalAmount: reservation.totalAmount,
       checkInDate: reservation.checkInDate,
-      actualCheckOutDate: reservation.actualCheckOutDate,
+      actualCheckOutDate: nowIso,
       cancelationReason,
     }),
   );

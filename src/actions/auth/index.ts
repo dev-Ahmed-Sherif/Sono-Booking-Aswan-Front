@@ -144,6 +144,35 @@ const getUserData = async () => {
   }
 };
 
+function registerErrorMessage(
+  data: unknown,
+  status: number | undefined,
+  fallback: string,
+): string {
+  if (data && typeof data === "object") {
+    const body = data as Record<string, unknown>;
+    if (typeof body.message === "string" && body.message.trim()) {
+      return body.message;
+    }
+    const errors = body.errors ?? body.Errors;
+    if (errors && typeof errors === "object") {
+      const lines = Object.entries(errors as Record<string, unknown>).flatMap(
+        ([field, issues]) => {
+          const list = Array.isArray(issues) ? issues : [issues];
+          return list
+            .map((issue) => String(issue).trim())
+            .filter(Boolean)
+            .map((issue) => `${field}: ${issue}`);
+        },
+      );
+      if (lines.length > 0) return lines.join(" · ");
+    }
+  }
+  if (status === 400) return "بيانات غير صحيحة";
+  if (status === 409) return "البريد الإلكتروني أو المستخدم مسجل مسبقاً";
+  return fallback;
+}
+
 /**
  * Register a new user.
  *
@@ -155,11 +184,6 @@ const Register = async (formData: FormData) => {
     const res = await axios.post(
       `${process.env.BACK_END}/accounts/register`,
       formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      },
     );
 
     const plain = toPlainSerializable(res.data);
@@ -176,13 +200,11 @@ const Register = async (formData: FormData) => {
     };
     const status = err?.response?.status;
     const data = err?.response?.data;
-    const message =
-      data?.message ||
-      (status === 400
-        ? "بيانات غير صحيحة"
-        : status === 409
-          ? "البريد الإلكتروني أو المستخدم مسجل مسبقاً"
-          : err?.message || "Failed to register");
+    const message = registerErrorMessage(
+      data,
+      status,
+      err?.message || "Failed to register",
+    );
 
     if (status === 400) {
       return {

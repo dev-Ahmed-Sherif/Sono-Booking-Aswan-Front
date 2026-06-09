@@ -56,6 +56,38 @@ function requestStatusBlocksUnit(status: unknown): boolean {
   return true;
 }
 
+/** Reservation statuses that no longer block a unit. */
+function reservationStatusBlocksUnit(status: unknown): boolean {
+  if (status == null) return true;
+  const n = typeof status === "number" ? status : Number(String(status).trim());
+  if (Number.isFinite(n)) {
+    if (n === 3 || n === 4) return false;
+    return true;
+  }
+  const t = String(status).trim().toLowerCase();
+  if (!t) return true;
+  if (
+    t.includes("cancel") ||
+    t.includes("noshow") ||
+    t.includes("no-show") ||
+    t === "ملغى" ||
+    t === "ملغي" ||
+    t === "لم يظهر"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Only approved extensions extend blocking. */
+function extensionStatusBlocksUnit(status: unknown): boolean {
+  if (status == null) return false;
+  const n = typeof status === "number" ? status : Number(String(status).trim());
+  if (Number.isFinite(n)) return n === 1;
+  const t = String(status).trim().toLowerCase();
+  return t.includes("approv") || t === "مقبول" || t === "approved";
+}
+
 function resolveRequestEndYmd(raw: Record<string, unknown>): string | undefined {
   const end = toYmd(
     raw.endDate ??
@@ -79,6 +111,39 @@ function resolveRequestEndYmd(raw: Record<string, unknown>): string | undefined 
   const d = new Date(`${start}T12:00:00`);
   d.setDate(d.getDate() + nights);
   return toYmd(d);
+}
+
+function resolveExtensionEndYmd(raw: Record<string, unknown>): string | undefined {
+  return toYmd(raw.endDate ?? raw.EndDate);
+}
+
+/**
+ * Blocking end for a request: extension end when the reservation has extensions,
+ * else reservation actual checkout, else planned reservation end, else request end.
+ */
+function resolveBlockingEndForRequest(
+  request: Record<string, unknown>,
+  reservation: Record<string, unknown> | undefined,
+  maxExtensionEndForReservation: string | undefined,
+): string | undefined {
+  const requestFallback = resolveRequestEndYmd(request);
+  if (reservation && !reservationStatusBlocksUnit(reservation.status ?? reservation.Status)) {
+    return requestFallback;
+  }
+  if (!reservation) {
+    return requestFallback;
+  }
+
+  if (maxExtensionEndForReservation) return maxExtensionEndForReservation;
+
+  const actualCheckout = toYmd(
+    reservation.actualCheckOutDate ?? reservation.ActualCheckOutDate,
+  );
+  if (actualCheckout) return actualCheckout;
+
+  return (
+    toYmd(reservation.endDate ?? reservation.EndDate) ?? requestFallback
+  );
 }
 
 export type UnitBlockingEndIndex = {
@@ -113,55 +178,49 @@ export function buildUnitBlockingEndIndex(input: {
   const rooms = new Map<string, string>();
   const apartments = new Map<string, string>();
 
+  const reservationByRequestId = new Map<string, Record<string, unknown>>();
+  for (const item of input.reservationsRaw ?? []) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Record<string, unknown>;
+    const requestId = pickStr(r, "requestId", "RequestId");
+    if (requestId) {
+      reservationByRequestId.set(requestId.toLowerCase(), r);
+    }
+  }
+
+  const extensionMaxByReservationId = new Map<string, string>();
+  for (const item of input.extensionsRaw) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Record<string, unknown>;
+    if (!extensionStatusBlocksUnit(r.status ?? r.Status)) continue;
+    const reservationId = pickStr(r, "reservationId", "ReservationId");
+    const endYmd = resolveExtensionEndYmd(r);
+    if (!reservationId || !endYmd) continue;
+    const key = reservationId.toLowerCase();
+    const prev = extensionMaxByReservationId.get(key);
+    extensionMaxByReservationId.set(key, maxYmd(prev, endYmd) ?? endYmd);
+  }
+
   const requestEndById = new Map<string, string>();
   for (const item of input.requestsRaw) {
     if (!item || typeof item !== "object") continue;
     const r = item as Record<string, unknown>;
     if (!requestStatusBlocksUnit(r.status ?? r.Status)) continue;
     const id = pickStr(r, "id", "Id");
-    const endYmd = resolveRequestEndYmd(r);
-    if (id && endYmd) requestEndById.set(id.toLowerCase(), endYmd);
+    if (!id) continue;
+    const reservation = reservationByRequestId.get(id.toLowerCase());
+    const reservationId = reservation
+      ? pickStr(reservation, "id", "Id")?.toLowerCase()
+      : undefined;
+    const extensionEnd = reservationId
+      ? extensionMaxByReservationId.get(reservationId)
+      : undefined;
+    const endYmd = resolveBlockingEndForRequest(r, reservation, extensionEnd);
+    if (endYmd) requestEndById.set(id.toLowerCase(), endYmd);
   }
 
-  const reservationToRequestId = new Map<string, string>();
-  for (const item of input.reservationsRaw ?? []) {
-    if (!item || typeof item !== "object") continue;
-    const r = item as Record<string, unknown>;
-    const reservationId = pickStr(r, "id", "Id");
-    const requestId = pickStr(r, "requestId", "RequestId");
-    if (reservationId && requestId) {
-      reservationToRequestId.set(
-        reservationId.toLowerCase(),
-        requestId.toLowerCase(),
-      );
-    }
-  }
-
-  const extensionEndByRequestId = new Map<string, string>();
-  for (const item of input.extensionsRaw) {
-    if (!item || typeof item !== "object") continue;
-    const r = item as Record<string, unknown>;
-    if (!requestStatusBlocksUnit(r.status ?? r.Status)) continue;
-    const reservationId = pickStr(r, "reservationId", "ReservationId");
-    const requestId =
-      pickStr(r, "requestId", "RequestId") ||
-      (reservationId
-        ? reservationToRequestId.get(reservationId.toLowerCase())
-        : undefined);
-    const endYmd = resolveRequestEndYmd(r);
-    if (!requestId || !endYmd) continue;
-    const key = requestId.toLowerCase();
-    const prev = extensionEndByRequestId.get(key);
-    extensionEndByRequestId.set(key, maxYmd(prev, endYmd) ?? endYmd);
-  }
-
-  const resolveEndForRequest = (requestId: string): string | undefined => {
-    const key = requestId.toLowerCase();
-    return maxYmd(
-      requestEndById.get(key),
-      extensionEndByRequestId.get(key),
-    );
-  };
+  const resolveEndForRequest = (requestId: string): string | undefined =>
+    requestEndById.get(requestId.toLowerCase());
 
   const bedById = new Map<string, Record<string, unknown>>();
   for (const item of input.bedsRaw ?? []) {
@@ -299,6 +358,7 @@ export function filterAvailabilityListsByOccupancy(
     return isUnitFreeFromInquiryStart(
       inquiryStartYmd,
       bookingEnd,
+      row.status ?? row.Status,
     );
   });
 
@@ -311,6 +371,7 @@ export function filterAvailabilityListsByOccupancy(
     return isUnitFreeFromInquiryStart(
       inquiryStartYmd,
       bookingEnd,
+      row.status ?? row.Status,
     );
   });
 
@@ -323,6 +384,7 @@ export function filterAvailabilityListsByOccupancy(
     return isUnitFreeFromInquiryStart(
       inquiryStartYmd,
       bookingEnd,
+      row.status ?? row.Status,
     );
   });
 

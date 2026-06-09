@@ -134,7 +134,7 @@ export function serializeAddRequestDtoForApi(
         ? payload.status
         : housingRequestStatusToApiName(payload.status);
   }
-  if (payload.rejectionReason != null && payload.rejectionReason !== "") {
+  if (payload.rejectionReason != null) {
     body.rejectionReason = payload.rejectionReason;
   }
   if (payload.approvedById) body.approvedById = payload.approvedById;
@@ -145,9 +145,27 @@ export function serializeAddRequestDtoForApi(
 
 /** True when a server-action result is a successful API response (not axios error wrapper). */
 export function isRequestServiceSuccess(res: unknown): boolean {
-  if (!res || typeof res !== "object") return false;
+  if (res === null || res === undefined) return false;
+  if (typeof res === "string") return res.trim().length > 0;
+  if (typeof res !== "object") return false;
+
   const r = res as Record<string, unknown>;
-  if ("error" in r && r.error) return false;
+  if (r.error) return false;
+
+  const succeeded = r.succeeded ?? r.Succeeded ?? r.isSuccess ?? r.IsSuccess;
+  if (succeeded === false) return false;
+
+  const statusRaw = r.status ?? r.Status;
+  const status =
+    typeof statusRaw === "number"
+      ? statusRaw
+      : typeof statusRaw === "string"
+        ? Number(statusRaw)
+        : undefined;
+  if (status != null && Number.isFinite(status) && status >= 400) {
+    return false;
+  }
+
   return true;
 }
 
@@ -570,7 +588,16 @@ export function formatAddRequestErrorMessage(message: string): string {
 export function parseAddRequestApiResult(
   res: unknown,
 ): { ok: true; requestId?: string } | { ok: false; message: string } {
-  if (!res || typeof res !== "object") {
+  if (res === null || res === undefined) {
+    return { ok: false, message: "استجابة غير متوقعة من الخادم." };
+  }
+  if (typeof res === "string") {
+    const id = res.trim();
+    return id
+      ? { ok: true, requestId: id }
+      : { ok: false, message: "استجابة غير متوقعة من الخادم." };
+  }
+  if (typeof res !== "object") {
     return { ok: false, message: "استجابة غير متوقعة من الخادم." };
   }
   const r = res as Record<string, unknown>;

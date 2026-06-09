@@ -13,10 +13,13 @@ import type { AddRequestUnitDtoPayload } from "@/lib/housing-request-map";
 import { parseRequestServiceError } from "@/lib/housing-request-map";
 import {
   buildApartmentAvailableFormData,
+  buildApartmentOccupiedFormData,
   buildApartmentReserveFormData,
   buildBedAvailableFormData,
+  buildBedOccupiedFormData,
   buildBedReserveFormData,
   buildRoomAvailableFormData,
+  buildRoomOccupiedFormData,
   buildRoomReserveFormData,
   unwrapUnitApiEntity,
 } from "@/lib/unit-reserve-form";
@@ -68,7 +71,13 @@ function collectReserveTargets(
 }
 
 function unitUpdateErrorMessage(res: unknown): string | null {
-  if (!res || typeof res !== "object") return "استجابة غير صالحة من الخادم.";
+  if (res === null || res === undefined) {
+    return "استجابة غير صالحة من الخادم.";
+  }
+  if (typeof res === "string") {
+    return res.trim() ? null : "استجابة غير صالحة من الخادم.";
+  }
+  if (typeof res !== "object") return null;
   if ("error" in res && (res as { error?: string }).error) {
     return (
       (res as { message?: string }).message ||
@@ -88,6 +97,16 @@ async function reserveBed(id: string): Promise<string | null> {
   return unitUpdateErrorMessage(res);
 }
 
+async function occupyBed(id: string): Promise<string | null> {
+  const loaded = await getBedById(id);
+  const api = unwrapUnitApiEntity(loaded);
+  if (!api) {
+    return unitUpdateErrorMessage(loaded) ?? "تعذر تحميل بيانات السرير.";
+  }
+  const res = await updateBedById(buildBedOccupiedFormData(api));
+  return unitUpdateErrorMessage(res);
+}
+
 async function reserveRoom(id: string): Promise<string | null> {
   const loaded = await getRoomById(id);
   const api = unwrapUnitApiEntity(loaded);
@@ -98,6 +117,16 @@ async function reserveRoom(id: string): Promise<string | null> {
   return unitUpdateErrorMessage(res);
 }
 
+async function occupyRoom(id: string): Promise<string | null> {
+  const loaded = await getRoomById(id);
+  const api = unwrapUnitApiEntity(loaded);
+  if (!api) {
+    return unitUpdateErrorMessage(loaded) ?? "تعذر تحميل بيانات الغرفة.";
+  }
+  const res = await updateRoomById(buildRoomOccupiedFormData(api));
+  return unitUpdateErrorMessage(res);
+}
+
 async function reserveApartment(id: string): Promise<string | null> {
   const loaded = await getApartmentById(id);
   const api = unwrapUnitApiEntity(loaded);
@@ -105,6 +134,16 @@ async function reserveApartment(id: string): Promise<string | null> {
     return unitUpdateErrorMessage(loaded) ?? "تعذر تحميل بيانات الشقة.";
   }
   const res = await updateApartmentById(buildApartmentReserveFormData(api));
+  return unitUpdateErrorMessage(res);
+}
+
+async function occupyApartment(id: string): Promise<string | null> {
+  const loaded = await getApartmentById(id);
+  const api = unwrapUnitApiEntity(loaded);
+  if (!api) {
+    return unitUpdateErrorMessage(loaded) ?? "تعذر تحميل بيانات الشقة.";
+  }
+  const res = await updateApartmentById(buildApartmentOccupiedFormData(api));
   return unitUpdateErrorMessage(res);
 }
 
@@ -140,7 +179,7 @@ async function releaseApartment(id: string): Promise<string | null> {
 
 async function applyUnitStatusToTargets(
   targets: UnitReserveTarget[],
-  mode: "reserve" | "release",
+  mode: "reserve" | "occupy" | "release",
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   const failures: string[] = [];
 
@@ -150,17 +189,23 @@ async function applyUnitStatusToTargets(
       err =
         mode === "reserve"
           ? await reserveBed(target.id)
-          : await releaseBed(target.id);
+          : mode === "occupy"
+            ? await occupyBed(target.id)
+            : await releaseBed(target.id);
     } else if (target.kind === "room") {
       err =
         mode === "reserve"
           ? await reserveRoom(target.id)
-          : await releaseRoom(target.id);
+          : mode === "occupy"
+            ? await occupyRoom(target.id)
+            : await releaseRoom(target.id);
     } else {
       err =
         mode === "reserve"
           ? await reserveApartment(target.id)
-          : await releaseApartment(target.id);
+          : mode === "occupy"
+            ? await occupyApartment(target.id)
+            : await releaseApartment(target.id);
     }
 
     if (err) {
@@ -175,12 +220,15 @@ async function applyUnitStatusToTargets(
   }
 
   if (failures.length > 0) {
+    const statusLabel =
+      mode === "reserve"
+        ? "محجوز"
+        : mode === "occupy"
+          ? "مشغول"
+          : "متاح";
     return {
       ok: false,
-      message:
-        mode === "reserve"
-          ? `تعذر تحديث حالة ${failures.length} وحدة إلى محجوز: ${failures.join("؛ ")}`
-          : `تعذر تحديث حالة ${failures.length} وحدة إلى متاح: ${failures.join("؛ ")}`,
+      message: `تعذر تحديث حالة ${failures.length} وحدة إلى ${statusLabel}: ${failures.join("؛ ")}`,
     };
   }
 
@@ -238,4 +286,19 @@ export async function reserveHousingUnitsForApproval(
   }
 
   return applyUnitStatusToTargets(targets, "reserve");
+}
+
+/**
+ * After check-in, mark linked beds/rooms/apartments as Occupied.
+ */
+export async function occupyHousingUnitsForRequest(
+  requestId: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const loaded = await loadRequestUnitsForRequest(requestId);
+  if (!loaded.ok) return loaded;
+
+  const targets = collectReserveTargets(loaded.units);
+  if (targets.length === 0) return { ok: true };
+
+  return applyUnitStatusToTargets(targets, "occupy");
 }

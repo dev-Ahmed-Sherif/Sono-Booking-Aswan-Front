@@ -18,6 +18,23 @@ export const PAYMENT_METHOD_CASH = 1 as const satisfies PaymentMethod;
 export const PAYMENT_METHOD_CARD = 2 as const satisfies PaymentMethod;
 export const PAYMENT_METHOD_BANK_TRANSFER = 3 as const satisfies PaymentMethod;
 
+export const PAYMENT_METHOD_OPTIONS: Array<{
+  value: PaymentMethod;
+  label: string;
+}> = [
+  { value: PAYMENT_METHOD_CASH, label: "نقدي" },
+  { value: PAYMENT_METHOD_CARD, label: "بطاقة" },
+  { value: PAYMENT_METHOD_BANK_TRANSFER, label: "تحويل بنكي" },
+];
+
+export function parsePaymentMethodInput(value: unknown): PaymentMethod | null {
+  const n = Number(value);
+  if (n === PAYMENT_METHOD_CASH) return PAYMENT_METHOD_CASH;
+  if (n === PAYMENT_METHOD_CARD) return PAYMENT_METHOD_CARD;
+  if (n === PAYMENT_METHOD_BANK_TRANSFER) return PAYMENT_METHOD_BANK_TRANSFER;
+  return null;
+}
+
 export function paymentStatusToApiName(
   status: PaymentStatus,
 ): "Pending" | "Paid" | "Failed" | "Refunded" {

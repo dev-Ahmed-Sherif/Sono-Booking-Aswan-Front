@@ -234,7 +234,9 @@ export function serializeAddReservationDtoForApi(
   if (id) body.id = id;
 
   if (payload.checkInDate) body.checkInDate = payload.checkInDate;
-  if (payload.actualCheckOutDate) {
+  if (payload.actualCheckOutDate === null) {
+    body.actualCheckOutDate = null;
+  } else if (payload.actualCheckOutDate) {
     body.actualCheckOutDate = payload.actualCheckOutDate;
   }
   if (payload.cancelationReason != null) {
@@ -333,6 +335,7 @@ export function buildAddReservationDtoFromRequest(
     endDate,
     status: RESERVATION_STATUS_RESERVED,
     totalAmount: 0,
+    cancelationReason: "",
   };
 }
 

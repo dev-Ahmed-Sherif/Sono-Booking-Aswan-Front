@@ -423,7 +423,8 @@ const HousingSenderPage = () => {
         decision: decisionKind,
         leaderUserId,
         ownerUserId: decisionTarget.requestOwnerUserId.trim() || undefined,
-        rejectionReason: decisionNote,
+        rejectionReason:
+          decisionKind === "reject" ? decisionNote : "",
       });
 
       if (!result.ok) {
@@ -435,29 +436,26 @@ const HousingSenderPage = () => {
         return;
       }
 
-      toast({
-        title: decisionKind === "approve" ? "تمت الموافقة" : "تم الرفض",
-        description:
-          decisionKind === "approve"
-            ? result.reservationWarning
-              ? "تم تحديث الطلب وإنشاء الحجز مع تنبيهات — راجع التفاصيل أدناه."
-              : "تم تحديث حالة الطلب وإنشاء الحجز."
-            : "تم تحديث حالة الطلب إلى مرفوض.",
-      });
-
+      const followUpNotes: string[] = [];
       if (result.unitReserveWarning) {
-        toast({
-          variant: "destructive",
-          title: "تنبيه: حالة الوحدات",
-          description: result.unitReserveWarning,
-        });
+        followUpNotes.push(result.unitReserveWarning);
+      }
+      if (result.reservationWarning) {
+        followUpNotes.push(result.reservationWarning);
       }
 
-      if (result.reservationWarning) {
+      if (decisionKind === "approve") {
         toast({
-          variant: "destructive",
-          title: "تنبيه: إنشاء الحجز",
-          description: result.reservationWarning,
+          title: "تمت الموافقة",
+          description:
+            followUpNotes.length > 0
+              ? `تم تحديث حالة الطلب بنجاح. ${followUpNotes.join(" ")}`
+              : "تم تحديث حالة الطلب وإنشاء الحجز.",
+        });
+      } else {
+        toast({
+          title: "تم الرفض",
+          description: "تم تحديث حالة الطلب إلى مرفوض.",
         });
       }
 
