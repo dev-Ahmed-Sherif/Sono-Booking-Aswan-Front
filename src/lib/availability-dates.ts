@@ -139,15 +139,6 @@ function isReservedOrOccupiedCatalogStatus(status: unknown): boolean {
  */
 export function isUnitFreeFromInquiryStart(
   inquiryStartYmd: string | undefined,
-  ...blockingEndDates: Array<string | undefined>
-): boolean;
-export function isUnitFreeFromInquiryStart(
-  inquiryStartYmd: string | undefined,
-  blockingEnd: string | undefined,
-  catalogStatus?: unknown,
-): boolean;
-export function isUnitFreeFromInquiryStart(
-  inquiryStartYmd: string | undefined,
   ...args: Array<string | undefined | unknown>
 ): boolean {
   if (!inquiryStartYmd) return true;
