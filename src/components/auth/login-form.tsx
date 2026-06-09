@@ -287,7 +287,11 @@ function setClientCookie(
       : lifeSeconds;
   const expires = new Date(Date.now() + seconds * 1000).toUTCString();
   const encoded = encodeURIComponent(value);
-  document.cookie = `${nameTrimmed}=${encoded};path=/;expires=${expires};SameSite=Lax`;
+  const secure =
+    typeof window !== "undefined" && window.location.protocol === "https:"
+      ? ";Secure"
+      : "";
+  document.cookie = `${nameTrimmed}=${encoded};path=/;expires=${expires};SameSite=Lax${secure}`;
 }
 
 // -----------------------------------------------------------------------------

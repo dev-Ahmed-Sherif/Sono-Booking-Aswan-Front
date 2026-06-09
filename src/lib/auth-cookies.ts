@@ -1,5 +1,16 @@
 /** Shared auth cookie names (trim .env values; fallbacks match `.env`). */
 
+/**
+ * Optional cookie domain. Leave unset for host-only cookies (Vercel preview, localhost).
+ * Set to `.sono.net` only when the app is served from `*.sono.net`.
+ */
+export function authCookieDomain(): string | undefined {
+  const raw = (
+    process.env.COOKIE_DOMAIN ?? process.env.NEXT_PUBLIC_COOKIE_DOMAIN ?? ""
+  ).trim();
+  return raw || undefined;
+}
+
 export function accessTokenCookieName(): string {
   return (
     (

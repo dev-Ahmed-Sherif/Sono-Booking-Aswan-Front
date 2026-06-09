@@ -1,7 +1,11 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { accessTokenCookieName, refreshTokenCookieName } from "@/lib/auth-cookies";
+import {
+  accessTokenCookieName,
+  authCookieDomain,
+  refreshTokenCookieName,
+} from "@/lib/auth-cookies";
 
 // Helper to get cookies (handles both sync and async)
 const getCookies = async () => {
@@ -35,6 +39,7 @@ export const setAccessToken = async (token: string) => {
   const backEndCookies = await getCookies();
   const maxAgeSeconds = getAccessTokenLifeSeconds();
   const isProduction = process.env.NODE_ENV === "production";
+  const domain = authCookieDomain();
 
   backEndCookies.set({
     name: accessTokenCookieName(),
@@ -45,12 +50,17 @@ export const setAccessToken = async (token: string) => {
     sameSite: "lax",
     expires: new Date(Date.now() + maxAgeSeconds * 1000),
     maxAge: maxAgeSeconds,
-    ...(isProduction ? { domain: ".sono.net" } : {}),
+    ...(domain ? { domain } : {}),
     priority: "high",
   });
 };
 
 export const clearAccessToken = async () => {
   const backEndCookies = await getCookies();
-  backEndCookies.delete(accessTokenCookieName());
+  const domain = authCookieDomain();
+  backEndCookies.delete({
+    name: accessTokenCookieName(),
+    path: "/",
+    ...(domain ? { domain } : {}),
+  });
 };
