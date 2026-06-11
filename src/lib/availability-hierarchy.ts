@@ -1,11 +1,5 @@
-import {
-  filterUnitsByInquiryStartDate,
-  type AvailabilityInquiryDates,
-} from "@/lib/availability-dates";
-import {
-  filterAvailabilityListsByOccupancy,
-  type UnitBlockingEndIndex,
-} from "@/lib/availability-occupancy";
+import type { AvailabilityInquiryDates } from "@/lib/availability-dates";
+import type { UnitBlockingEndIndex } from "@/lib/availability-occupancy";
 
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {
@@ -29,7 +23,7 @@ function indexRowIds(rows: unknown[]): Set<string> {
   return ids;
 }
 
-/** Hide rooms whose parent apartment is not available (reserved / occupied). */
+/** Hide rooms whose parent apartment is not in the filtered apartment list. */
 export function filterRoomsWithAvailableApartment(
   roomsRaw: unknown[],
   apartmentsRaw: unknown[],
@@ -48,7 +42,7 @@ export function filterRoomsWithAvailableApartment(
   });
 }
 
-/** Hide beds whose parent room is not available (reserved / occupied). */
+/** Hide beds whose parent room is not in the filtered room list. */
 export function filterBedsWithAvailableRoom(
   bedsRaw: unknown[],
   roomsRaw: unknown[],
@@ -73,9 +67,16 @@ export type AvailabilityHierarchyFilterInput = {
   beds: unknown[];
   inquiry?: AvailabilityInquiryDates;
   occupancyIndex?: UnitBlockingEndIndex | null;
+  hierarchyRaw?: {
+    apartmentsRaw?: unknown[];
+    roomsRaw?: unknown[];
+  };
 };
 
-/** Apply apartment → room → bed hierarchy and optional inquiry date filters. */
+/**
+ * Wires apartment → room → bed hierarchy.
+ * When inquiry start is set, date occupancy is handled by the API (StartDate header).
+ */
 export function applyAvailabilityHierarchyFilters(
   input: AvailabilityHierarchyFilterInput,
 ): {
@@ -83,28 +84,9 @@ export function applyAvailabilityHierarchyFilters(
   rooms: unknown[];
   beds: unknown[];
 } {
-  const inquiryStartYmd = input.inquiry?.startDateYmd?.trim();
-
   let apartments = input.apartments;
-  let rooms = input.rooms;
-  let beds = input.beds;
+  let rooms = filterRoomsWithAvailableApartment(input.rooms, apartments);
+  let beds = filterBedsWithAvailableRoom(input.beds, rooms);
 
-  if (inquiryStartYmd) {
-    apartments = filterUnitsByInquiryStartDate(apartments, inquiryStartYmd);
-    rooms = filterUnitsByInquiryStartDate(rooms, inquiryStartYmd);
-    beds = filterUnitsByInquiryStartDate(beds, inquiryStartYmd);
-
-    const occupancyFiltered = filterAvailabilityListsByOccupancy(
-      { apartments, rooms, beds },
-      inquiryStartYmd,
-      input.occupancyIndex ?? null,
-    );
-    apartments = occupancyFiltered.apartments;
-    rooms = occupancyFiltered.rooms;
-    beds = occupancyFiltered.beds;
-  }
-
-  rooms = filterRoomsWithAvailableApartment(rooms, apartments);
-  beds = filterBedsWithAvailableRoom(beds, rooms);
   return { apartments, rooms, beds };
 }

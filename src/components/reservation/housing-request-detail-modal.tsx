@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { ar } from "date-fns/locale";
 import {
+  Ban,
   CalendarDays,
   CalendarIcon,
   Eye,
@@ -103,8 +104,13 @@ import {
   requestUnitDtosToEnrichedSnapshots,
 } from "@/lib/housing-request-map";
 import {
+  canCancelHousingRequest,
+  canEditHousingRequest,
+  isHousingRequestApproved,
+  isHousingRequestStatusLocked,
   type HousingRequestTableRow,
 } from "@/lib/housing-request-list";
+import { HOUSING_REQUEST_CATAGORY_EXTENSION } from "@/lib/housing-request-map";
 
 type ModalMode = "view" | "edit";
 
@@ -212,6 +218,12 @@ export function HousingRequestDetailModal({
   const [requestOwnerUserId, setRequestOwnerUserId] = useState("");
 
   const isEdit = mode === "edit";
+  const isExtensionRequest =
+    detail?.requestCatagory === HOUSING_REQUEST_CATAGORY_EXTENSION;
+  const editLocked =
+    isHousingRequestApproved(detail?.statusLabel ?? statusLabel) ||
+    isHousingRequestApproved(statusLabel);
+  const canSaveEdits = isEdit && canEditHousingRequest(detail?.statusLabel ?? statusLabel);
   const currentYear = new Date().getFullYear();
   const maxSelectableDate = new Date(currentYear + 5, 11, 31);
   const minSelectableDate = useMemo(() => {
@@ -402,7 +414,11 @@ export function HousingRequestDetailModal({
           : new Map(),
       );
       setInquiryGenders(
-        resolveInquiryGendersForRequest(reqRaw, enriched),
+        resolveInquiryGendersForRequest(reqRaw, enriched, {
+          bedsRaw,
+          roomsRaw,
+          apartmentsRaw,
+        }),
       );
 
       if (isEdit) {
@@ -502,6 +518,8 @@ export function HousingRequestDetailModal({
     if (!detail) return null;
     const nextErrors: EditFieldErrors = {};
     const nightsNumber = Number(nightsInput.trim());
+    const extensionOnly =
+      detail.requestCatagory === HOUSING_REQUEST_CATAGORY_EXTENSION;
 
     if (!detail.startDate.trim()) {
       nextErrors.startDate = "يرجى اختيار تاريخ البدء";
@@ -513,7 +531,7 @@ export function HousingRequestDetailModal({
     } else if (nightsNumber > 21) {
       nextErrors.nights = "عدد الليالي يجب ألا يتجاوز 21 ليلة";
     }
-    if (!detail.requestTypeId.trim()) {
+    if (!extensionOnly && !detail.requestTypeId.trim()) {
       nextErrors.requestType = "يرجى اختيار نوع الطلب";
     }
     if (
@@ -539,6 +557,14 @@ export function HousingRequestDetailModal({
 
   const handleSave = async () => {
     if (!detail) return;
+    if (editLocked) {
+      toast({
+        variant: "destructive",
+        title: "لا يمكن التعديل",
+        description: "لا يمكن تعديل طلب تمت الموافقة عليه.",
+      });
+      return;
+    }
     const validatedDetail = isEdit ? validateEditFields() : detail;
     if (!validatedDetail) return;
     if (unitSnapshots.length === 0) {
@@ -724,7 +750,7 @@ export function HousingRequestDetailModal({
                   {detail.requestClassificationLabel}
                 </span>
               </div>
-              {isEdit ? (
+              {isEdit && !isExtensionRequest ? (
                 <>
                   <div className="sm:col-span-2 space-y-1.5">
                     <Label className="text-gray-700 text-base flex items-center gap-1">
@@ -763,7 +789,40 @@ export function HousingRequestDetailModal({
                       </p>
                     ) : null}
                   </div>
-
+                </>
+              ) : !isEdit ? (
+                <>
+                  <div>
+                    <span className="text-muted-foreground">نوع الطلب: </span>
+                    <span className="font-medium">
+                      {detail.requestTypeLabel}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">نوع الحجز: </span>
+                    <span className="font-medium">
+                      {detail.requestAllocationTypeLabel}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">تاريخ البدء: </span>
+                    <span className="font-medium">{detail.startDate}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">الليالي: </span>
+                    <span className="font-medium">
+                      {detail.nights.toLocaleString("ar-EG")}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <span className="text-muted-foreground">نوع الطلب: </span>
+                  <span className="font-medium">{detail.requestTypeLabel}</span>
+                </div>
+              )}
+              {isEdit ? (
+                <>
                   <div className="sm:col-span-2 space-y-1.5">
                     <Label className="text-gray-700 text-base flex items-center gap-1">
                       نوع الحجز
@@ -905,32 +964,7 @@ export function HousingRequestDetailModal({
                     ) : null}
                   </div>
                 </>
-              ) : (
-                <>
-                  <div>
-                    <span className="text-muted-foreground">نوع الطلب: </span>
-                    <span className="font-medium">
-                      {detail.requestTypeLabel}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">نوع الحجز: </span>
-                    <span className="font-medium">
-                      {detail.requestAllocationTypeLabel}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">تاريخ البدء: </span>
-                    <span className="font-medium">{detail.startDate}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">الليالي: </span>
-                    <span className="font-medium">
-                      {detail.nights.toLocaleString("ar-EG")}
-                    </span>
-                  </div>
-                </>
-              )}
+              ) : null}
               <div>
                 <span className="text-muted-foreground">الحالة: </span>
                 <span className="font-medium">{detail.statusLabel}</span>
@@ -951,7 +985,7 @@ export function HousingRequestDetailModal({
                       className="flex items-center justify-between gap-2 text-sm"
                     >
                       <span>{formatStoredUnitLabel(unit)}</span>
-                      {isEdit ? (
+                      {isEdit && !isExtensionRequest ? (
                         <Button
                           type="button"
                           variant="ghost"
@@ -971,7 +1005,7 @@ export function HousingRequestDetailModal({
                   ))
                 )}
               </ul>
-              {isEdit && availableUnitOptions.length > 0 ? (
+              {isEdit && !isExtensionRequest && availableUnitOptions.length > 0 ? (
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="min-w-[200px] flex-1">
                     <Select
@@ -1030,7 +1064,7 @@ export function HousingRequestDetailModal({
                       <span>
                         {lookupCompanionName(companionNames, id) || "—"}
                       </span>
-                      {isEdit ? (
+                      {isEdit && !isExtensionRequest ? (
                         <Button
                           type="button"
                           variant="ghost"
@@ -1050,7 +1084,7 @@ export function HousingRequestDetailModal({
                   ))
                 )}
               </ul>
-              {isEdit && availableCompanions.length > 0 ? (
+              {isEdit && !isExtensionRequest && availableCompanions.length > 0 ? (
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="min-w-[200px] flex-1">
                     <Select
@@ -1085,7 +1119,7 @@ export function HousingRequestDetailModal({
         ) : null}
 
         <DialogFooter className="gap-2 sm:justify-center">
-          {isEdit ? (
+          {canSaveEdits ? (
             <Button
               type="button"
               onClick={() => void handleSave()}
@@ -1110,33 +1144,54 @@ type HousingRequestRowActionsProps = {
   row: HousingRequestTableRow;
   onView: (row: HousingRequestTableRow) => void;
   onEdit: (row: HousingRequestTableRow) => void;
+  onCancel: (row: HousingRequestTableRow) => void;
   onDelete: (id: string) => void;
   deleting?: boolean;
+  canceling?: boolean;
 };
 
 export function HousingRequestRowActions({
   row,
   onView,
   onEdit,
+  onCancel,
   onDelete,
   deleting,
+  canceling,
 }: HousingRequestRowActionsProps) {
-  const [open, toggleOpen] = useToggleState(false);
-  const locked =
-    row.status === "مرفوض" || row.status === "ملغى";
+  const [deleteOpen, toggleDeleteOpen] = useToggleState(false);
+  const [cancelOpen, toggleCancelOpen] = useToggleState(false);
+  const deleteLocked = isHousingRequestStatusLocked(row.status);
+  const showEdit = canEditHousingRequest(row.status);
+  const showCancel = canCancelHousingRequest(row.status);
 
   const onConfirmDelete = async () => {
     await onDelete(row.id);
-    toggleOpen();
+    toggleDeleteOpen();
+  };
+
+  const onConfirmCancel = async () => {
+    await onCancel(row);
+    toggleCancelOpen();
   };
 
   return (
     <>
       <AlertModal
-        isOpen={open}
+        isOpen={deleteOpen}
         loading={Boolean(deleting)}
-        onClose={toggleOpen}
+        onClose={toggleDeleteOpen}
         onConfirm={onConfirmDelete}
+      />
+      <AlertModal
+        isOpen={cancelOpen}
+        loading={Boolean(canceling)}
+        onClose={toggleCancelOpen}
+        onConfirm={onConfirmCancel}
+        title="إلغاء الطلب"
+        description="سيتم تغيير حالة الطلب إلى «ملغى»."
+        loadingMessage="جاري الإلغاء..."
+        confirmLabel="تأكيد الإلغاء"
       />
     <div className="flex flex-wrap items-center justify-center gap-1">
       <Button
@@ -1149,34 +1204,51 @@ export function HousingRequestRowActions({
       >
         <Eye className="h-4 w-4" />
       </Button>
-      {!locked ? (
-        <>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-9 w-9"
-            title="تعديل"
-            onClick={() => onEdit(row)}
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-9 w-9 text-destructive hover:text-destructive"
-            title="حذف"
-            disabled={deleting}
-            onClick={toggleOpen}
-          >
-            {deleting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="h-4 w-4" />
-            )}
-          </Button>
-        </>
+      {showEdit ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-9 w-9"
+          title="تعديل"
+          onClick={() => onEdit(row)}
+        >
+          <Pencil className="h-4 w-4" />
+        </Button>
+      ) : null}
+      {showCancel ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-9 w-9 text-amber-700 hover:text-amber-800"
+          title="إلغاء الطلب"
+          disabled={canceling}
+          onClick={toggleCancelOpen}
+        >
+          {canceling ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Ban className="h-4 w-4" />
+          )}
+        </Button>
+      ) : null}
+      {!deleteLocked ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-9 w-9 text-destructive hover:text-destructive"
+          title="حذف"
+          disabled={deleting}
+          onClick={toggleDeleteOpen}
+        >
+          {deleting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
+        </Button>
       ) : null}
     </div>
     </>

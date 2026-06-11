@@ -14,6 +14,10 @@ type AlertModalProps = {
   loading: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  title?: string;
+  description?: string;
+  loadingMessage?: string;
+  confirmLabel?: string;
 };
 
 const AlertModal = ({
@@ -21,6 +25,10 @@ const AlertModal = ({
   loading,
   onClose,
   onConfirm,
+  title = "هل أنت متأكد من الحذف ؟",
+  description = "هذا الإجراء لا يمكن التراجع عنه",
+  loadingMessage = "جاري الحذف...",
+  confirmLabel = "موافق",
 }: AlertModalProps) => {
   const [isMounted, setIsMounted] = React.useState(false);
 
@@ -35,9 +43,8 @@ const AlertModal = ({
 
   return (
     <Modal
-      // title="Are you sure?"
-      title="هل أنت متأكد من الحذف ؟"
-      description="هذا الإجراء لا يمكن التراجع عنه"
+      title={title}
+      description={description}
       isOpen={isOpen}
       onClose={onClose}
     >
@@ -46,18 +53,16 @@ const AlertModal = ({
           <div className="flex flex-col items-center gap-2 text-center">
             <Loader2 className="h-8 w-8 animate-spin text-destructive" />
             <p className="text-sm text-muted-foreground animate-pulse">
-              جاري الحذف...
+              {loadingMessage}
             </p>
           </div>
         )}
-        {!loading && (
+        {!loading && description ? (
           <div className="flex items-center gap-2 text-destructive mb-2">
             <AlertTriangle className="h-5 w-5" />
-            <span className="text-sm font-medium">
-              تحذير: لا يمكن التراجع عن هذا الإجراء
-            </span>
+            <span className="text-sm font-medium">{description}</span>
           </div>
-        )}
+        ) : null}
         <div className="flex items-center gap-2 justify-end w-full">
           <Button
             disabled={loading}
@@ -76,10 +81,10 @@ const AlertModal = ({
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                جاري الحذف...
+                {loadingMessage}
               </>
             ) : (
-              "موافق"
+              confirmLabel
             )}
           </Button>
         </div>

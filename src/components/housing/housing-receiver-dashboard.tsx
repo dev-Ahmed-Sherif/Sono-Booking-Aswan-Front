@@ -46,6 +46,7 @@ import {
   filterUpcomingReservations,
   formatReceiverDisplayDate,
   formatReceiverDisplayDateTime,
+  isReservationStillInHouse,
   parseCompanionMetaFromApi,
   type ReceiverCompanionMeta,
   type ReceiverReservationRow,
@@ -87,7 +88,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 type ReceiverView = "active" | "upcoming" | "canceled";
 
-type ReceiverRowAction = "checkout" | "restore";
+type ReceiverRowAction = "restore";
 
 const pageContentVariants = {
   hidden: { opacity: 0, y: 18 },
@@ -144,8 +145,9 @@ const receiverTableButtonClassName =
 const viewTitles: Record<ReceiverView, { title: string; description: string }> =
   {
     active: {
-      title: "قسم الحجوزات النشطة اليوم",
-      description: "عرض الحجوزات الحالية وإجراءات تأكيد الوصول والمغادرة",
+      title: "قسم الحجوزات النشطة",
+      description:
+        "عرض الحجوزات الحالية والنزلاء المقيمين وإجراءات الوصول والمغادرة",
     },
     upcoming: {
       title: "قسم الحجوزات المستقبلية الموافق عليها",
@@ -158,7 +160,7 @@ const viewTitles: Record<ReceiverView, { title: string; description: string }> =
   };
 
 const emptyMessages: Record<ReceiverView, string> = {
-  active: "لا توجد حجوزات نشطة اليوم.",
+  active: "لا توجد حجوزات نشطة أو نزلاء حاليين.",
   upcoming: "لا توجد حجوزات مستقبلية.",
   canceled: "لا توجد حجوزات ملغاة.",
 };
@@ -191,10 +193,7 @@ function canCheckIn(status: ReceiverReservationRow["status"]) {
 }
 
 function canCheckout(row: ReceiverReservationRow) {
-  return (
-    row.status === RESERVATION_STATUS_COMPLETED &&
-    !String(row.actualCheckOutAt ?? "").trim()
-  );
+  return isReservationStillInHouse(row);
 }
 
 function canRestore(status: ReceiverReservationRow["status"]) {
@@ -275,6 +274,9 @@ export default function HousingReceiverDashboard() {
   );
   const [cancelReasonText, setCancelReasonText] = useState("");
   const [checkInRow, setCheckInRow] = useState<ReceiverReservationRow | null>(
+    null,
+  );
+  const [checkoutRow, setCheckoutRow] = useState<ReceiverReservationRow | null>(
     null,
   );
   const [discountPercent, setDiscountPercent] = useState("0");
@@ -405,59 +407,90 @@ export default function HousingReceiverDashboard() {
     );
   }, [checkInRow, discountPercent]);
 
+  const handleCheckoutSubmit = useCallback(async () => {
+    if (!checkoutRow || !canCheckout(checkoutRow)) return;
+
+    setModalSubmitting(true);
+    try {
+      const result = await checkoutHousingReservation({
+        id: checkoutRow.id,
+        requestId: checkoutRow.requestId,
+        startDateYmd: checkoutRow.startDateYmd,
+        endDateYmd: checkoutRow.endDateYmd,
+      });
+
+      if (!result.ok) {
+        toast({
+          variant: "destructive",
+          title: "فشل تسجيل المغادرة",
+          description: result.message,
+        });
+        return;
+      }
+
+      toast({
+        title: "تم تسجيل المغادرة",
+        description: `تم إنهاء إقامة ${checkoutRow.userName} وتسجيل المغادرة.`,
+      });
+
+      if ("unitReleaseWarning" in result && result.unitReleaseWarning) {
+        toast({
+          variant: "destructive",
+          title: "تنبيه: حالة الوحدات",
+          description: String(result.unitReleaseWarning),
+        });
+      }
+
+      setCheckoutRow(null);
+      void loadReceiverData();
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "فشل تسجيل المغادرة",
+        description: "حدث خطأ غير متوقع.",
+      });
+    } finally {
+      setModalSubmitting(false);
+    }
+  }, [checkoutRow, loadReceiverData, toast]);
+
   const runRowAction = useCallback(
     async (row: ReceiverReservationRow, kind: ReceiverRowAction) => {
-      if (kind === "checkout" && !canCheckout(row)) return;
       if (kind === "restore" && !canRestore(row.status)) return;
 
       const confirmed = window.confirm(
-        kind === "checkout"
-          ? `هل تريد تسجيل مغادرة ${row.userName} وإنهاء الإقامة؟`
-          : `هل تريد إعادة حجز ${row.userName} إلى حالة «محجوز»؟`,
+        `هل تريد إعادة حجز ${row.userName} إلى حالة «محجوز»؟`,
       );
       if (!confirmed) return;
 
       setPendingAction({ id: row.id, kind });
       try {
-        const result =
-          kind === "checkout"
-            ? await checkoutHousingReservation({
-                id: row.id,
-                requestId: row.requestId,
-                startDateYmd: row.startDateYmd,
-                endDateYmd: row.endDateYmd,
-              })
-            : await restoreHousingReservation({
-                id: row.id,
-                requestId: row.requestId,
-                startDateYmd: row.startDateYmd,
-                endDateYmd: row.endDateYmd,
-              });
+        const result = await restoreHousingReservation({
+          id: row.id,
+          requestId: row.requestId,
+          startDateYmd: row.startDateYmd,
+          endDateYmd: row.endDateYmd,
+        });
 
         if (!result.ok) {
           toast({
             variant: "destructive",
-            title:
-              kind === "checkout" ? "فشل تسجيل المغادرة" : "فشل إعادة الحجز",
+            title: "فشل إعادة الحجز",
             description: result.message,
           });
           return;
         }
 
         toast({
-          title:
-            kind === "checkout" ? "تم تسجيل المغادرة" : "تمت إعادة الحجز",
-          description:
-            kind === "checkout"
-              ? `تم إنهاء إقامة ${row.userName} وتسجيل المغادرة.`
-              : `تم إعادة حجز ${row.userName} إلى محجوز.`,
+          title: "تمت إعادة الحجز",
+          description: `تم إعادة حجز ${row.userName} إلى محجوز.`,
         });
 
-        if ("unitReleaseWarning" in result && result.unitReleaseWarning) {
+        if ("unitReserveWarning" in result && result.unitReserveWarning) {
           toast({
             variant: "destructive",
             title: "تنبيه: حالة الوحدات",
-            description: String(result.unitReleaseWarning),
+            description: String(result.unitReserveWarning),
           });
         }
 
@@ -465,8 +498,7 @@ export default function HousingReceiverDashboard() {
       } catch {
         toast({
           variant: "destructive",
-          title:
-            kind === "checkout" ? "فشل تسجيل المغادرة" : "فشل إعادة الحجز",
+          title: "فشل إعادة الحجز",
           description: "حدث خطأ غير متوقع.",
         });
       } finally {
@@ -614,6 +646,10 @@ export default function HousingReceiverDashboard() {
     setPaymentMethod(PAYMENT_METHOD_CASH);
   }, []);
 
+  const openCheckoutModal = useCallback((row: ReceiverReservationRow) => {
+    setCheckoutRow(row);
+  }, []);
+
   const renderDetailButton = (row: ReceiverReservationRow) => (
     <Button
       type="button"
@@ -645,19 +681,14 @@ export default function HousingReceiverDashboard() {
       {canCheckout(row) ? (
         <Button
           type="button"
-          disabled={pendingAction?.id === row.id}
-          onClick={() => void runRowAction(row, "checkout")}
+          disabled={modalSubmitting}
+          onClick={() => openCheckoutModal(row)}
           className={cn(
             receiverTableButtonClassName,
             "bg-emerald-700 text-white hover:bg-emerald-800",
           )}
         >
-          {pendingAction?.id === row.id &&
-          pendingAction.kind === "checkout" ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            "تسجيل مغادرة"
-          )}
+          تسجيل مغادرة
         </Button>
       ) : null}
       {canCancel(row.status) ? (
@@ -1050,6 +1081,77 @@ export default function HousingReceiverDashboard() {
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 "تأكيد الإلغاء"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={checkoutRow != null}
+        onOpenChange={(open) => {
+          if (!open) setCheckoutRow(null);
+        }}
+      >
+        <DialogContent dir="rtl" className="max-w-md text-right">
+          <DialogHeader>
+            <DialogTitle>تسجيل مغادرة</DialogTitle>
+            {checkoutRow ? (
+              <p className="text-sm text-muted-foreground">
+                حجز: {checkoutRow.userName}
+              </p>
+            ) : null}
+          </DialogHeader>
+          {checkoutRow ? (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-700">
+                هل تريد تسجيل مغادرة {checkoutRow.userName} وإنهاء الإقامة؟
+              </p>
+              <div className="space-y-3 rounded-md border bg-muted/40 p-3">
+                <div className="space-y-1">
+                  <Label>الوحدة</Label>
+                  <p className="text-base">{checkoutRow.room}</p>
+                </div>
+                <div className="space-y-1">
+                  <Label>تاريخ الوصول</Label>
+                  <p className="text-base">{checkoutRow.arrivalDate}</p>
+                </div>
+                {checkoutRow.checkInAt ? (
+                  <div className="space-y-1">
+                    <Label>تأكيد الوصول</Label>
+                    <p className="text-base">
+                      {formatReceiverDisplayDateTime(checkoutRow.checkInAt)}
+                    </p>
+                  </div>
+                ) : null}
+                <div className="space-y-1">
+                  <Label>مبلغ الحجز</Label>
+                  <p className="text-base font-medium">
+                    {formatReservationAmountAr(checkoutRow.totalAmount)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2 sm:justify-center">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={modalSubmitting}
+              onClick={() => setCheckoutRow(null)}
+            >
+              تراجع
+            </Button>
+            <Button
+              type="button"
+              disabled={modalSubmitting}
+              className="bg-emerald-700 text-white hover:bg-emerald-800"
+              onClick={() => void handleCheckoutSubmit()}
+            >
+              {modalSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "تأكيد تسجيل المغادرة"
               )}
             </Button>
           </DialogFooter>

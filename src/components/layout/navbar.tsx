@@ -112,12 +112,19 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     StoredUserBrief | null | "pending"
   >("pending");
 
-  useIsomorphicLayoutEffect(() => {
+  const syncStoredUserBrief = React.useCallback(() => {
+    if (typeof window === "undefined") return;
     const raw = user.getItem() as StoredUserBrief | undefined;
     setStoredUserBrief(raw ?? null);
-    // Intentionally once: snapshot localStorage after mount for hydration-safe role/name.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user]);
+
+  useIsomorphicLayoutEffect(() => {
+    syncStoredUserBrief();
+  }, [syncStoredUserBrief]);
+
+  React.useEffect(() => {
+    syncStoredUserBrief();
+  }, [role, organizationId, cookie, syncStoredUserBrief]);
 
   /** Prefer non-empty Redux, else localStorage role (only after `storedUserBrief !== "pending"`). */
   const effectiveRole = React.useMemo(() => {
@@ -390,7 +397,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
 
       const d = result.data.data;
       const resolvedEmployeeId = d.employeeId ?? d.EmployeeId;
-      user.setItem({
+      const stored = {
         id: d.id,
         name: d.name,
         role: d.role,
@@ -398,7 +405,9 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
         ...(resolvedEmployeeId != null && resolvedEmployeeId !== ""
           ? { employeeId: resolvedEmployeeId }
           : {}),
-      });
+      };
+      user.setItem(stored);
+      setStoredUserBrief(stored);
       dispatch(setUserId(d.id));
       dispatch(setOrganizationId(d.organizationId));
       dispatch(setRole(d.role));
@@ -458,7 +467,26 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     user,
   ]);
 
+  const areNavRoutesReady = React.useMemo(() => {
+    if (storedUserBrief === "pending") return false;
+
+    const fromStorage = storedUserBrief
+      ? [
+          storedUserBrief.role,
+          storedUserBrief.roleName,
+          storedUserBrief.roleEn,
+          storedUserBrief.roleAr,
+        ]
+          .map((v) => String(v ?? "").trim())
+          .some(Boolean)
+      : false;
+
+    return Boolean(effectiveRole || fromStorage || String(role ?? "").trim());
+  }, [storedUserBrief, effectiveRole, role]);
+
   const routes = React.useMemo(() => {
+    if (!areNavRoutesReady) return [];
+
     const allRoutes = [
       {
         id: 1,
@@ -535,7 +563,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
       }
       return true;
     });
-  }, [locale, pathname, effectiveRole, storedUserBrief, tNav]);
+  }, [areNavRoutesReady, locale, pathname, effectiveRole, storedUserBrief, tNav]);
 
   const navHomeHref = React.useMemo(() => {
     if (effectiveRole === "user") {

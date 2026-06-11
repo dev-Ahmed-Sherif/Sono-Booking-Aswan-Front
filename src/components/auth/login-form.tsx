@@ -18,6 +18,7 @@ import {
   CalendarIcon,
   CheckCircle2,
   Home,
+  Loader2,
   LogIn,
   Moon,
   Search,
@@ -82,6 +83,8 @@ import {
 } from "@/lib/availability-inquiry";
 import { getPostLoginPath } from "@/lib/role-utils";
 import { FlexibleAllocationNotice } from "@/components/reservation/allocation-type-notices";
+import { AvailabilityUnitCardParents } from "@/components/reservation/availability-unit-card-parents";
+import { AvailabilityUnitCardPrice } from "@/components/reservation/availability-unit-card-price";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -310,6 +313,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
 
   const [isPending, startTransition] = useTransition();
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Availability check state
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
@@ -682,13 +686,18 @@ export function LoginForm({ Cookie }: LoginFormProps) {
   };
 
   const onSubmit = (values: z.infer<typeof LoginSchema>) => {
+    setIsLoggingIn(true);
     startTransition(() => {
       Login(values)
         .then(async (data) => {
           const login = extractLoginPayload(data as LoginActionResult);
-          if (!login?.isLogedIn) return;
+          if (!login?.isLogedIn) {
+            setIsLoggingIn(false);
+            return;
+          }
 
           if (!login.accessToken) {
+            setIsLoggingIn(false);
             toast({
               variant: "destructive",
               title: "خطأ",
@@ -704,6 +713,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
           });
 
           if (!cookiesReady) {
+            setIsLoggingIn(false);
             toast({
               variant: "destructive",
               title: "خطأ",
@@ -715,6 +725,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
           try {
             const result = await getUserData();
             if (result.error) {
+              setIsLoggingIn(false);
               toast({
                 variant: "destructive",
                 title: "خطأ",
@@ -722,7 +733,10 @@ export function LoginForm({ Cookie }: LoginFormProps) {
               });
               return;
             }
-            if (!result.data?.data) return;
+            if (!result.data?.data) {
+              setIsLoggingIn(false);
+              return;
+            }
 
             const {
               id,
@@ -771,6 +785,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
             nav.setItem(targetRoute);
             router.replace(targetRoute);
           } catch (err) {
+            setIsLoggingIn(false);
             console.error("Error getting user data:", err);
             toast({
               variant: "destructive",
@@ -781,6 +796,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
           }
         })
         .catch((err) => {
+          setIsLoggingIn(false);
           if (err.message?.includes("401") || err.message?.includes("404")) {
             toast({
               variant: "destructive",
@@ -1208,19 +1224,13 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                                   )}
                                 </div>
                                 <div className="min-w-0 flex-1 space-y-1.5">
-                                  <div
-                                    className="flex items-start justify-between gap-3"
-                                    dir="rtl"
-                                  >
-                                    <p className="min-w-0 flex-1 font-bold text-base leading-tight text-slate-900">
+                                  <div dir="rtl">
+                                    <p className="font-bold text-base leading-tight text-slate-900">
                                       {card.title}
                                     </p>
-                                    {card.priceLabel ? (
-                                      <p className="shrink-0 text-xl font-extrabold leading-none tracking-tight text-emerald-700 tabular-nums sm:text-2xl">
-                                        {card.priceLabel}
-                                      </p>
-                                    ) : null}
                                   </div>
+                                  <AvailabilityUnitCardParents card={card} />
+                                  <AvailabilityUnitCardPrice card={card} />
                                   {card.genderType ? (
                                     <p className="text-base font-bold leading-snug text-slate-800">
                                       <span className="font-semibold text-slate-600">
@@ -1380,11 +1390,11 @@ export function LoginForm({ Cookie }: LoginFormProps) {
 
                     {/* Login button */}
                     <Button
-                      disabled={isPending}
+                      disabled={isPending || isLoggingIn}
                       type="submit"
                       className="w-full py-5 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-lg transition-all duration-300 hover:scale-[1.02] hover:bg-brand-hover hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      {isPending ? (
+                      {isPending || isLoggingIn ? (
                         <span className="flex items-center gap-2">
                           <motion.div
                             className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
@@ -1431,6 +1441,22 @@ export function LoginForm({ Cookie }: LoginFormProps) {
       </main>
 
       <div className="mb-20 text-transparent">t</div>
+
+      {isLoggingIn && (
+        <div
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background/95 backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+          aria-label="جارٍ تحميل الصفحة بعد تسجيل الدخول"
+        >
+          <Loader2 className="h-12 w-12 animate-spin text-brand" />
+          <p className="mt-5 text-lg font-semibold text-foreground">
+            جارٍ تحميل لوحة التحكم...
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">يرجى الانتظار</p>
+        </div>
+      )}
     </motion.div>
   );
 }

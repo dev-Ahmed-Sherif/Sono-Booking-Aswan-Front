@@ -1,14 +1,17 @@
 import { getLookupArray } from "@/lib/availability-inquiry";
 import { mapCompanionDtoToFormEntry } from "@/lib/companion-registration";
 import {
+  HOUSING_REQUEST_CATAGORY_NEW_STAY,
   housingRequestStatusToApiName,
   normalizeRequestUnitsForAddRequestDto,
   parseAllocationTypeEnum,
   type AddRequestDtoPayload,
   type AddRequestParticipantDtoPayload,
   type AddRequestUnitDtoPayload,
+  type HousingRequestCatagoryApi,
 } from "@/lib/housing-request-map";
 import {
+  collectInquiryGendersFromUnits,
   normalizeUnitGender,
   parseInquiryGenders,
   resolvePersonGuestGender,
@@ -20,8 +23,9 @@ import {
   extractRequestAllocationTypeValue,
   extractRequestTypeId,
   formatRequestAllocationTypeForTable,
+  formatRequestCatagoryForTable,
   formatRequestTypeForTable,
-  NEW_STAY_REQUEST_TYPE_LABEL,
+  parseRequestCatagoryApiValue,
   toYmd,
 } from "@/lib/housing-request-list";
 
@@ -36,6 +40,7 @@ export type HousingRequestDetail = {
   nights: number;
   requestTypeId: string;
   requestAllocationType: 1 | 2;
+  requestCatagory: HousingRequestCatagoryApi;
   statusLabel: string;
   /** Arabic labels aligned with «طلباتى السابقة» table columns. */
   requestClassificationLabel: string;
@@ -349,8 +354,10 @@ export function parseRequestDetail(
     nights: extractNightsFromRequest(raw),
     requestTypeId: pickStr(raw, "requestTypeId", "RequestTypeId"),
     requestAllocationType,
+    requestCatagory:
+      parseRequestCatagoryApiValue(raw) ?? HOUSING_REQUEST_CATAGORY_NEW_STAY,
     statusLabel,
-    requestClassificationLabel: NEW_STAY_REQUEST_TYPE_LABEL,
+    requestClassificationLabel: formatRequestCatagoryForTable(raw),
     requestTypeLabel: formatRequestTypeForTable(
       raw,
       options?.requestTypeLabelsById,
@@ -364,6 +371,19 @@ export function formatRequestUnitLabel(unit: AddRequestUnitDtoPayload): string {
   if (unit.bedId) return "سرير";
   if (unit.roomId) return "غرفة";
   return "شقة";
+}
+
+export function buildCancelRequestPayload(
+  detail: HousingRequestDetail,
+  requestUnits: AddRequestUnitDtoPayload[],
+  companionIds: string[],
+): AddRequestDtoPayload & { status: string } {
+  return {
+    ...buildUpdateRequestPayload(detail, requestUnits, companionIds),
+    status: housingRequestStatusToApiName(
+      HOUSING_REQUEST_STATUS_ENUM.Canceled,
+    ),
+  };
 }
 
 export function buildUpdateRequestPayload(
@@ -381,6 +401,7 @@ export function buildUpdateRequestPayload(
     nights: detail.nights,
     requestTypeId: detail.requestTypeId,
     requestAllocationType: detail.requestAllocationType,
+    requestCatagory: detail.requestCatagory,
     requestUnits: normalizeRequestUnitsForAddRequestDto(
       requestUnits,
       detail.id,
@@ -396,6 +417,7 @@ export const HOUSING_REQUEST_STATUS_ENUM = {
   Approved: 1,
   Rejected: 2,
   Pending: 3,
+  Canceled: 4,
 } as const;
 
 /** Leader approve/reject update — sets `Status`, `ApprovedById`, `ApprovedAt`, `RejectionReason`. */
@@ -431,6 +453,8 @@ export function buildLeaderRequestDecisionPayload(
     nights: Math.max(1, extractNightsFromRequest(raw)),
     requestTypeId: extractRequestTypeId(raw),
     requestAllocationType: parseAllocationTypeEnum(allocationValue) ?? 1,
+    requestCatagory:
+      parseRequestCatagoryApiValue(raw) ?? HOUSING_REQUEST_CATAGORY_NEW_STAY,
     requestUnits: normalizeRequestUnitsForAddRequestDto(
       requestUnits,
       requestId,
@@ -458,13 +482,48 @@ export function buildCompanionGenderMap(
   return map;
 }
 
+export type InquiryGenderAvailabilityContext = {
+  bedsRaw: unknown[];
+  roomsRaw: unknown[];
+  apartmentsRaw: unknown[];
+};
+
+/** Distinct genders from request participant rows (applicant + companions). */
+export function collectInquiryGendersFromParticipants(
+  participants: Record<string, unknown>[],
+): GuestGender[] {
+  const out: GuestGender[] = [];
+  for (const row of participants) {
+    const gender = resolvePersonGuestGender(row);
+    if (gender && !out.includes(gender)) out.push(gender);
+  }
+  return out;
+}
+
 /** Inquiry genders from request row, or inferred from saved units when absent. */
 export function resolveInquiryGendersForRequest(
   requestRaw: Record<string, unknown> | undefined,
   units: ReservationStoredUnitSnapshot[],
+  availability?: InquiryGenderAvailabilityContext,
+  participants?: Record<string, unknown>[],
 ): GuestGender[] {
   const fromRequest = parseInquiryGenders(requestRaw);
   if (fromRequest.length > 0) return fromRequest;
+
+  if (availability && units.length > 0) {
+    const fromUnits = collectInquiryGendersFromUnits(
+      units,
+      availability.bedsRaw,
+      availability.roomsRaw,
+      availability.apartmentsRaw,
+    );
+    if (fromUnits.length > 0) return fromUnits;
+  }
+
+  if (participants?.length) {
+    const fromParticipants = collectInquiryGendersFromParticipants(participants);
+    if (fromParticipants.length > 0) return fromParticipants;
+  }
 
   const out: GuestGender[] = [];
   for (const unit of units) {

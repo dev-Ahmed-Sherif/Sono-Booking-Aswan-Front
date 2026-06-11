@@ -29,7 +29,20 @@ export type MapRequestsToTableRowsOptions = {
   userId?: string;
   /** Resolve `requestTypeId` when the list API returns only an id. */
   requestTypeLabelsById?: Map<string, string>;
+  /** Omit rows where `isDeleted` / `IsDeleted` is true (guest history lists). */
+  excludeDeleted?: boolean;
 };
+
+export function isHousingRequestRecordDeleted(
+  raw: Record<string, unknown>,
+): boolean {
+  const value = raw.isDeleted ?? raw.IsDeleted;
+  if (value === true) return true;
+  if (typeof value === "string" && value.trim().toLowerCase() === "true") {
+    return true;
+  }
+  return value === 1 || value === "1";
+}
 
 /** Reads `RequestAllocationType` from a request DTO (scalar, enum, or nested lookup). */
 export function extractRequestAllocationTypeValue(
@@ -162,6 +175,85 @@ export function formatRequestTypeForTable(
   return "—";
 }
 
+/** Reads `RequestCatagory` from a request DTO (backend spelling). */
+export function extractRequestCatagoryValue(
+  raw: Record<string, unknown>,
+): unknown {
+  const candidates = [
+    raw.RequestCatagory,
+    raw.requestCatagory,
+    raw.RequestCategory,
+    raw.requestCategory,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate == null) continue;
+    if (typeof candidate === "object") {
+      const nested = candidate as Record<string, unknown>;
+      const label = pickStr(
+        nested,
+        "nameAr",
+        "NameAr",
+        "nameEn",
+        "NameEn",
+        "value",
+        "Value",
+        "name",
+        "Name",
+      );
+      if (label) return label;
+      const inner = nested.value ?? nested.Value ?? nested.id ?? nested.Id;
+      if (inner != null) return inner;
+      continue;
+    }
+    return candidate;
+  }
+
+  return undefined;
+}
+
+export function parseRequestCatagoryApiValue(
+  raw: Record<string, unknown>,
+): "NewStay" | "Extension" | undefined {
+  const value = extractRequestCatagoryValue(raw);
+  if (value == null) return undefined;
+
+  const n = typeof value === "number" ? value : Number(String(value).trim());
+  if (Number.isFinite(n)) {
+    if (n === 1) return "NewStay";
+    if (n === 2) return "Extension";
+  }
+
+  const normalized = String(value).trim().toLowerCase().replace(/[_\s-]/g, "");
+  if (normalized === "newstay") return "NewStay";
+  if (normalized === "extension" || normalized === "extensionstay") {
+    return "Extension";
+  }
+
+  return undefined;
+}
+
+/** Maps `RequestCatagory` to Arabic «تصنيف الطلب» for tables and detail modals. */
+export function formatRequestCatagoryForTable(
+  raw: Record<string, unknown>,
+  fallback: string = NEW_STAY_REQUEST_TYPE_LABEL,
+): string {
+  const parsed = parseRequestCatagoryApiValue(raw);
+  if (parsed === "NewStay") return NEW_STAY_REQUEST_TYPE_LABEL;
+  if (parsed === "Extension") return EXTENSION_STAY_REQUEST_TYPE_LABEL;
+
+  const text = String(extractRequestCatagoryValue(raw) ?? "").trim();
+  if (!text) return fallback;
+  if (
+    text === NEW_STAY_REQUEST_TYPE_LABEL ||
+    text === EXTENSION_STAY_REQUEST_TYPE_LABEL
+  ) {
+    return text;
+  }
+
+  return text;
+}
+
 export function formatAllocationTypeAr(value: unknown): string {
   const n =
     typeof value === "number"
@@ -186,7 +278,81 @@ export function formatAllocationTypeAr(value: unknown): string {
 }
 
 export function isHousingRequestStatusLocked(statusLabel: string): boolean {
+  return (
+    statusLabel === "تمت الموافقة" ||
+    statusLabel === "مرفوض" ||
+    statusLabel === "ملغى"
+  );
+}
+
+export function isHousingRequestApproved(statusLabel: string): boolean {
+  return statusLabel === "تمت الموافقة";
+}
+
+/** Guest may edit unless approved or already canceled. */
+export function canEditHousingRequest(statusLabel: string): boolean {
+  return !isHousingRequestApproved(statusLabel) && statusLabel !== "ملغى";
+}
+
+/** Guest may cancel while the request is still under review. */
+export function canCancelHousingRequest(statusLabel: string): boolean {
+  return statusLabel === "قيد المراجعة";
+}
+
+/** Reads linked reservation id from a request DTO (extension requests). */
+export function extractReservationIdFromRequest(
+  raw: Record<string, unknown>,
+): string {
+  return pickStr(raw, "reservationId", "ReservationId");
+}
+
+/** Arabic status line shown after an extension request is submitted. */
+export function getHousingRequestStatusPreviewMessage(
+  statusLabel: string,
+): string {
+  switch (statusLabel) {
+    case "قيد المراجعة":
+      return "طلب التمديد قيد المراجعة من قبل الإدارة.";
+    case "تمت الموافقة":
+      return "تمت الموافقة على طلب التمديد.";
+    case "مرفوض":
+      return "تم رفض طلب التمديد.";
+    case "ملغى":
+      return "تم إلغاء طلب التمديد.";
+    default:
+      return "تم تقديم طلب التمديد.";
+  }
+}
+
+/** Whether the guest may submit another extension after a prior request. */
+export function canSubmitNewExtensionRequest(statusLabel: string): boolean {
   return statusLabel === "مرفوض" || statusLabel === "ملغى";
+}
+
+/** Latest extension request linked to a completed reservation, if any. */
+export function findLatestExtensionRequestForReservation(
+  items: unknown[],
+  reservationId: string,
+  options?: MapRequestsToTableRowsOptions,
+): HousingRequestTableRow | null {
+  const reservationKey = reservationId.trim().toLowerCase();
+  if (!reservationKey) return null;
+
+  const candidates: HousingRequestTableRow[] = [];
+
+  for (const r of filterItemsByUserId(items, options?.userId)) {
+    if (options?.excludeDeleted && isHousingRequestRecordDeleted(r)) continue;
+    if (parseRequestCatagoryApiValue(r) !== "Extension") continue;
+    const rowReservationId = extractReservationIdFromRequest(r).toLowerCase();
+    if (!rowReservationId || rowReservationId !== reservationKey) continue;
+    const row = mapApiRequestToTableRow(r, {
+      requestTypeLabelsById: options?.requestTypeLabelsById,
+    });
+    if (row) candidates.push(row);
+  }
+
+  if (candidates.length === 0) return null;
+  return candidates.sort((a, b) => b.sortDate.localeCompare(a.sortDate))[0]!;
 }
 
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
@@ -317,7 +483,7 @@ export function mapApiRequestToTableRow(
     id: id || requestNo,
     entryKind: "request",
     requestNo,
-    requestClassification: NEW_STAY_REQUEST_TYPE_LABEL,
+    requestClassification: formatRequestCatagoryForTable(raw),
     requestType: formatRequestTypeForTable(
       raw,
       options?.requestTypeLabelsById,
@@ -362,7 +528,10 @@ export function mapApiExtensionToTableRow(
     id: id ? `ext:${id}` : `ext:${requestNo}`,
     entryKind: "extension",
     requestNo,
-    requestClassification: EXTENSION_STAY_REQUEST_TYPE_LABEL,
+    requestClassification: formatRequestCatagoryForTable(
+      raw,
+      EXTENSION_STAY_REQUEST_TYPE_LABEL,
+    ),
     requestType: formatRequestTypeForTable(
       raw,
       options?.requestTypeLabelsById,
@@ -406,6 +575,7 @@ export function mapRequestsToTableRows(
   const rows: HousingRequestTableRow[] = [];
 
   for (const r of filterItemsByUserId(items, options?.userId)) {
+    if (options?.excludeDeleted && isHousingRequestRecordDeleted(r)) continue;
     const row = mapApiRequestToTableRow(r, {
       requestTypeLabelsById: options?.requestTypeLabelsById,
     });
@@ -422,6 +592,7 @@ export function mapExtensionsToTableRows(
   const rows: HousingRequestTableRow[] = [];
 
   for (const r of filterItemsByUserId(items, options?.userId)) {
+    if (options?.excludeDeleted && isHousingRequestRecordDeleted(r)) continue;
     const row = mapApiExtensionToTableRow(r, {
       requestTypeLabelsById: options?.requestTypeLabelsById,
     });

@@ -55,8 +55,8 @@ function isDuplicatePaymentError(res: unknown): boolean {
 }
 
 /**
- * `PUT /Reservations/update` with `status: "Completed"` and `checkInDate` set to now,
- * then `POST /Payments/add`, then mark request units as Occupied.
+ * `PUT /Reservations/update` with `status: "Completed"`, `checkInDate` and
+ * `actualCheckOutDate` set to now, then `POST /Payments/add`, then mark units Occupied.
  */
 export async function checkInHousingReservation(
   input: CheckInHousingReservationInput,
@@ -95,7 +95,7 @@ export async function checkInHousingReservation(
       status: RESERVATION_STATUS_COMPLETED,
       totalAmount,
       checkInDate: nowIso,
-      actualCheckOutDate: reservation.actualCheckOutDate,
+      actualCheckOutDate: nowIso,
       cancelationReason: "",
     }),
   );

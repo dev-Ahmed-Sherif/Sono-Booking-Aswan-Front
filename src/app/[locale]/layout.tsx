@@ -59,7 +59,7 @@ export default async function RootLayout({
     <StoreProvider>
       <html
         lang={locale}
-        dir={locale === "ar" ? "rtl" : "ltr"}
+        dir={locale === "ar" || locale.startsWith("ar-") ? "rtl" : "ltr"}
         suppressHydrationWarning
         className="h-full"
       >

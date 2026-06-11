@@ -59,8 +59,21 @@ import type { AvailableUnitType } from "@/actions/availabilityService";
 import { getGenders } from "@/actions/settings/genderService";
 import { getAllocationTypes } from "@/actions/settings/allocationTypeService";
 import { getRequestTypes } from "@/actions/settings/requestTypeService";
-import { getRequests } from "@/actions/requestService";
-import { getExtensions } from "@/actions/settings/extensionService";
+import {
+  getRequestById,
+  getRequestParticipantsAll,
+  getRequests,
+  getRequestUnitsAll,
+} from "@/actions/requestService";
+import { fetchRequestUnitHierarchyRows } from "@/actions/reservationUnitHierarchy";
+import { getReservations } from "@/actions/reservationService";
+import { addRequest } from "@/actions/requestService";
+import { cancelHousingRequest } from "@/actions/cancelHousingRequest";
+import { getCompanionById } from "@/actions/companionService";
+import { ExtendStayReviewPanel } from "@/components/reservation/extend-stay-review-panel";
+import { ExtendStayTabContent } from "@/components/reservation/extend-stay-tab-content";
+import { AvailabilityUnitCardParents } from "@/components/reservation/availability-unit-card-parents";
+import { AvailabilityUnitCardPrice } from "@/components/reservation/availability-unit-card-price";
 import ReservationRequestForm from "@/components/reservation/reservation-request-form";
 import {
   deleteHousingRequest,
@@ -73,24 +86,53 @@ import {
 } from "@/components/reservation/allocation-type-notices";
 import { userHasEmployeeId } from "@/lib/user-employee-id";
 import {
-  mapExtensionsToTableRows,
+  canEditHousingRequest,
+  canSubmitNewExtensionRequest,
+  findLatestExtensionRequestForReservation,
   mapRequestsToTableRows,
   mergeAndSortHistoryTableRows,
-  parseExtensionsListFromApi,
   parseRequestsListFromApi,
   type HousingRequestTableRow,
 } from "@/lib/housing-request-list";
+import {
+  applyCompanionDisplayNameToMap,
+  buildCompanionDisplayMapForIds,
+  companionDisplayNameFromRecord,
+  extractApiEntity,
+  extractCompanionIdsFromParticipantRows,
+  extractRequestUserId,
+  filterRowsByRequestId,
+  lookupCompanionName,
+  parseRequestUnitFromApi,
+  resolveParticipantRowsForRequest,
+} from "@/lib/housing-request-detail";
+import {
+  parseAddRequestApiResult,
+  requestUnitDtosToEnrichedSnapshots,
+} from "@/lib/housing-request-map";
+import { mapHousingRequestToExtendInquiryPrefill } from "@/lib/reservation-extend-inquiry";
+import {
+  areReservationUnitsFreeForExtend,
+  mapExtendStayToAddRequestDto,
+  unitSnapshotsToAvailabilityCards,
+  type ExtendStayContext,
+} from "@/lib/reservation-extend-submit";
+import {
+  extensionStartDateAfterReservation,
+  parseReservationsListFromApi,
+  pickLastCompletedReservation,
+  type ReservationDtoPayload,
+} from "@/lib/reservation-map";
+import {
+  applyReservationInquirySnapshot,
+  captureReservationInquirySnapshot,
+  emptyReservationInquirySnapshot,
+  type AvailabilityErrors,
+  type AvailabilitySearchStatus,
+  type ReservationInquirySnapshot,
+} from "@/lib/reservation-inquiry-snapshot";
 
 type ReservationView = "new" | "extend" | "history";
-type AvailabilitySearchStatus = "idle" | "loading" | "success" | "error";
-type AvailabilityErrors = {
-  startDate?: string;
-  nights?: string;
-  unitType?: string;
-  requestType?: string;
-  gender?: string;
-  allocationType?: string;
-};
 type GenderOption = { value: "male" | "female"; label: "رجال" | "سيدات" };
 type AllocationTypeOption = { value: string; label: string };
 type RequestTypeOption = { value: string; label: string };
@@ -207,6 +249,32 @@ const ReservationPage = () => {
   const [deletingRequestId, setDeletingRequestId] = useState<string | null>(
     null,
   );
+  const [cancelingRequestId, setCancelingRequestId] = useState<string | null>(
+    null,
+  );
+  const [extendLastCompleted, setExtendLastCompleted] =
+    useState<ReservationDtoPayload | null>(null);
+  const [extendReservationLoading, setExtendReservationLoading] =
+    useState(false);
+  const [extendReservationError, setExtendReservationError] = useState<
+    string | null
+  >(null);
+  const [extendInquiryOpen, setExtendInquiryOpen] = useState(false);
+  const [extendPrefillLoading, setExtendPrefillLoading] = useState(false);
+  const [extendContext, setExtendContext] = useState<ExtendStayContext | null>(
+    null,
+  );
+  const [extendReviewOpen, setExtendReviewOpen] = useState(false);
+  const [extendSubmitting, setExtendSubmitting] = useState(false);
+  const [extendSubmittedRequest, setExtendSubmittedRequest] =
+    useState<HousingRequestTableRow | null>(null);
+  const extendFetchTicketRef = useRef(0);
+  const newInquirySnapshotRef = useRef(
+    emptyReservationInquirySnapshot(),
+  );
+  const extendInquirySnapshotRef = useRef(
+    emptyReservationInquirySnapshot(),
+  );
   const currentYear = new Date().getFullYear();
   const maxSelectableDate = new Date(currentYear + 5, 11, 31);
   const minSelectableDate = new Date();
@@ -225,6 +293,7 @@ const ReservationPage = () => {
     setSelectedAvailabilityKeys([]);
     setAvailabilityErrors({});
     setShowReservationRequestForm(false);
+    setExtendReviewOpen(false);
   }, [
     startDate,
     nights,
@@ -234,12 +303,84 @@ const ReservationPage = () => {
     allocationType,
   ]);
 
-  useEffect(() => {
-    setAvailabilitySearchStatus("idle");
-    setAvailabilityCards([]);
-    setSelectedAvailabilityKeys([]);
-    setAvailabilityErrors({});
-  }, [activeView]);
+  const captureCurrentInquirySnapshot = useCallback((): ReservationInquirySnapshot => {
+    return captureReservationInquirySnapshot({
+      startDate,
+      nights,
+      selectedUnitTypes,
+      selectedGenders,
+      allocationType,
+      requestType,
+      availabilitySearchStatus,
+      availabilityCards,
+      selectedAvailabilityKeys,
+      availabilityErrors,
+    });
+  }, [
+    startDate,
+    nights,
+    selectedUnitTypes,
+    selectedGenders,
+    allocationType,
+    requestType,
+    availabilitySearchStatus,
+    availabilityCards,
+    selectedAvailabilityKeys,
+    availabilityErrors,
+  ]);
+
+  const applyInquirySnapshotToState = useCallback(
+    (snapshot: ReservationInquirySnapshot) => {
+      applyReservationInquirySnapshot(snapshot, {
+        setStartDate,
+        setNights,
+        setSelectedUnitTypes,
+        setSelectedGenders,
+        setAllocationType,
+        setRequestType,
+        setAvailabilitySearchStatus,
+        setAvailabilityCards,
+        setSelectedAvailabilityKeys,
+        setAvailabilityErrors,
+      });
+    },
+    [],
+  );
+
+  const switchReservationView = useCallback(
+    (view: ReservationView) => {
+      if (view === activeView) return;
+
+      const captured = captureCurrentInquirySnapshot();
+      if (activeView === "new") {
+        newInquirySnapshotRef.current = captured;
+      } else if (activeView === "extend") {
+        extendInquirySnapshotRef.current = captured;
+      }
+
+      if (view === "new") {
+        applyInquirySnapshotToState(newInquirySnapshotRef.current);
+        setExtendInquiryOpen(false);
+        setExtendContext(null);
+        setExtendReviewOpen(false);
+      } else if (view === "extend") {
+        applyInquirySnapshotToState(extendInquirySnapshotRef.current);
+        setExtendInquiryOpen(false);
+        setExtendReviewOpen(false);
+      } else {
+        setExtendInquiryOpen(false);
+        setExtendContext(null);
+        setExtendReviewOpen(false);
+      }
+
+      setActiveView(view);
+    },
+    [
+      activeView,
+      applyInquirySnapshotToState,
+      captureCurrentInquirySnapshot,
+    ],
+  );
 
   useEffect(() => {
     setShowEmployeeDiscountNotice(userHasEmployeeId(userStorage.getItem()));
@@ -290,6 +431,222 @@ const ReservationPage = () => {
     return storedUserId(userStorage.getItem());
   }, [reduxUserId, userStorage]);
 
+  const loadExtendSourceReservation = useCallback(async () => {
+    const ticket = ++extendFetchTicketRef.current;
+    setExtendReservationLoading(true);
+    setExtendReservationError(null);
+    setExtendLastCompleted(null);
+    setExtendSubmittedRequest(null);
+
+    const userId = getCurrentUserId();
+
+    try {
+      const [reservationsRes, requestsRes] = await Promise.all([
+        getReservations(userId),
+        getRequests(userId),
+      ]);
+      if (ticket !== extendFetchTicketRef.current) return;
+
+      if (
+        reservationsRes &&
+        typeof reservationsRes === "object" &&
+        "error" in reservationsRes
+      ) {
+        const err = reservationsRes as { message?: string; error?: string };
+        setExtendReservationError(
+          String(err.message ?? err.error ?? "تعذر تحميل الحجز."),
+        );
+        return;
+      }
+
+      const last = pickLastCompletedReservation(
+        parseReservationsListFromApi(reservationsRes),
+      );
+      setExtendLastCompleted(last);
+
+      if (last?.id && requestsRes && typeof requestsRes === "object" && !("error" in requestsRes)) {
+        const extensionRequest = findLatestExtensionRequestForReservation(
+          parseRequestsListFromApi(requestsRes),
+          String(last.id),
+          {
+            userId: userId || undefined,
+            requestTypeLabelsById: requestTypeLabelsByIdRef.current,
+            excludeDeleted: true,
+          },
+        );
+        setExtendSubmittedRequest(extensionRequest);
+      }
+    } catch {
+      if (ticket !== extendFetchTicketRef.current) return;
+      setExtendReservationError("تعذر تحميل الحجز.");
+    } finally {
+      if (ticket === extendFetchTicketRef.current) {
+        setExtendReservationLoading(false);
+      }
+    }
+  }, [getCurrentUserId]);
+
+  useEffect(() => {
+    if (activeView !== "extend") return;
+    void loadExtendSourceReservation();
+    return () => {
+      extendFetchTicketRef.current += 1;
+      setExtendReservationLoading(false);
+    };
+  }, [activeView, loadExtendSourceReservation]);
+
+  const handleStartExtendStay = async () => {
+    if (!extendLastCompleted || extendPrefillLoading || extendInquiryOpen) {
+      return;
+    }
+
+    if (
+      extendSubmittedRequest &&
+      !canSubmitNewExtensionRequest(extendSubmittedRequest.status)
+    ) {
+      return;
+    }
+
+    const requestId = extendLastCompleted.requestId?.trim();
+    if (!requestId) {
+      toast({
+        variant: "destructive",
+        title: "تعذر تمديد الإقامة",
+        description: "لا يوجد طلب مرتبط بهذا الحجز.",
+      });
+      return;
+    }
+
+    setExtendPrefillLoading(true);
+    try {
+      const userId = getCurrentUserId();
+      const [reqRes, unitsRes, partsRes] = await Promise.all([
+        getRequestById(requestId),
+        getRequestUnitsAll(),
+        userId
+          ? getRequestParticipantsAll(userId)
+          : getRequestParticipantsAll(),
+      ]);
+
+      const requestRaw = extractApiEntity(reqRes);
+      if (!requestRaw) {
+        toast({
+          variant: "destructive",
+          title: "تعذر تمديد الإقامة",
+          description: "لم يتم العثور على بيانات الطلب السابق.",
+        });
+        return;
+      }
+
+      const unitRows = filterRowsByRequestId(
+        getLookupArray(unitsRes),
+        requestId,
+      );
+      const requestUnits = unitRows
+        .map(parseRequestUnitFromApi)
+        .filter((u): u is NonNullable<ReturnType<typeof parseRequestUnitFromApi>> =>
+          u != null,
+        );
+
+      const { bedsRaw, roomsRaw, apartmentsRaw } =
+        await fetchRequestUnitHierarchyRows(requestUnits);
+
+      const unitSnapshots = requestUnitDtosToEnrichedSnapshots(
+        requestUnits,
+        bedsRaw,
+        roomsRaw,
+        apartmentsRaw,
+      );
+
+      const participantRows = resolveParticipantRowsForRequest(
+        requestRaw,
+        partsRes,
+        requestId,
+        reqRes,
+      );
+
+      const companionIds =
+        extractCompanionIdsFromParticipantRows(participantRows);
+      const ownerUserId =
+        extractRequestUserId(requestRaw) || userId || "";
+      const companionNameMap = buildCompanionDisplayMapForIds(
+        participantRows,
+        companionIds,
+        partsRes,
+      );
+      for (const companionId of companionIds) {
+        if (lookupCompanionName(companionNameMap, companionId)) continue;
+        const compRes = ownerUserId
+          ? await getCompanionById(companionId, ownerUserId)
+          : await getCompanionById(companionId);
+        const compRaw = extractApiEntity(compRes);
+        if (!compRaw) continue;
+        const name = companionDisplayNameFromRecord(compRaw);
+        if (name) {
+          applyCompanionDisplayNameToMap(companionNameMap, companionId, name);
+        }
+      }
+      const companions = companionIds.map((id) => ({
+        id,
+        name: lookupCompanionName(companionNameMap, id) || "—",
+      }));
+
+      const reservationId = String(extendLastCompleted.id ?? "").trim();
+      if (!reservationId) {
+        toast({
+          variant: "destructive",
+          title: "تعذر تمديد الإقامة",
+          description: "معرّف الحجز غير متوفر.",
+        });
+        return;
+      }
+
+      const prefill = mapHousingRequestToExtendInquiryPrefill({
+        requestRaw,
+        requestUnits,
+        unitSnapshots,
+        bedsRaw,
+        roomsRaw,
+        apartmentsRaw,
+        participantRows,
+        requestTypeOptions,
+        allocationTypeOptions,
+      });
+
+      const nextStart =
+        extensionStartDateAfterReservation(extendLastCompleted.endDate) ?? "";
+      const snapshot: ReservationInquirySnapshot = {
+        ...emptyReservationInquirySnapshot(),
+        startDate: nextStart,
+        nights: prefill.nights,
+        selectedUnitTypes: prefill.selectedUnitTypes,
+        selectedGenders: prefill.selectedGenders,
+        requestType: prefill.requestType,
+        allocationType: prefill.allocationType,
+      };
+      applyInquirySnapshotToState(snapshot);
+      extendInquirySnapshotRef.current = snapshot;
+      setExtendContext({
+        sourceRequestId: requestId,
+        reservationId,
+        reservationEndYmd: nextStart,
+        unitSnapshots,
+        companions,
+      });
+      setExtendReviewOpen(false);
+      setExtendInquiryOpen(true);
+      setShowReservationRequestForm(false);
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "تعذر تمديد الإقامة",
+        description: "حدث خطأ أثناء تحميل بيانات الطلب السابق.",
+      });
+    } finally {
+      setExtendPrefillLoading(false);
+    }
+  };
+
   const loadHistoryRequests = useCallback(async () => {
     const ticket = ++historyFetchTicketRef.current;
     setHistoryLoading(true);
@@ -298,10 +655,7 @@ const ReservationPage = () => {
     const userId = getCurrentUserId();
 
     try {
-      const [requestsRes, extensionsRes] = await Promise.all([
-        getRequests(userId),
-        getExtensions(userId),
-      ]);
+      const requestsRes = await getRequests(userId);
       if (ticket !== historyFetchTicketRef.current) return;
 
       if (
@@ -320,24 +674,13 @@ const ReservationPage = () => {
       const mapOptions = {
         userId: userId || undefined,
         requestTypeLabelsById: requestTypeLabelsByIdRef.current,
+        excludeDeleted: true,
       };
 
       const requestItems = parseRequestsListFromApi(requestsRes);
       const requestRows = mapRequestsToTableRows(requestItems, mapOptions);
 
-      let extensionRows: HousingRequestTableRow[] = [];
-      if (
-        extensionsRes &&
-        typeof extensionsRes === "object" &&
-        !("error" in extensionsRes)
-      ) {
-        const extensionItems = parseExtensionsListFromApi(extensionsRes);
-        extensionRows = mapExtensionsToTableRows(extensionItems, mapOptions);
-      }
-
-      setHistoryRequests(
-        mergeAndSortHistoryTableRows(requestRows, extensionRows),
-      );
+      setHistoryRequests(mergeAndSortHistoryTableRows(requestRows, []));
     } catch {
       if (ticket !== historyFetchTicketRef.current) return;
       setHistoryRequests([]);
@@ -365,7 +708,11 @@ const ReservationPage = () => {
     setHistoryModalRequestId(row.id);
     setHistoryModalRow(row);
     setHistoryModalStatus(row.status);
-    setHistoryModalMode(modalMode);
+    setHistoryModalMode(
+      modalMode === "edit" && !canEditHousingRequest(row.status)
+        ? "view"
+        : modalMode,
+    );
     setHistoryModalOpen(true);
   };
 
@@ -397,6 +744,30 @@ const ReservationPage = () => {
       reloadHistoryRequests();
     } finally {
       setDeletingRequestId(null);
+    }
+  };
+
+  const handleCancelHistoryRequest = async (row: HousingRequestTableRow) => {
+    setCancelingRequestId(row.id);
+    try {
+      const result = await cancelHousingRequest(row.id, {
+        statusLabel: row.status,
+      });
+      if (!result.ok) {
+        toast({
+          variant: "destructive",
+          title: "فشل الإلغاء",
+          description: result.message,
+        });
+        return;
+      }
+      toast({
+        title: "تم الإلغاء",
+        description: "تم إلغاء الطلب وتغيير حالته إلى «ملغى».",
+      });
+      reloadHistoryRequests();
+    } finally {
+      setCancelingRequestId(null);
     }
   };
 
@@ -531,7 +902,7 @@ const ReservationPage = () => {
       const inquiryGenders = selectedGenders.filter(
         (g): g is "male" | "female" => g === "male" || g === "female",
       );
-      const { cards, fatalError, partialFailure } =
+      const { cards, fatalError, partialFailure, occupancyIndex } =
         await fetchMergedAvailabilityCards(
           kinds,
           inquiryStartYmd
@@ -551,9 +922,40 @@ const ReservationPage = () => {
         });
         return;
       }
-      setAvailabilityCards(cards);
+
+      let resultCards = cards;
+      if (activeView === "extend" && extendContext) {
+        if (
+          !areReservationUnitsFreeForExtend({
+            units: extendContext.unitSnapshots,
+            inquiryStartYmd: inquiryStartYmd ?? "",
+            reservationEndYmd: extendContext.reservationEndYmd,
+            occupancyIndex,
+          })
+        ) {
+          setAvailabilitySearchStatus("error");
+          toast({
+            variant: "destructive",
+            title: "الوحدات غير متاحة",
+            description:
+              "إحدى وحدات الإقامة الحالية غير متاحة في التاريخ المطلوب.",
+          });
+          return;
+        }
+        resultCards = unitSnapshotsToAvailabilityCards(
+          extendContext.unitSnapshots,
+        );
+      }
+
+      setAvailabilityCards(resultCards);
       setAvailabilitySearchStatus("success");
-      if (partialFailure) {
+      if (activeView === "extend" && extendContext) {
+        setSelectedAvailabilityKeys(
+          resultCards.map((card) => availabilityCardKey(card)),
+        );
+        setExtendReviewOpen(true);
+      }
+      if (partialFailure && activeView !== "extend") {
         toast({
           title: "تنبيه",
           description: "تم تحميل بعض أنواع الوحدات فقط؛ تعذر تحميل البقية.",
@@ -572,9 +974,67 @@ const ReservationPage = () => {
   };
 
   const toggleAvailabilityCard = (key: string) => {
+    if (activeView === "extend") return;
     setSelectedAvailabilityKeys((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
     );
+  };
+
+  const handleConfirmExtendStay = async () => {
+    if (!extendContext || !extendReviewOpen) return;
+
+    setExtendSubmitting(true);
+    try {
+      const mapped = mapExtendStayToAddRequestDto({
+        reservationId: extendContext.reservationId,
+        startDateYmd: startDate,
+        nights: Number(nights),
+        requestTypeId: requestType,
+        allocationTypeValue: allocationType,
+        unitSnapshots: extendContext.unitSnapshots,
+        companions: extendContext.companions,
+      });
+      if (!mapped.ok) {
+        toast({
+          variant: "destructive",
+          title: "تعذر تأكيد التمديد",
+          description: mapped.message,
+        });
+        return;
+      }
+
+      const res = await addRequest(mapped.dto);
+      const parsed = parseAddRequestApiResult(res);
+      if (!parsed.ok) {
+        toast({
+          variant: "destructive",
+          title: "تعذر تأكيد التمديد",
+          description: parsed.message,
+        });
+        return;
+      }
+
+      toast({
+        title: "تم تقديم طلب التمديد",
+        description: "تم إرسال طلب تمديد الإقامة بنجاح.",
+      });
+
+      const emptySnapshot = emptyReservationInquirySnapshot();
+      applyInquirySnapshotToState(emptySnapshot);
+      extendInquirySnapshotRef.current = emptySnapshot;
+      setExtendContext(null);
+      setExtendReviewOpen(false);
+      setExtendInquiryOpen(false);
+      void loadExtendSourceReservation();
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "تعذر تأكيد التمديد",
+        description: "حدث خطأ أثناء إرسال طلب التمديد.",
+      });
+    } finally {
+      setExtendSubmitting(false);
+    }
   };
 
   const handleSaveReservationSelection = () => {
@@ -634,8 +1094,8 @@ const ReservationPage = () => {
     });
 
     toast({
-      description:
-        "تم حفظ بيانات الاستعلام بنجاح ويرجى تسجيل الدخول لتقديم طلب الحجز",
+      title: "تم الحفظ",
+      description: "تم حفظ بيانات الاستعلام بنجاح، يمكنك متابعة تقديم طلب الحجز.",
     });
 
     if (activeView === "new") {
@@ -644,6 +1104,39 @@ const ReservationPage = () => {
   };
 
   const isAvailabilityView = activeView === "new" || activeView === "extend";
+  const showAvailabilityInquiry =
+    activeView === "new" || (activeView === "extend" && extendInquiryOpen);
+  /** Extend tab: unit type, request type, and gender stay locked after prefill. */
+  const extendInquiryFieldsLocked =
+    activeView === "extend" && extendInquiryOpen;
+  const extendInquiryFullyLocked =
+    extendInquiryFieldsLocked && extendReviewOpen;
+
+  const extendRequestTypeLabel =
+    requestTypeOptions.find((o) => o.value === requestType)?.label ??
+    requestType;
+  const extendGenderLabels = selectedGenders
+    .map((value) => genderOptions.find((o) => o.value === value)?.label ?? value)
+    .join("، ");
+  const extendAllocationTypeLabel =
+    allocationTypeOptions.find((o) => o.value === allocationType)?.label ??
+    allocationType;
+
+  const extendMinStartDate = useMemo(() => {
+    if (!extendInquiryFieldsLocked || !extendLastCompleted?.endDate) {
+      return minSelectableDate;
+    }
+    const endYmd = extendLastCompleted.endDate.trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(endYmd)) return minSelectableDate;
+    const [y, m, d] = endYmd.split("-").map(Number);
+    const end = new Date(y, m - 1, d);
+    end.setHours(0, 0, 0, 0);
+    return end > minSelectableDate ? end : minSelectableDate;
+  }, [
+    extendInquiryFieldsLocked,
+    extendLastCompleted?.endDate,
+    minSelectableDate,
+  ]);
 
   const applicantDisplayName = (() => {
     const u = userStorage.getItem() as { name?: string } | undefined;
@@ -691,7 +1184,7 @@ const ReservationPage = () => {
                       >
                         <Button
                           type="button"
-                          onClick={() => setActiveView("new")}
+                          onClick={() => switchReservationView("new")}
                           variant={activeView === "new" ? "default" : "outline"}
                           className="h-auto min-h-11 w-full justify-start py-3 text-base"
                         >
@@ -704,7 +1197,7 @@ const ReservationPage = () => {
                       >
                         <Button
                           type="button"
-                          onClick={() => setActiveView("extend")}
+                          onClick={() => switchReservationView("extend")}
                           variant={
                             activeView === "extend" ? "default" : "outline"
                           }
@@ -719,7 +1212,7 @@ const ReservationPage = () => {
                       >
                         <Button
                           type="button"
-                          onClick={() => setActiveView("history")}
+                          onClick={() => switchReservationView("history")}
                           variant={
                             activeView === "history" ? "default" : "outline"
                           }
@@ -761,11 +1254,35 @@ const ReservationPage = () => {
                             </CardTitle>
                           </div>
                           <p className="text-muted-foreground text-sm mt-1 pe-1">
-                            تحقق من توفر الوحدات السكنية في التاريخ المطلوب
+                            {activeView === "extend" &&
+                            extendSubmittedRequest &&
+                            !extendInquiryOpen
+                              ? "تم تقديم طلب تمديد — يمكنك متابعة حالة الطلب أدناه"
+                              : activeView === "extend" && !extendInquiryOpen
+                              ? "اختر إقامتك الحالية لتمديدها"
+                              : activeView === "extend" && extendReviewOpen
+                                ? "راجع بيانات التمديد ثم أكّد الطلب"
+                                : activeView === "extend"
+                                ? "تم تحميل بيانات الطلب السابق — يمكنك تعديل تاريخ البدء وعدد الليالي ونوع الحجز"
+                                : "تحقق من توفر الوحدات السكنية في التاريخ المطلوب"}
                           </p>
                         </CardHeader>
 
                         <CardContent className="space-y-4">
+                          {activeView === "extend" ? (
+                            <ExtendStayTabContent
+                              loading={extendReservationLoading}
+                              error={extendReservationError}
+                              reservation={extendLastCompleted}
+                              submittedRequest={extendSubmittedRequest}
+                              extendInquiryOpen={extendInquiryOpen}
+                              prefillLoading={extendPrefillLoading}
+                              onStartExtend={() => void handleStartExtendStay()}
+                            />
+                          ) : null}
+
+                          {showAvailabilityInquiry ? (
+                            <>
                           <div className="space-y-1.5">
                             <Label className="text-foreground flex items-center gap-1.5 text-base">
                               <CalendarDays className="h-4 w-4 text-blue-500" />
@@ -777,9 +1294,12 @@ const ReservationPage = () => {
                                   type="button"
                                   variant="outline"
                                   dir="rtl"
+                                  disabled={extendInquiryFullyLocked}
                                   className={cn(
                                     "h-[3.75rem] min-h-[3.75rem] w-full justify-between text-right text-base font-normal leading-[3.75rem] bg-background border-2 border-border hover:bg-muted px-3 py-0",
                                     !startDate && "text-muted-foreground",
+                                    extendInquiryFullyLocked &&
+                                      "cursor-not-allowed opacity-60",
                                   )}
                                 >
                                   <span>
@@ -806,15 +1326,16 @@ const ReservationPage = () => {
                                       ? new Date(`${startDate}T12:00:00`)
                                       : undefined
                                   }
-                                  onSelect={(date) =>
+                                  onSelect={(date) => {
+                                    if (extendInquiryFullyLocked) return;
                                     setStartDate(
                                       date ? format(date, "yyyy-MM-dd") : "",
-                                    )
-                                  }
+                                    );
+                                  }}
                                   locale={ar}
                                   disabled={(date) =>
                                     date > maxSelectableDate ||
-                                    date < minSelectableDate
+                                    date < extendMinStartDate
                                   }
                                   initialFocus
                                   captionLayout="dropdown"
@@ -840,8 +1361,13 @@ const ReservationPage = () => {
                               max={21}
                               placeholder="أدخل عدد الليالي"
                               value={nights}
+                              disabled={extendInquiryFullyLocked}
                               onChange={(e) => setNights(e.target.value)}
-                              className="h-[3.75rem] min-h-[3.75rem] bg-background border-border text-foreground text-base leading-[3.75rem] placeholder:text-sm placeholder:text-muted-foreground placeholder:leading-[3.75rem] focus:border-brand focus:ring-brand/30"
+                              className={cn(
+                                "h-[3.75rem] min-h-[3.75rem] bg-background border-border text-foreground text-base leading-[3.75rem] placeholder:text-sm placeholder:text-muted-foreground placeholder:leading-[3.75rem] focus:border-brand focus:ring-brand/30",
+                                extendInquiryFullyLocked &&
+                                  "cursor-not-allowed opacity-60",
+                              )}
                             />
                             {availabilityErrors.nights ? (
                               <p className="text-xs text-red-600">
@@ -868,7 +1394,9 @@ const ReservationPage = () => {
                                 <button
                                   key={opt.value}
                                   type="button"
+                                  disabled={extendInquiryFieldsLocked}
                                   onClick={() => {
+                                    if (extendInquiryFieldsLocked) return;
                                     const v = opt.value as AvailableUnitType;
                                     setSelectedUnitTypes((prev) =>
                                       prev.includes(v)
@@ -880,13 +1408,16 @@ const ReservationPage = () => {
                                       unitType: undefined,
                                     }));
                                   }}
-                                  className={`py-2.5 px-2 rounded-xl border-2 font-semibold text-sm transition-all duration-200 whitespace-nowrap text-center leading-snug ${
+                                  className={cn(
+                                    "py-2.5 px-2 rounded-xl border-2 font-semibold text-sm transition-all duration-200 whitespace-nowrap text-center leading-snug",
                                     selectedUnitTypes.includes(
                                       opt.value as AvailableUnitType,
                                     )
                                       ? "bg-brand border-brand text-brand-foreground shadow-md shadow-brand/25 scale-[1.02]"
-                                      : "bg-muted border-border text-foreground hover:bg-brand-muted hover:border-brand/40"
-                                  }`}
+                                      : "bg-muted border-border text-foreground hover:bg-brand-muted hover:border-brand/40",
+                                    extendInquiryFieldsLocked &&
+                                      "cursor-not-allowed opacity-60 hover:bg-muted hover:border-border",
+                                  )}
                                 >
                                   {opt.label}
                                 </button>
@@ -909,18 +1440,23 @@ const ReservationPage = () => {
                                 <button
                                   key={opt.value}
                                   type="button"
+                                  disabled={extendInquiryFieldsLocked}
                                   onClick={() => {
+                                    if (extendInquiryFieldsLocked) return;
                                     setRequestType(opt.value);
                                     setAvailabilityErrors((prev) => ({
                                       ...prev,
                                       requestType: undefined,
                                     }));
                                   }}
-                                  className={`py-2.5 px-3 rounded-xl border-2 font-medium text-sm transition-all duration-200 whitespace-nowrap shrink-0 min-w-[calc((100%-1rem)/3)] ${
+                                  className={cn(
+                                    "py-2.5 px-3 rounded-xl border-2 font-medium text-sm transition-all duration-200 whitespace-nowrap shrink-0 min-w-[calc((100%-1rem)/3)]",
                                     requestType === opt.value
                                       ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
-                                      : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40"
-                                  }`}
+                                      : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40",
+                                    extendInquiryFieldsLocked &&
+                                      "cursor-not-allowed opacity-60 hover:bg-background hover:border-border",
+                                  )}
                                 >
                                   {opt.label}
                                 </button>
@@ -943,7 +1479,9 @@ const ReservationPage = () => {
                                 <button
                                   key={opt.value}
                                   type="button"
+                                  disabled={extendInquiryFieldsLocked}
                                   onClick={() => {
+                                    if (extendInquiryFieldsLocked) return;
                                     setSelectedGenders((prev) =>
                                       prev.includes(opt.value)
                                         ? prev.filter((v) => v !== opt.value)
@@ -954,11 +1492,14 @@ const ReservationPage = () => {
                                       gender: undefined,
                                     }));
                                   }}
-                                  className={`py-2.5 rounded-xl border-2 font-medium text-sm transition-all duration-200 ${
+                                  className={cn(
+                                    "py-2.5 rounded-xl border-2 font-medium text-sm transition-all duration-200",
                                     selectedGenders.includes(opt.value)
                                       ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
-                                      : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40"
-                                  }`}
+                                      : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40",
+                                    extendInquiryFieldsLocked &&
+                                      "cursor-not-allowed opacity-60 hover:bg-background hover:border-border",
+                                  )}
                                 >
                                   {opt.label}
                                 </button>
@@ -981,7 +1522,9 @@ const ReservationPage = () => {
                                 <button
                                   key={opt.value}
                                   type="button"
+                                  disabled={extendInquiryFullyLocked}
                                   onClick={() => {
+                                    if (extendInquiryFullyLocked) return;
                                     setAllocationType(opt.value);
                                     setAvailabilityErrors((prev) => ({
                                       ...prev,
@@ -992,7 +1535,7 @@ const ReservationPage = () => {
                                     allocationType === opt.value
                                       ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
                                       : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40"
-                                  }`}
+                                  }${extendInquiryFullyLocked ? " cursor-not-allowed opacity-60" : ""}`}
                                 >
                                   {opt.label}
                                 </button>
@@ -1012,6 +1555,7 @@ const ReservationPage = () => {
                             ) : null}
                           </div>
 
+                          {!extendInquiryFullyLocked ? (
                           <Button
                             type="button"
                             onClick={handleCheckAvailability}
@@ -1038,8 +1582,10 @@ const ReservationPage = () => {
                               </span>
                             )}
                           </Button>
+                          ) : null}
 
                           {availabilitySearchStatus === "success" &&
+                            activeView !== "extend" &&
                             (() => {
                               const searchedKinds =
                                 orderedUnitKindsFromSelection(
@@ -1065,7 +1611,39 @@ const ReservationPage = () => {
                             })()}
 
                           {availabilitySearchStatus === "success" &&
-                            availabilityCards.length > 0 && (
+                            availabilityCards.length > 0 &&
+                            extendReviewOpen &&
+                            extendContext &&
+                            activeView === "extend" && (
+                              <div className="space-y-3">
+                                <motion.div
+                                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                                  transition={{ duration: 0.4 }}
+                                  className="flex items-center gap-3 p-4 rounded-2xl border-2 font-semibold text-base bg-emerald-50 border-emerald-200 text-emerald-950"
+                                >
+                                  <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
+                                  الوحدات الحالية متاحة للتمديد
+                                </motion.div>
+                                <ExtendStayReviewPanel
+                                  startDate={startDate}
+                                  nights={nights}
+                                  allocationTypeLabel={extendAllocationTypeLabel}
+                                  requestTypeLabel={extendRequestTypeLabel}
+                                  genderLabels={extendGenderLabels}
+                                  unitCards={availabilityCards}
+                                  companions={extendContext.companions}
+                                  submitting={extendSubmitting}
+                                  onConfirm={() =>
+                                    void handleConfirmExtendStay()
+                                  }
+                                />
+                              </div>
+                            )}
+
+                          {availabilitySearchStatus === "success" &&
+                            availabilityCards.length > 0 &&
+                            activeView !== "extend" && (
                               <div className="space-y-3">
                                 <motion.div
                                   initial={{ opacity: 0, y: 8, scale: 0.95 }}
@@ -1148,19 +1726,17 @@ const ReservationPage = () => {
                                             )}
                                           </div>
                                           <div className="min-w-0 flex-1 space-y-1.5">
-                                            <div
-                                              className="flex items-start justify-between gap-3"
-                                              dir="rtl"
-                                            >
-                                              <p className="min-w-0 flex-1 font-bold text-base leading-tight text-slate-900">
+                                            <div dir="rtl">
+                                              <p className="font-bold text-base leading-tight text-slate-900">
                                                 {card.title}
                                               </p>
-                                              {card.priceLabel ? (
-                                                <p className="shrink-0 text-xl font-extrabold leading-none tracking-tight text-emerald-700 tabular-nums sm:text-2xl">
-                                                  {card.priceLabel}
-                                                </p>
-                                              ) : null}
                                             </div>
+                                            <AvailabilityUnitCardParents
+                                              card={card}
+                                            />
+                                            <AvailabilityUnitCardPrice
+                                              card={card}
+                                            />
                                             {card.genderType ? (
                                               <p className="text-base font-bold leading-snug text-slate-800">
                                                 <span className="font-semibold text-slate-600">
@@ -1221,6 +1797,8 @@ const ReservationPage = () => {
                                 ) : null}
                               </div>
                             )}
+                            </>
+                          ) : null}
                         </CardContent>
                       </Card>
 
@@ -1240,7 +1818,7 @@ const ReservationPage = () => {
                             initialNumberOfNights={initialNightsForRequest}
                             onNavigateToHistory={() => {
                               setShowReservationRequestForm(false);
-                              setActiveView("history");
+                              switchReservationView("history");
                             }}
                             onStorageCleared={() =>
                               setShowReservationRequestForm(false)
@@ -1358,12 +1936,16 @@ const ReservationPage = () => {
                                             deleting={
                                               deletingRequestId === row.id
                                             }
+                                            canceling={
+                                              cancelingRequestId === row.id
+                                            }
                                             onView={(r) =>
                                               openHistoryModal(r, "view")
                                             }
                                             onEdit={(r) =>
                                               openHistoryModal(r, "edit")
                                             }
+                                            onCancel={handleCancelHistoryRequest}
                                             onDelete={
                                               handleDeleteHistoryRequest
                                             }

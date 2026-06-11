@@ -14,6 +14,7 @@ export const RESERVATION_STATUS_RESERVED = 1 as const satisfies ReservationStatu
 export const RESERVATION_STATUS_COMPLETED = 2 as const satisfies ReservationStatus;
 export const RESERVATION_STATUS_CANCELED = 3 as const satisfies ReservationStatus;
 export const RESERVATION_STATUS_NO_SHOW = 4 as const satisfies ReservationStatus;
+export const RESERVATION_STATUS_CHECKOUT = 5 as const satisfies ReservationStatus;
 
 /** @deprecated Legacy API value; treated as `Completed`. */
 export const RESERVATION_STATUS_CHECKED_IN =
@@ -22,15 +23,16 @@ export const RESERVATION_STATUS_CHECKED_IN =
 /** EF / API enum member names (`StringEnumConverter`). */
 export function reservationStatusToApiName(
   status: ReservationStatus,
-): "Reserved" | "Completed" | "Canceled" | "NoShow" {
+): "Reserved" | "Completed" | "Canceled" | "NoShow" | "Checkout" {
   switch (status) {
     case RESERVATION_STATUS_COMPLETED:
       return "Completed";
     case RESERVATION_STATUS_CANCELED:
       return "Canceled";
     case RESERVATION_STATUS_NO_SHOW:
-    case 5:
       return "NoShow";
+    case RESERVATION_STATUS_CHECKOUT:
+      return "Checkout";
     default:
       return "Reserved";
   }
@@ -44,11 +46,14 @@ const RESERVATION_STATUS_BY_API_NAME: Record<string, ReservationStatus> = {
   canceled: 3,
   cancelled: 3,
   noshow: 4,
+  checkout: 5,
   محجوز: 1,
   "تم اكتمال الاقامة": 2,
   "تأكيد وصول": 2,
   ملغى: 3,
   "لم يظهر": 4,
+  "تسجيل مغادرة": 5,
+  مغادرة: 5,
 };
 
 /**
@@ -184,9 +189,9 @@ export function parseReservationFromApi(
       : "");
   const startDate = pickIsoDate(raw, "startDate", "StartDate");
   const endDate = pickIsoDate(raw, "endDate", "EndDate");
-  const status = pickReservationStatus(raw);
+  const status = pickReservationStatus(raw) ?? RESERVATION_STATUS_RESERVED;
 
-  if (!id || !startDate || !endDate || status == null) {
+  if (!id || !startDate || !endDate) {
     return null;
   }
 
@@ -357,6 +362,51 @@ export function isReservationApiSuccess(response: unknown): boolean {
   }
 
   return true;
+}
+
+export function formatReservationStatusAr(status: ReservationStatus): string {
+  switch (status) {
+    case RESERVATION_STATUS_COMPLETED:
+      return "تم اكتمال الإقامة";
+    case RESERVATION_STATUS_CANCELED:
+      return "ملغى";
+    case RESERVATION_STATUS_NO_SHOW:
+      return "لم يظهر";
+    case RESERVATION_STATUS_CHECKOUT:
+      return "تم تسجيل المغادرة";
+    default:
+      return "محجوز";
+  }
+}
+
+/** Extension inquiry start date: same calendar day as reservation `endDate`. */
+export function extensionStartDateAfterReservation(endDateYmd: string): string | null {
+  const end = endDateYmd.trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) return null;
+  return end;
+}
+
+/** Latest `Completed` reservation for the current user (by end date, then start date). */
+export function pickLastCompletedReservation(
+  items: unknown[],
+): ReservationDtoPayload | null {
+  const completed: ReservationDtoPayload[] = [];
+
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    const parsed = parseReservationFromApi(item as Record<string, unknown>);
+    if (!parsed || parsed.isDeleted) continue;
+    if (parsed.status !== RESERVATION_STATUS_COMPLETED) continue;
+    completed.push(parsed);
+  }
+
+  completed.sort((a, b) => {
+    const byEnd = b.endDate.localeCompare(a.endDate);
+    if (byEnd !== 0) return byEnd;
+    return b.startDate.localeCompare(a.startDate);
+  });
+
+  return completed[0] ?? null;
 }
 
 /** Computes inclusive end date from start (yyyy-MM-dd) and night count. */

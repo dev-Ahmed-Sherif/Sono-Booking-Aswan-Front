@@ -291,6 +291,28 @@ function apartmentRowForUnit(
   return undefined;
 }
 
+/** Collect distinct inquiry genders from saved units using the availability hierarchy. */
+export function collectInquiryGendersFromUnits(
+  units: ReservationStoredUnitSnapshot[],
+  bedsRaw: unknown[],
+  roomsRaw: unknown[],
+  apartmentsRaw: unknown[],
+): GuestGender[] {
+  const aptById = indexRowsById(apartmentsRaw);
+  const roomById = indexRowsById(roomsRaw);
+  const bedById = indexRowsById(bedsRaw);
+  const out: GuestGender[] = [];
+
+  for (const unit of units) {
+    const g =
+      resolveUnitGuestGender(unit, aptById, roomById, bedById, []) ??
+      normalizeUnitGender(unit.genderType);
+    if (g && !out.includes(g)) out.push(g);
+  }
+
+  return out;
+}
+
 /** Resolve unit gender: bed→room→apartment API chain, saved label, then single inquiry filter. */
 export function resolveUnitGuestGender(
   unit: ReservationStoredUnitSnapshot,

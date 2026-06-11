@@ -222,7 +222,7 @@ const HousingSenderPage = () => {
   useRequireRole({ allowed });
   const { toast } = useToast();
 
-  const [activeView, setActiveView] = useState<SenderView>("new");
+  const [activeView, setActiveView] = useState<SenderView>("extension");
   const [selectedType, setSelectedType] = useState("all");
   const [requestTypeOptions, setRequestTypeOptions] = useState<GenericOption[]>(
     [],
@@ -577,6 +577,16 @@ const HousingSenderPage = () => {
                       <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
                         <Button
                           type="button"
+                          onClick={() => setActiveView("extension")}
+                          variant={activeView === "extension" ? "default" : "outline"}
+                          className="h-auto min-h-11 w-full justify-start py-3 text-base"
+                        >
+                          قسم طلبات التمديد
+                        </Button>
+                      </motion.div>
+                      <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                        <Button
+                          type="button"
                           onClick={() => setActiveView("new")}
                           variant={activeView === "new" ? "default" : "outline"}
                           className="h-auto min-h-11 w-full justify-start py-3 text-base"
@@ -592,16 +602,6 @@ const HousingSenderPage = () => {
                           className="h-auto min-h-11 w-full justify-start py-3 text-base"
                         >
                           قسم الطلبات الموافق عليها مؤخرًا
-                        </Button>
-                      </motion.div>
-                      <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
-                        <Button
-                          type="button"
-                          onClick={() => setActiveView("extension")}
-                          variant={activeView === "extension" ? "default" : "outline"}
-                          className="h-auto min-h-11 w-full justify-start py-3 text-base"
-                        >
-                          قسم طلبات التمديد
                         </Button>
                       </motion.div>
                     </CardContent>

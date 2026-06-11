@@ -17,7 +17,10 @@ import {
   isReservationApiSuccess,
   parseReservationFromApi,
   parseReservationsListFromApi,
+  RESERVATION_STATUS_CANCELED,
+  RESERVATION_STATUS_CHECKOUT,
   RESERVATION_STATUS_COMPLETED,
+  RESERVATION_STATUS_NO_SHOW,
   RESERVATION_STATUS_RESERVED,
   type ReservationDtoPayload,
   type ReservationStatus,
@@ -328,21 +331,68 @@ export function mapReservationToReceiverRow(
   };
 }
 
-/** In-progress stays: `Reserved`, or checked-in (`Completed`) without departure yet. */
+/**
+ * Guest has departed (تسجيل مغادرة). Prefer reservation status; fall back for legacy rows.
+ */
+export function hasReservationDeparted(row: {
+  status?: ReservationStatus;
+  checkInAt?: string;
+  actualCheckOutAt?: string;
+}): boolean {
+  if (row.status === RESERVATION_STATUS_CHECKOUT) return true;
+
+  const checkIn = String(row.checkInAt ?? "").trim();
+  const checkOut = String(row.actualCheckOutAt ?? "").trim();
+  if (!checkOut || !checkIn) return false;
+
+  const checkInMs = new Date(checkIn).getTime();
+  const checkOutMs = new Date(checkOut).getTime();
+  if (Number.isNaN(checkInMs) || Number.isNaN(checkOutMs)) {
+    return checkOut > checkIn;
+  }
+
+  return checkOutMs - checkInMs > 60_000;
+}
+
+/**
+ * Checked-in (`Completed`) and not yet checked out (`Checkout`).
+ */
+export function isReservationStillInHouse(row: {
+  status: ReservationStatus;
+  checkInAt?: string;
+  actualCheckOutAt?: string;
+}): boolean {
+  if (row.status === RESERVATION_STATUS_CHECKOUT) return false;
+  return row.status === RESERVATION_STATUS_COMPLETED;
+}
+
+/**
+ * In-progress stays for the active tab:
+ * - `Reserved` with stay not ended yet (`endDate ≥ today`, including future arrivals)
+ * - `Completed` guests still in-house (status not `Checkout`)
+ */
 export function filterActiveReservationsToday(
   rows: ReceiverReservationRow[],
   todayYmd: string = todayYmdLocal(),
 ): ReceiverReservationRow[] {
   return rows.filter((row) => {
-    if (row.endDateYmd < todayYmd) return false;
-    if (row.startDateYmd > todayYmd) return false;
+    if (
+      row.status === RESERVATION_STATUS_CANCELED ||
+      row.status === RESERVATION_STATUS_CHECKOUT ||
+      row.status === RESERVATION_STATUS_NO_SHOW
+    ) {
+      return false;
+    }
 
-    if (row.status === RESERVATION_STATUS_RESERVED) return true;
+    if (row.status === RESERVATION_STATUS_RESERVED) {
+      return row.endDateYmd >= todayYmd;
+    }
 
-    return (
-      row.status === RESERVATION_STATUS_COMPLETED &&
-      !String(row.actualCheckOutAt ?? "").trim()
-    );
+    if (row.status === RESERVATION_STATUS_COMPLETED) {
+      return isReservationStillInHouse(row);
+    }
+
+    return false;
   });
 }
 
@@ -376,7 +426,10 @@ export function buildReceiverReservationRows(input: {
   if (reservationsError) {
     return { ok: false, message: reservationsError };
   }
-  if (!isReservationApiSuccess(input.reservationsRes)) {
+  if (
+    !isReservationApiSuccess(input.reservationsRes) &&
+    !Array.isArray(input.reservationsRes)
+  ) {
     return { ok: false, message: "تعذر تحميل الحجوزات من الخادم." };
   }
 

@@ -134,8 +134,20 @@ function isReservedOrOccupiedCatalogStatus(status: unknown): boolean {
 }
 
 /**
- * Unit is bookable when inquiry start is strictly after the last request/extension end
- * (unit becomes free after that date).
+ * Inquiry start is effective at 12:00:01 on the selected day.
+ * Blocking ends at 12:00:00 on ActualCheckOutDate (checkout by noon).
+ * Example: checkout 21-06-2026 → bookable from 21-06-2026 12:00:01, not the next day.
+ */
+function inquiryStartAfterNoonMs(ymd: string): number {
+  return new Date(`${ymd}T12:00:01`).getTime();
+}
+
+function blockingEndAtNoonMs(ymd: string): number {
+  return new Date(`${ymd}T12:00:00`).getTime();
+}
+
+/**
+ * Unit is bookable when inquiry start (after noon) is strictly after blocking end (noon on last day).
  */
 export function isUnitFreeFromInquiryStart(
   inquiryStartYmd: string | undefined,
@@ -158,7 +170,9 @@ export function isUnitFreeFromInquiryStart(
     return false;
   }
   if (!blockingEnd) return true;
-  return compareYmd(inquiryStartYmd, blockingEnd) > 0;
+  return (
+    inquiryStartAfterNoonMs(inquiryStartYmd) > blockingEndAtNoonMs(blockingEnd)
+  );
 }
 
 export function filterUnitsByInquiryStartDate(
@@ -177,7 +191,6 @@ export function filterUnitsByInquiryStartDate(
       inquiryStartYmd,
       rowEnd,
       extraEnd,
-      row.status ?? row.Status,
     );
   });
 }

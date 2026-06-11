@@ -8,7 +8,7 @@ import {
   parseRequestServiceError,
 } from "@/lib/housing-request-map";
 import {
-  RESERVATION_STATUS_COMPLETED,
+  RESERVATION_STATUS_CHECKOUT,
   serializeAddReservationDtoForApi,
 } from "@/lib/reservation-map";
 
@@ -24,7 +24,7 @@ export type CheckoutHousingReservationResult =
   | { ok: false; message: string };
 
 /**
- * `PUT /Reservations/update` with `status: "Completed"` and `actualCheckOutDate` set to now.
+ * `PUT /Reservations/update` with `status: "Checkout"` and `actualCheckOutDate` set to now.
  */
 export async function checkoutHousingReservation(
   input: CheckoutHousingReservationInput,
@@ -47,7 +47,7 @@ export async function checkoutHousingReservation(
       requestId,
       startDate: reservation.startDate,
       endDate: reservation.endDate,
-      status: RESERVATION_STATUS_COMPLETED,
+      status: RESERVATION_STATUS_CHECKOUT,
       totalAmount: reservation.totalAmount,
       checkInDate: reservation.checkInDate ?? nowIso,
       actualCheckOutDate: nowIso,

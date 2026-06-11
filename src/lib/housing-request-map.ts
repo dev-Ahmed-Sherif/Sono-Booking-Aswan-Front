@@ -1,5 +1,6 @@
 import type { AvailableUnitType } from "@/actions/availabilityService";
 import {
+  mergeAvailabilityGenderFromRows,
   unitSnapshotFromRequestUnitDto,
   type ReservationStoredUnitSnapshot,
 } from "@/lib/availability-inquiry";
@@ -11,6 +12,15 @@ import {
   type GuestGender,
 } from "@/lib/reservation-guest-unit-validation";
 
+/** Mirrors swagger `RequestCatagory` enum (`AddRequestDto.requestCatagory`). */
+export type HousingRequestCatagoryApi = "NewStay" | "Extension";
+
+export const HOUSING_REQUEST_CATAGORY_NEW_STAY: HousingRequestCatagoryApi =
+  "NewStay";
+
+export const HOUSING_REQUEST_CATAGORY_EXTENSION: HousingRequestCatagoryApi =
+  "Extension";
+
 /** Mirrors `SonoBooking.Common.DTO.Housing.Request.AddRequestDto`. */
 export type AddRequestDtoPayload = {
   id?: string;
@@ -20,6 +30,10 @@ export type AddRequestDtoPayload = {
   nights: number;
   requestTypeId: string;
   requestAllocationType: 1 | 2;
+  /** Required by API — field name matches backend spelling (`requestCatagory`). */
+  requestCatagory: HousingRequestCatagoryApi;
+  /** Set for extension requests (`RequestCatagory.Extension`). */
+  reservationId?: string;
   requestUnits: AddRequestUnitDtoPayload[];
   requestCompanions: AddRequestParticipantDtoPayload[];
   rejectionReason?: string;
@@ -127,6 +141,10 @@ export function serializeAddRequestDtoForApi(
     requestCompanions,
   };
 
+  body.requestCatagory = payload.requestCatagory;
+  if (payload.reservationId?.trim()) {
+    body.reservationId = payload.reservationId.trim();
+  }
   if (payload.requestNumber) body.requestNumber = payload.requestNumber;
   if (payload.status != null) {
     body.status =
@@ -338,25 +356,30 @@ export function parseAllocationTypeEnum(
   return undefined;
 }
 
-/** Resolves parent ids on stored snapshots for validation/display (not sent on add/update). */
+/** Resolves parent ids and gender labels on stored snapshots (not sent on add/update). */
 export function enrichStoredUnitsWithHierarchyIds(
   units: ReservationStoredUnitSnapshot[],
   bedsRaw: unknown[],
   roomsRaw: unknown[],
-  _apartmentsRaw: unknown[],
+  apartmentsRaw: unknown[],
 ): ReservationStoredUnitSnapshot[] {
   const roomById = indexRowsById(roomsRaw);
   const bedById = indexRowsById(bedsRaw);
+  const aptById = indexRowsById(apartmentsRaw);
 
   return units.map((unit) => {
     const id = unit.id.trim();
     const idKey = id.toLowerCase();
 
     if (unit.unitKind === "apartment") {
+      const apt = aptById.get(idKey);
+      const genderType =
+        mergeAvailabilityGenderFromRows(apt) ?? unit.genderType;
       return {
         ...unit,
         apartmentId: unit.apartmentId?.trim() || id,
         roomId: undefined,
+        ...(genderType ? { genderType } : {}),
       };
     }
 
@@ -365,10 +388,16 @@ export function enrichStoredUnitsWithHierarchyIds(
       const apartmentId =
         unit.apartmentId?.trim() ||
         (room ? pickStr(room, "apartmentId", "ApartmentId") : "");
+      const apt = apartmentId
+        ? aptById.get(apartmentId.toLowerCase())
+        : undefined;
+      const genderType =
+        mergeAvailabilityGenderFromRows(room, apt) ?? unit.genderType;
       return {
         ...unit,
         apartmentId: apartmentId || unit.apartmentId,
         roomId: unit.roomId?.trim() || id,
+        ...(genderType ? { genderType } : {}),
       };
     }
 
@@ -381,10 +410,16 @@ export function enrichStoredUnitsWithHierarchyIds(
       const apartmentId =
         unit.apartmentId?.trim() ||
         (room ? pickStr(room, "apartmentId", "ApartmentId") : "");
+      const apt = apartmentId
+        ? aptById.get(apartmentId.toLowerCase())
+        : undefined;
+      const genderType =
+        mergeAvailabilityGenderFromRows(bed, room, apt) ?? unit.genderType;
       return {
         ...unit,
         apartmentId: apartmentId || unit.apartmentId,
         roomId: roomId || unit.roomId,
+        ...(genderType ? { genderType } : {}),
       };
     }
 
@@ -566,6 +601,7 @@ export function mapReservationToAddRequestDto(input: {
     nights: Math.trunc(nights),
     requestTypeId,
     requestAllocationType,
+    requestCatagory: HOUSING_REQUEST_CATAGORY_NEW_STAY,
     requestUnits: normalizeRequestUnitsForAddRequestDto(requestUnits),
     requestCompanions,
   };

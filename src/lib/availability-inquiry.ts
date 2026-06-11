@@ -13,6 +13,7 @@ import {
   filterRoomsWithAvailableApartment,
   applyAvailabilityHierarchyFilters,
 } from "@/lib/availability-hierarchy";
+import type { UnitBlockingEndIndex } from "@/lib/availability-occupancy";
 
 export type AvailabilityUnitCard = {
   id: string;
@@ -23,6 +24,10 @@ export type AvailabilityUnitCard = {
   apartmentId?: string;
   /** Parent room id when `unitKind` is `bed`. */
   roomId?: string;
+  /** Display label for parent room (bed cards). */
+  parentRoomLabel?: string;
+  /** Display label for parent apartment (bed / room cards). */
+  parentApartmentLabel?: string;
   /** Unit gender / gender-type label when the API provides it (Arabic or normalized). */
   genderType?: string;
   /** Building number for display (Arabic numerals when numeric). */
@@ -53,6 +58,8 @@ export type ReservationStoredUnitSnapshot = Pick<
   | "subtitle"
   | "apartmentId"
   | "roomId"
+  | "parentRoomLabel"
+  | "parentApartmentLabel"
   | "priceLabel"
   | "genderType"
   | "buildingNumberAr"
@@ -71,6 +78,10 @@ export function toReservationStoredUnits(
     ...(u.roomId ? { roomId: u.roomId } : {}),
     priceLabel: u.priceLabel,
     genderType: u.genderType,
+    ...(u.parentRoomLabel ? { parentRoomLabel: u.parentRoomLabel } : {}),
+    ...(u.parentApartmentLabel
+      ? { parentApartmentLabel: u.parentApartmentLabel }
+      : {}),
     buildingNumberAr: u.buildingNumberAr,
     city: u.city,
   }));
@@ -375,6 +386,27 @@ function mergeCityFromRows(
   return undefined;
 }
 
+function pickPriceLabel(
+  ...rows: Array<Record<string, unknown> | undefined>
+): string | undefined {
+  for (const r of rows) {
+    if (!r) continue;
+    const price =
+      r.price ??
+      r.Price ??
+      r.unitPrice ??
+      r.UnitPrice ??
+      r.pricePerNight ??
+      r.PricePerNight ??
+      r.nightlyPrice ??
+      r.NightlyPrice;
+    if (price != null && Number.isFinite(Number(price))) {
+      return `${Number(price).toLocaleString("ar-EG")} ج.م`;
+    }
+  }
+  return undefined;
+}
+
 function mapRawToCards(
   unitType: AvailableUnitType,
   raw: unknown[],
@@ -382,11 +414,7 @@ function mapRawToCards(
   return raw.map((item, idx) => {
     const r = item as Record<string, unknown>;
     const id = pickStr(r, "id", "Id") || `row-${idx}`;
-    const price = r.price ?? r.Price;
-    const priceLabel =
-      price != null && Number.isFinite(Number(price))
-        ? `${Number(price).toLocaleString("ar-EG")} ج.م`
-        : undefined;
+    const priceLabel = pickPriceLabel(r);
 
     const genderType = pickGenderTypeLabel(r);
     const buildingNumberAr = mergeBuildingNumberArFromRows(r);
@@ -491,6 +519,14 @@ export function unitSnapshotFromRequestUnitDto(
   if (dto.bedId?.trim()) {
     const id = dto.bedId.trim();
     const row = findAvailabilityRowById(bedsRaw, id);
+    const roomId =
+      dto.roomId?.trim() ||
+      (row ? pickStr(row, "roomId", "RoomId") : "");
+    const room = roomId ? findAvailabilityRowById(roomsRaw, roomId) : undefined;
+    const aptId =
+      dto.apartmentId?.trim() ||
+      (room ? pickStr(room, "apartmentId", "ApartmentId") : "");
+    const apt = aptId ? findAvailabilityRowById(apartmentsRaw, aptId) : undefined;
     const card = row
       ? mapRawToCards("bed", [row])[0]
       : {
@@ -503,8 +539,19 @@ export function unitSnapshotFromRequestUnitDto(
       {
         ...card,
         id,
-        apartmentId: dto.apartmentId?.trim() || card.apartmentId,
-        roomId: dto.roomId?.trim() || card.roomId,
+        title: row ? formatBedLabel(row as Record<string, unknown>) : card.title,
+        apartmentId: aptId || card.apartmentId,
+        roomId: roomId || card.roomId,
+        ...(room
+          ? { parentRoomLabel: formatRoomLabel(room as Record<string, unknown>) }
+          : {}),
+        ...(apt
+          ? {
+              parentApartmentLabel: formatApartmentLabel(
+                apt as Record<string, unknown>,
+              ),
+            }
+          : {}),
       },
     ])[0]!;
   }
@@ -512,6 +559,10 @@ export function unitSnapshotFromRequestUnitDto(
   if (dto.roomId?.trim()) {
     const id = dto.roomId.trim();
     const row = findAvailabilityRowById(roomsRaw, id);
+    const aptId =
+      dto.apartmentId?.trim() ||
+      (row ? pickStr(row, "apartmentId", "ApartmentId") : "");
+    const apt = aptId ? findAvailabilityRowById(apartmentsRaw, aptId) : undefined;
     const card = row
       ? mapRawToCards("room", [row])[0]
       : {
@@ -524,7 +575,15 @@ export function unitSnapshotFromRequestUnitDto(
       {
         ...card,
         id,
-        apartmentId: dto.apartmentId?.trim() || card.apartmentId,
+        title: row ? formatRoomLabel(row as Record<string, unknown>) : card.title,
+        apartmentId: aptId || card.apartmentId,
+        ...(apt
+          ? {
+              parentApartmentLabel: formatApartmentLabel(
+                apt as Record<string, unknown>,
+              ),
+            }
+          : {}),
       },
     ])[0]!;
   }
@@ -559,9 +618,33 @@ export function unitSnapshotFromRequestUnitDto(
   ])[0]!;
 }
 
+function formatBedLabel(r: Record<string, unknown>): string {
+  const num = pickStr(r, "bedNumber", "BedNumber");
+  const numAr = num ? formatArUnitNumber(num) : "";
+  return numAr ? `سرير ${numAr}` : "سرير";
+}
+
+function formatRoomLabel(r: Record<string, unknown>): string {
+  const num = pickStr(r, "roomNumber", "RoomNumber");
+  const numAr = num ? formatArUnitNumber(num) : "";
+  return numAr ? `غرفة ${numAr}` : "غرفة";
+}
+
+function formatApartmentLabel(r: Record<string, unknown>): string {
+  const num = pickStr(r, "apartmentNumber", "ApartmentNumber");
+  const numAr = num ? formatArUnitNumber(num) : "";
+  return numAr ? `شقة ${numAr}` : "شقة";
+}
+
+export type AvailabilityHierarchyRaw = {
+  apartmentsRaw?: unknown[];
+  roomsRaw?: unknown[];
+};
+
 export async function enrichAvailabilityCards(
   unitKind: AvailableUnitType,
   rawList: unknown[],
+  hierarchy?: AvailabilityHierarchyRaw,
 ): Promise<AvailabilityUnitCard[]> {
   if (unitKind === "apartment") {
     const base = mapRawToCards(unitKind, rawList);
@@ -593,10 +676,12 @@ export async function enrichAvailabilityCards(
         mergeBuildingNumberArFromRows(r) ?? b.buildingNumberAr;
       const cityMerged = mergeCityFromRows(r) ?? b.city;
       const aptId = pickStr(r, "id", "Id");
+      const priceLabel = pickPriceLabel(r) ?? b.priceLabel;
       return {
         ...b,
         title,
         apartmentId: aptId || b.apartmentId,
+        ...(priceLabel ? { priceLabel } : {}),
         ...(genderType ? { genderType } : {}),
         ...(buildingNumberAr ? { buildingNumberAr } : {}),
         ...(cityMerged ? { city: cityMerged } : {}),
@@ -605,11 +690,14 @@ export async function enrichAvailabilityCards(
   }
 
   if (unitKind === "room") {
-    const aptRes = await getAvailableUnits("apartment");
-    if ("error" in aptRes && aptRes.error) {
-      return mapRawToCards(unitKind, rawList);
+    let aptRows: unknown[] = hierarchy?.apartmentsRaw ?? [];
+    if (!aptRows.length) {
+      const aptRes = await getAvailableUnits("apartment");
+      if ("error" in aptRes && aptRes.error) {
+        return mapRawToCards(unitKind, rawList);
+      }
+      aptRows = Array.isArray(aptRes.data) ? aptRes.data : [];
     }
-    const aptRows = Array.isArray(aptRes.data) ? aptRes.data : [];
     const aptById = indexRowsById(aptRows);
     const workingList = filterRoomsWithAvailableApartment(rawList, aptRows);
     const base = mapRawToCards(unitKind, workingList);
@@ -624,29 +712,23 @@ export async function enrichAvailabilityCards(
     return workingList.map((item, idx) => {
       const r = item as Record<string, unknown>;
       const b = safeBase(idx);
-      const roomNum = pickStr(r, "roomNumber", "RoomNumber");
-      const roomAr = roomNum ? formatArUnitNumber(roomNum) : "";
       const roomId = pickStr(r, "id", "Id");
       const aptId = pickStr(r, "apartmentId", "ApartmentId");
       const apt = aptId ? aptById.get(aptId.trim().toLowerCase()) : undefined;
-      const aptNum = apt
-        ? pickStr(apt, "apartmentNumber", "ApartmentNumber")
-        : "";
-      const aptAr = aptNum ? formatArUnitNumber(aptNum) : "";
-      const parts = [
-        roomAr && `غرفة ${roomAr}`,
-        aptAr && `شقة ${aptAr}`,
-      ].filter(Boolean);
-      const title = parts.length > 0 ? parts.join(" — ") : b.title;
+      const parentApartmentLabel = apt ? formatApartmentLabel(apt) : undefined;
+      const title = formatRoomLabel(r);
       const genderType = mergeGenderFromRows(r, apt) ?? b.genderType;
       const buildingNumberAr =
         mergeBuildingNumberArFromRows(r, apt) ?? b.buildingNumberAr;
       const cityMerged = mergeCityFromRows(r, apt) ?? b.city;
+      const priceLabel = pickPriceLabel(r, apt) ?? b.priceLabel;
       return {
         ...b,
         title,
         apartmentId: aptId || b.apartmentId,
         roomId: roomId || b.roomId,
+        ...(parentApartmentLabel ? { parentApartmentLabel } : {}),
+        ...(priceLabel ? { priceLabel } : {}),
         ...(genderType ? { genderType } : {}),
         ...(buildingNumberAr ? { buildingNumberAr } : {}),
         ...(cityMerged ? { city: cityMerged } : {}),
@@ -654,24 +736,37 @@ export async function enrichAvailabilityCards(
     });
   }
 
-  const [roomRes, aptRes] = await Promise.all([
-    getAvailableUnits("room"),
-    getAvailableUnits("apartment"),
-  ]);
-  const roomRows =
-    !("error" in roomRes && roomRes.error) && Array.isArray(roomRes.data)
-      ? roomRes.data
-      : [];
-  const aptRows =
-    !("error" in aptRes && aptRes.error) && Array.isArray(aptRes.data)
-      ? aptRes.data
-      : [];
+  let roomRows: unknown[] = hierarchy?.roomsRaw ?? [];
+  let aptRows: unknown[] = hierarchy?.apartmentsRaw ?? [];
+  if (!roomRows.length || !aptRows.length) {
+    const [roomRes, aptRes] = await Promise.all([
+      roomRows.length
+        ? Promise.resolve({ data: roomRows })
+        : getAvailableUnits("room"),
+      aptRows.length
+        ? Promise.resolve({ data: aptRows })
+        : getAvailableUnits("apartment"),
+    ]);
+    if (!roomRows.length) {
+      roomRows =
+        !("error" in roomRes && roomRes.error) && Array.isArray(roomRes.data)
+          ? roomRes.data
+          : [];
+    }
+    if (!aptRows.length) {
+      aptRows =
+        !("error" in aptRes && aptRes.error) && Array.isArray(aptRes.data)
+          ? aptRes.data
+          : [];
+    }
+  }
+
+  const roomById = indexRowsById(roomRows);
+  const aptById = indexRowsById(aptRows);
   const roomsWithAvailableApartment = filterRoomsWithAvailableApartment(
     roomRows,
     aptRows,
   );
-  const roomById = indexRowsById(roomsWithAvailableApartment);
-  const aptById = indexRowsById(aptRows);
   const workingList = filterBedsWithAvailableRoom(
     rawList,
     roomsWithAvailableApartment,
@@ -688,33 +783,26 @@ export async function enrichAvailabilityCards(
   return workingList.map((item, idx) => {
     const r = item as Record<string, unknown>;
     const b = safeBase(idx);
-    const bedNum = pickStr(r, "bedNumber", "BedNumber");
-    const bedAr = bedNum ? formatArUnitNumber(bedNum) : "";
     const roomId = pickStr(r, "roomId", "RoomId");
     const room = roomId ? roomById.get(roomId.trim().toLowerCase()) : undefined;
-    const roomNum = room ? pickStr(room, "roomNumber", "RoomNumber") : "";
-    const roomAr = roomNum ? formatArUnitNumber(roomNum) : "";
     const aptId = room ? pickStr(room, "apartmentId", "ApartmentId") : "";
     const apt = aptId ? aptById.get(aptId.trim().toLowerCase()) : undefined;
-    const aptNum = apt
-      ? pickStr(apt, "apartmentNumber", "ApartmentNumber")
-      : "";
-    const aptAr = aptNum ? formatArUnitNumber(aptNum) : "";
-    const parts = [
-      bedAr && `سرير ${bedAr}`,
-      roomAr && `غرفة ${roomAr}`,
-      aptAr && `شقة ${aptAr}`,
-    ].filter(Boolean);
-    const title = parts.length > 0 ? parts.join(" — ") : b.title;
+    const parentRoomLabel = room ? formatRoomLabel(room) : undefined;
+    const parentApartmentLabel = apt ? formatApartmentLabel(apt) : undefined;
+    const title = formatBedLabel(r);
     const genderType = mergeGenderFromRows(r, room, apt) ?? b.genderType;
     const buildingNumberAr =
       mergeBuildingNumberArFromRows(r, room, apt) ?? b.buildingNumberAr;
     const cityMerged = mergeCityFromRows(r, room, apt) ?? b.city;
+    const priceLabel = pickPriceLabel(r, room, apt) ?? b.priceLabel;
     return {
       ...b,
       title,
       apartmentId: aptId || b.apartmentId,
       roomId: roomId || b.roomId,
+      ...(parentRoomLabel ? { parentRoomLabel } : {}),
+      ...(parentApartmentLabel ? { parentApartmentLabel } : {}),
+      ...(priceLabel ? { priceLabel } : {}),
       ...(genderType ? { genderType } : {}),
       ...(buildingNumberAr ? { buildingNumberAr } : {}),
       ...(cityMerged ? { city: cityMerged } : {}),
@@ -784,6 +872,7 @@ export async function fetchMergedAvailabilityCards(
   cards: AvailabilityUnitCard[];
   fatalError?: string;
   partialFailure?: boolean;
+  occupancyIndex?: UnitBlockingEndIndex | null;
 }> {
   if (kinds.length === 0) return { cards: [] };
 
@@ -800,6 +889,8 @@ export async function fetchMergedAvailabilityCards(
 
   await Promise.all(
     Array.from(kindsToFetch).map(async (unitKind: AvailableUnitType) => {
+      // StartDate expands catalog to Reserved/Occupied and applies ActualCheckOutDate
+      // occupancy on the API (noon rule). Client hierarchy only wires parent/child ids.
       const res = await getAvailableUnits(unitKind, inquiry);
       if ("error" in res && res.error) {
         if (kinds.includes(unitKind)) {
@@ -817,11 +908,19 @@ export async function fetchMergedAvailabilityCards(
   const roomsRaw = rawByKind.room ?? [];
   const bedsRaw = rawByKind.bed ?? [];
 
-  // Date filtering uses StartDate/Nights headers on Beds|Rooms|Apartments/getAll (backend).
+  const occupancyIndex =
+    inquiry?.startDateYmd?.trim()
+      ? await loadUnitBlockingEndIndex(bedsRaw, roomsRaw)
+      : null;
+
   const filtered = applyAvailabilityHierarchyFilters({
     apartments: apartmentsRaw,
     rooms: roomsRaw,
     beds: bedsRaw,
+    hierarchyRaw: { apartmentsRaw, roomsRaw },
+    ...(inquiry?.startDateYmd
+      ? { inquiry, occupancyIndex }
+      : {}),
   });
 
   const merged: AvailabilityUnitCard[] = [];
@@ -832,7 +931,12 @@ export async function fetchMergedAvailabilityCards(
         : unitKind === "room"
           ? filtered.rooms
           : filtered.beds;
-    merged.push(...(await enrichAvailabilityCards(unitKind, list)));
+    merged.push(
+      ...(await enrichAvailabilityCards(unitKind, list, {
+        apartmentsRaw,
+        roomsRaw,
+      })),
+    );
   }
 
   if (merged.length === 0 && failures > 0) {
@@ -842,6 +946,7 @@ export async function fetchMergedAvailabilityCards(
   return {
     cards: merged,
     partialFailure: failures > 0 && merged.length > 0,
+    occupancyIndex,
   };
 }
 
@@ -864,6 +969,10 @@ export async function hierarchyFilteredAvailabilityLists(input: {
     apartments: input.apartmentsRaw,
     rooms: input.roomsRaw,
     beds: input.bedsRaw,
+    hierarchyRaw: {
+      apartmentsRaw: input.apartmentsRaw,
+      roomsRaw: input.roomsRaw,
+    },
     ...(input.inquiry?.startDateYmd ? { inquiry: input.inquiry, occupancyIndex } : {}),
   });
   return {

@@ -289,6 +289,21 @@ export async function reserveHousingUnitsForApproval(
 }
 
 /**
+ * After restoring a canceled reservation, mark linked beds/rooms/apartments as Reserved.
+ */
+export async function reserveHousingUnitsForRequest(
+  requestId: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const loaded = await loadRequestUnitsForRequest(requestId);
+  if (!loaded.ok) return loaded;
+
+  const targets = collectReserveTargets(loaded.units);
+  if (targets.length === 0) return { ok: true };
+
+  return applyUnitStatusToTargets(targets, "reserve");
+}
+
+/**
  * After check-in, mark linked beds/rooms/apartments as Occupied.
  */
 export async function occupyHousingUnitsForRequest(

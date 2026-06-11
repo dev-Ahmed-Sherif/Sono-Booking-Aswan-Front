@@ -1,6 +1,7 @@
 "use server";
 
 import { loadReservationForMutation } from "@/actions/housingReservationMutation";
+import { reserveHousingUnitsForRequest } from "@/actions/reserveHousingUnits";
 import { updateReservationById } from "@/actions/reservationService";
 import {
   isRequestServiceSuccess,
@@ -19,12 +20,12 @@ export type RestoreHousingReservationInput = {
 };
 
 export type RestoreHousingReservationResult =
-  | { ok: true }
+  | { ok: true; unitReserveWarning?: string }
   | { ok: false; message: string };
 
 /**
  * `PUT /Reservations/update` with `status: "Reserved"`, empty `cancelationReason`,
- * and `actualCheckOutDate` cleared.
+ * `actualCheckOutDate` cleared, then units marked Reserved.
  */
 export async function restoreHousingReservation(
   input: RestoreHousingReservationInput,
@@ -57,6 +58,14 @@ export async function restoreHousingReservation(
     return {
       ok: false,
       message: parseRequestServiceError(res) ?? "تعذر إعادة الحجز إلى محجوز.",
+    };
+  }
+
+  const reserveResult = await reserveHousingUnitsForRequest(requestId);
+  if (!reserveResult.ok) {
+    return {
+      ok: true,
+      unitReserveWarning: reserveResult.message,
     };
   }
 
