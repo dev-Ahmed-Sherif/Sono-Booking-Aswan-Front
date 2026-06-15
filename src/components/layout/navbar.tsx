@@ -55,6 +55,7 @@ import {
   canAccessHousingReceiverFromCandidates,
   canAccessHousingSenderFromCandidates,
   HOUSING_SENDER_ROLE,
+  isSuperAdminRoleCandidates,
   type RoleCandidates,
 } from "@/lib/role-utils";
 
@@ -522,6 +523,14 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
           pathname === `/${locale}/settings` ||
           pathname.startsWith(`/${locale}/settings/`),
       },
+      {
+        id: 6,
+        href: `/${locale}/reports`,
+        label: tNav("reports"),
+        active:
+          pathname === `/${locale}/reports` ||
+          pathname.startsWith(`/${locale}/reports/`),
+      },
     ];
 
     const normalizedRole = effectiveRole;
@@ -536,6 +545,10 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
         : {}),
     };
 
+    const canAccessReports =
+      isSuperAdminRoleCandidates(roleCandidates) ||
+      canAccessHousingSenderFromCandidates(roleCandidates);
+
     if (normalizedRole === "user") {
       return allRoutes.filter(
         (route) => route.href === `/${locale}/reservation`,
@@ -545,7 +558,8 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
       return allRoutes.filter(
         (route) =>
           route.href === `/${locale}/dashboard` ||
-          route.href === `/${locale}/housing-sender`,
+          route.href === `/${locale}/housing-sender` ||
+          route.href === `/${locale}/reports`,
       );
     }
     if (canAccessHousingReceiverFromCandidates(roleCandidates)) {
@@ -560,6 +574,9 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
       }
       if (route.href === `/${locale}/housing-receiver`) {
         return canAccessHousingReceiverFromCandidates(roleCandidates);
+      }
+      if (route.href === `/${locale}/reports`) {
+        return canAccessReports;
       }
       return true;
     });

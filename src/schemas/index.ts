@@ -466,7 +466,7 @@ export const reportSchema = z.object({
     required_error: "يجب اختيار تاريخ النهاية",
     invalid_type_error: "تاريخ غير صالح",
   }),
-  technicalJobTypeId: z.string().optional(),
+  reservationStatus: z.string().optional(),
   reportName: z.string().min(1, {
     message: "اسم التقرير مطلوب",
   }),

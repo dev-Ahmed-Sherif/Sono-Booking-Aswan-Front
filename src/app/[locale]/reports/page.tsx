@@ -1,4 +1,4 @@
-import Client from "@/components/reports/client";
+import Client from "@/components/report/client";
 
 const Reports = async () => {
   return (

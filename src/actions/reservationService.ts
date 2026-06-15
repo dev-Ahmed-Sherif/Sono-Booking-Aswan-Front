@@ -8,6 +8,7 @@ import type {
   AddReservationDtoPayload,
   ReservationPagedFilterPayload,
 } from "@/lib/reservation-map";
+import { fetchReportBlob } from "@/lib/report-fetch";
 
 type Payload = Record<string, unknown>;
 
@@ -156,11 +157,25 @@ const deleteReservationById = async (id: string) =>
 const softDeleteReservationById = async (id: string) =>
   request("delete", `${process.env.BACK_END}/${BASE}/deleteSoft/${id}`);
 
+const getReservationReport = async (data: {
+  startDate: Date | string;
+  endDate: Date | string;
+  reportName: string;
+  reportType: string;
+  reservationStatus?: string | number;
+}) =>
+  fetchReportBlob(
+    `${BASE}/getReport`,
+    data,
+    "تقرير تفاصيل الحجوزات",
+  );
+
 export {
   addReservation,
   deleteReservationById,
   getAllReservations,
   getReservationById,
+  getReservationReport,
   getReservations,
   getReservationsPaged,
   softDeleteReservationById,

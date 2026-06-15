@@ -8,6 +8,7 @@ import {
   buildAddRequestFormData,
   type AddRequestDtoPayload,
 } from "@/lib/housing-request-map";
+import { fetchReportBlob } from "@/lib/report-fetch";
 
 type Payload = Record<string, unknown>;
 
@@ -183,12 +184,25 @@ const getRequestParticipantsAll = async (userId?: string) =>
     { userId: userId?.trim() },
   );
 
+const getRequestReport = async (data: {
+  startDate: Date | string;
+  endDate: Date | string;
+  reportName: string;
+  reportType: string;
+}) =>
+  fetchReportBlob(
+    `${BASE}/getReport`,
+    data,
+    "تقرير الطلبات",
+  );
+
 export {
   addRequest,
   deleteRequestById,
   getAllRequests,
   getRequestById,
   getRequestParticipantsAll,
+  getRequestReport,
   getRequests,
   getRequestsDropDown,
   getRequestUnitsAll,
