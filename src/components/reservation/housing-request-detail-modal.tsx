@@ -82,6 +82,7 @@ import {
   buildCompanionDisplayMapForIds,
   buildCompanionGenderMap,
   buildUpdateRequestPayload,
+  buildRequestOldImagesPayload,
   companionDisplayNameFromRecord,
   lookupCompanionName,
   extractApiEntity,
@@ -90,11 +91,14 @@ import {
   filterRowsByRequestId,
   resolveParticipantRowsForRequest,
   parseRequestDetail,
+  parseRequestAttachesFromApi,
   parseRequestUnitFromApi,
   resolveInquiryGendersForRequest,
+  type HousingRequestAttachmentSnapshot,
   type HousingRequestDetail,
 } from "@/lib/housing-request-detail";
 import {
+  buildAddRequestFormData,
   type AddRequestUnitDtoPayload,
   enrichStoredUnitsWithHierarchyIds,
   formatAddRequestErrorMessage,
@@ -103,10 +107,13 @@ import {
   prepareHousingRequestForSubmit,
   requestUnitDtosToEnrichedSnapshots,
 } from "@/lib/housing-request-map";
+import { submitUpdateRequestFormData } from "@/lib/request-add-client";
+import { formDataHasFileEntries } from "@/lib/form-data-relay";
+import { RequestAttachmentsInput } from "@/components/reservation/request-attachments-input";
+import { RequestSavedAttachmentsList } from "@/components/reservation/request-saved-attachments-list";
 import {
   canCancelHousingRequest,
   canEditHousingRequest,
-  isHousingRequestApproved,
   isHousingRequestStatusLocked,
   type HousingRequestTableRow,
 } from "@/lib/housing-request-list";
@@ -215,14 +222,19 @@ export function HousingRequestDetailModal({
   >([]);
   const [editFieldErrors, setEditFieldErrors] = useState<EditFieldErrors>({});
   const [nightsInput, setNightsInput] = useState("");
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<
+    HousingRequestAttachmentSnapshot[]
+  >([]);
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState(
+    () => new Set<string>(),
+  );
   const [requestOwnerUserId, setRequestOwnerUserId] = useState("");
 
   const isEdit = mode === "edit";
   const isExtensionRequest =
     detail?.requestCatagory === HOUSING_REQUEST_CATAGORY_EXTENSION;
-  const editLocked =
-    isHousingRequestApproved(detail?.statusLabel ?? statusLabel) ||
-    isHousingRequestApproved(statusLabel);
+  const editLocked = !canEditHousingRequest(detail?.statusLabel ?? statusLabel);
   const canSaveEdits = isEdit && canEditHousingRequest(detail?.statusLabel ?? statusLabel);
   const currentYear = new Date().getFullYear();
   const maxSelectableDate = new Date(currentYear + 5, 11, 31);
@@ -231,6 +243,14 @@ export function HousingRequestDetailModal({
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
+
+  const visibleExistingAttachments = useMemo(
+    () =>
+      existingAttachments.filter(
+        (attachment) => !removedAttachmentIds.has(attachment.id),
+      ),
+    [existingAttachments, removedAttachmentIds],
+  );
 
   const patchDetail = useCallback(
     (partial: Partial<HousingRequestDetail>) => {
@@ -247,6 +267,8 @@ export function HousingRequestDetailModal({
     setCompanionIds([]);
     setCompanionGenderById(new Map());
     setInquiryGenders([]);
+    setExistingAttachments([]);
+    setRemovedAttachmentIds(new Set());
     setRequestOwnerUserId("");
     try {
       const reqRes = await getRequestById(requestId);
@@ -373,6 +395,7 @@ export function HousingRequestDetailModal({
       );
 
       setDetail(parsedDetail);
+      setExistingAttachments(parseRequestAttachesFromApi(reqRaw));
       setNightsInput(
         parsedDetail.nights > 0 ? String(parsedDetail.nights) : "",
       );
@@ -456,6 +479,9 @@ export function HousingRequestDetailModal({
     if (!open || !requestId) {
       setAddUnitKey("");
       setAddCompanionId("");
+      setAttachmentFiles([]);
+      setExistingAttachments([]);
+      setRemovedAttachmentIds(new Set());
       detailFetchKeyRef.current = null;
       return;
     }
@@ -555,13 +581,26 @@ export function HousingRequestDetailModal({
     return { ...detail, nights: nightsNumber };
   };
 
+  const handleRemoveSavedAttachment = useCallback(
+    (attachment: HousingRequestAttachmentSnapshot) => {
+      const id = attachment.id.trim();
+      if (!id) return;
+      setRemovedAttachmentIds((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+    },
+    [],
+  );
+
   const handleSave = async () => {
     if (!detail) return;
     if (editLocked) {
       toast({
         variant: "destructive",
         title: "لا يمكن التعديل",
-        description: "لا يمكن تعديل طلب تمت الموافقة عليه.",
+        description: "لا يمكن تعديل الطلب في حالته الحالية.",
       });
       return;
     }
@@ -690,12 +729,24 @@ export function HousingRequestDetailModal({
         .map((g) => g.id.trim())
         .filter(Boolean);
 
-      const payload = buildUpdateRequestPayload(
-        validatedDetail,
-        prepared.requestUnits,
-        companionsForSubmit,
-      );
-      const res = await updateRequestById(payload);
+      const payload = {
+        ...buildUpdateRequestPayload(
+          validatedDetail,
+          prepared.requestUnits,
+          companionsForSubmit,
+        ),
+        ...(!isExtensionRequest
+          ? {
+              oldImages: buildRequestOldImagesPayload(
+                visibleExistingAttachments,
+              ),
+            }
+          : {}),
+      };
+      const formData = buildAddRequestFormData(payload, attachmentFiles);
+      const res = formDataHasFileEntries(formData)
+        ? await submitUpdateRequestFormData(formData)
+        : await updateRequestById(payload);
       if (res && typeof res === "object" && "error" in res) {
         const err = res as { message?: string };
         toast({
@@ -707,6 +758,9 @@ export function HousingRequestDetailModal({
         });
         return;
       }
+
+      setAttachmentFiles([]);
+      setRemovedAttachmentIds(new Set());
       toast({ title: "تم التحديث", description: "تم حفظ تعديلات الطلب." });
       onChanged?.();
       onClose();
@@ -1115,6 +1169,25 @@ export function HousingRequestDetailModal({
                 </div>
               ) : null}
             </div>
+
+            {!isExtensionRequest &&
+            (visibleExistingAttachments.length > 0 || isEdit) ? (
+              <RequestSavedAttachmentsList
+                attachments={visibleExistingAttachments}
+                showUploadHint={isEdit}
+                editable={isEdit}
+                disabled={saving || loading}
+                onRemove={handleRemoveSavedAttachment}
+              />
+            ) : null}
+
+            {isEdit && !isExtensionRequest ? (
+              <RequestAttachmentsInput
+                files={attachmentFiles}
+                onChange={setAttachmentFiles}
+                disabled={saving || loading}
+              />
+            ) : null}
           </div>
         ) : null}
 

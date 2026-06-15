@@ -147,7 +147,7 @@ const viewTitles: Record<ReceiverView, { title: string; description: string }> =
     active: {
       title: "قسم الحجوزات النشطة",
       description:
-        "عرض الحجوزات الحالية والنزلاء المقيمين وإجراءات الوصول والمغادرة",
+        "حجوزات وصول اليوم والنزلاء المقيمون من إقامات سابقة (تأكيد وصول ومغادرة)",
     },
     upcoming: {
       title: "قسم الحجوزات المستقبلية الموافق عليها",
@@ -160,7 +160,7 @@ const viewTitles: Record<ReceiverView, { title: string; description: string }> =
   };
 
 const emptyMessages: Record<ReceiverView, string> = {
-  active: "لا توجد حجوزات نشطة أو نزلاء حاليين.",
+  active: "لا توجد حجوزات وصول اليوم ولا نزلاء مقيمون حالياً.",
   upcoming: "لا توجد حجوزات مستقبلية.",
   canceled: "لا توجد حجوزات ملغاة.",
 };

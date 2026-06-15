@@ -409,6 +409,25 @@ export function pickLastCompletedReservation(
   return completed[0] ?? null;
 }
 
+/** Finds a reservation by id in a list API response. */
+export function findReservationById(
+  items: unknown[],
+  reservationId: string,
+): ReservationDtoPayload | null {
+  const key = reservationId.trim().toLowerCase();
+  if (!key) return null;
+
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    const parsed = parseReservationFromApi(item as Record<string, unknown>);
+    if (!parsed || parsed.isDeleted) continue;
+    const id = String(parsed.id ?? "").trim().toLowerCase();
+    if (id && id === key) return parsed;
+  }
+
+  return null;
+}
+
 /** Computes inclusive end date from start (yyyy-MM-dd) and night count. */
 export function reservationEndDateFromNights(
   startDateYmd: string,

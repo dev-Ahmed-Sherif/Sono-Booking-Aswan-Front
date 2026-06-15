@@ -23,7 +23,6 @@ import {
   formatAddRequestErrorMessage,
   isRequestServiceSuccess,
   parseRequestServiceError,
-  serializeAddRequestDtoForApi,
   validateLeaderDecisionPayload,
 } from "@/lib/housing-request-map";
 import { addReservation } from "@/actions/reservationService";
@@ -137,8 +136,7 @@ export async function decideHousingRequest(
     return { ok: false, message: validation.message };
   }
 
-  const apiBody = serializeAddRequestDtoForApi(payload);
-  let res = await updateRequestById(apiBody);
+  let res = await updateRequestById(payload);
 
   const finishApproval = async (): Promise<DecideHousingRequestResult> => {
     if (input.decision !== "approve") {
@@ -165,14 +163,14 @@ export async function decideHousingRequest(
       parseRequestServiceError(res) ?? "تعذر حفظ قرار الموافقة أو الرفض.";
 
     const fkApproved =
-      apiBody.approvedById &&
+      payload.approvedById &&
       /approved|approv|FK_|foreign key|REFERENCE/i.test(apiError);
 
     if (fkApproved) {
-      const retryBody = { ...apiBody };
-      delete retryBody.approvedById;
-      delete retryBody.approvedAt;
-      res = await updateRequestById(retryBody);
+      const retryPayload = { ...payload };
+      delete retryPayload.approvedById;
+      delete retryPayload.approvedAt;
+      res = await updateRequestById(retryPayload);
       if (isRequestServiceSuccess(res)) {
         return finishApproval();
       }
@@ -184,7 +182,7 @@ export async function decideHousingRequest(
     console.error("[decideHousingRequest] update failed", {
       requestId,
       apiError,
-      apiBody,
+      payload,
       res,
     });
     return { ok: false, message: formatAddRequestErrorMessage(apiError) };

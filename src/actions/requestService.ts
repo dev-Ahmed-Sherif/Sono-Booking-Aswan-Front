@@ -4,9 +4,16 @@ import axios from "axios";
 import { getUserData } from "@/actions/auth";
 import { getAccessToken } from "@/lib/token-helper";
 import { toPlainSerializable } from "@/lib/to-plain-serializable";
-import type { AddRequestDtoPayload } from "@/lib/housing-request-map";
+import {
+  buildAddRequestFormData,
+  type AddRequestDtoPayload,
+} from "@/lib/housing-request-map";
 
 type Payload = Record<string, unknown>;
+
+type AddOrUpdateRequestPayload = AddRequestDtoPayload & {
+  status?: number | string;
+};
 
 type RequestOptions = {
   /** Sent as the `UserId` request header (`RequestsController.GetAllAsync`). */
@@ -78,6 +85,7 @@ function mapAxiosRequestError(error: unknown): {
   };
 }
 
+/** `RequestsController` add/update expect `[FromForm] AddRequestDto` — omit Content-Type for multipart. */
 async function request(
   method: "get" | "post" | "put" | "delete",
   url: string,
@@ -92,8 +100,9 @@ async function request(
     };
   }
 
+  const isFormData = data instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     Authorization: `Bearer ${accessToken}`,
   };
 
@@ -108,9 +117,21 @@ async function request(
   };
 
   try {
-    if (method === "get" || method === "delete") {
-      return toPlainSerializable((await axios[method](url, config)).data);
+    if (method === "get") {
+      return toPlainSerializable((await axios.get(url, config)).data);
     }
+
+    if (method === "delete") {
+      return toPlainSerializable(
+        (
+          await axios.delete(url, {
+            ...config,
+            ...(data !== undefined ? { data } : {}),
+          })
+        ).data,
+      );
+    }
+
     return toPlainSerializable((await axios[method](url, data, config)).data);
   } catch (error: unknown) {
     return mapAxiosRequestError(error);
@@ -135,10 +156,18 @@ const getRequestsPaged = async (filter: Payload) =>
   request("post", `${process.env.BACK_END}/${BASE}/getPaged`, filter);
 const getRequestsDropDown = async (filter: Payload) =>
   request("post", `${process.env.BACK_END}/${BASE}/getDropDown`, filter);
-const addRequest = async (data: AddRequestDtoPayload | Payload) =>
-  request("post", `${process.env.BACK_END}/${BASE}/add`, data);
-const updateRequestById = async (data: Payload) =>
-  request("put", `${process.env.BACK_END}/${BASE}/update`, data);
+const addRequest = async (data: AddOrUpdateRequestPayload | FormData) =>
+  request(
+    "post",
+    `${process.env.BACK_END}/${BASE}/add`,
+    data instanceof FormData ? data : buildAddRequestFormData(data),
+  );
+const updateRequestById = async (data: AddOrUpdateRequestPayload | FormData) =>
+  request(
+    "put",
+    `${process.env.BACK_END}/${BASE}/update`,
+    data instanceof FormData ? data : buildAddRequestFormData(data),
+  );
 const deleteRequestById = async (id: string) =>
   request("delete", `${process.env.BACK_END}/${BASE}/delete/${id}`);
 const softDeleteRequestById = async (id: string) =>

@@ -367,9 +367,9 @@ export function isReservationStillInHouse(row: {
 }
 
 /**
- * In-progress stays for the active tab:
- * - `Reserved` with stay not ended yet (`endDate ≥ today`, including future arrivals)
- * - `Completed` guests still in-house (status not `Checkout`)
+ * Active tab (reception):
+ * - `Reserved` arrivals whose start date is today
+ * - `Completed` guests still in-house from earlier check-ins
  */
 export function filterActiveReservationsToday(
   rows: ReceiverReservationRow[],
@@ -384,12 +384,18 @@ export function filterActiveReservationsToday(
       return false;
     }
 
-    if (row.status === RESERVATION_STATUS_RESERVED) {
-      return row.endDateYmd >= todayYmd;
+    if (
+      row.status === RESERVATION_STATUS_RESERVED &&
+      row.startDateYmd === todayYmd
+    ) {
+      return true;
     }
 
-    if (row.status === RESERVATION_STATUS_COMPLETED) {
-      return isReservationStillInHouse(row);
+    if (
+      row.status === RESERVATION_STATUS_COMPLETED &&
+      isReservationStillInHouse(row)
+    ) {
+      return true;
     }
 
     return false;

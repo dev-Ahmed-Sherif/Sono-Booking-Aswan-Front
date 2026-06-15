@@ -44,7 +44,15 @@ export function ExtendStayTabContent({
     );
   }
 
-  if (!reservation) {
+  const showSubmittedPreview =
+    submittedRequest != null && !extendInquiryOpen;
+  const showExtendAction =
+    reservation != null &&
+    (!submittedRequest ||
+      extendInquiryOpen ||
+      canSubmitNewExtensionRequest(submittedRequest.status));
+
+  if (!reservation && !showSubmittedPreview) {
     return (
       <p className="rounded-2xl border border-border bg-muted/40 px-4 py-8 text-center text-base text-muted-foreground">
         لا يوجد حجز بحالة «تم اكتمال الإقامة» لتمديده.
@@ -52,20 +60,13 @@ export function ExtendStayTabContent({
     );
   }
 
-  const showSubmittedPreview =
-    submittedRequest != null && !extendInquiryOpen;
-  const showExtendAction =
-    !submittedRequest ||
-    extendInquiryOpen ||
-    canSubmitNewExtensionRequest(submittedRequest.status);
-
   return (
     <div className="space-y-4">
       {showSubmittedPreview ? (
         <ExtendSubmittedRequestPanel request={submittedRequest} />
       ) : null}
 
-      {showExtendAction ? (
+      {showExtendAction && reservation ? (
         <ExtendStayReservationCard
           reservation={reservation}
           loading={prefillLoading}

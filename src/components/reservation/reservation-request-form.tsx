@@ -49,6 +49,9 @@ import { getAvailableUnits } from "@/actions/availabilityService";
 import { getCompanions } from "@/actions/companionService";
 import { getUserById } from "@/actions/permissions/userService";
 import { addRequest } from "@/actions/requestService";
+import { submitAddRequestFormData } from "@/lib/request-add-client";
+import { formDataHasFileEntries } from "@/lib/form-data-relay";
+import { RequestAttachmentsInput } from "@/components/reservation/request-attachments-input";
 import { getRelationships } from "@/actions/settings/relationshipService";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -70,6 +73,7 @@ import {
   type GuestGender,
 } from "@/lib/reservation-guest-unit-validation";
 import {
+  buildAddRequestFormData,
   enrichStoredUnitsWithHierarchyIds,
   mapReservationToAddRequestDto,
   parseAddRequestApiResult,
@@ -396,6 +400,7 @@ const ReservationRequestForm = ({
 }: ReservationRequestFormProps) => {
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [storedInquiry, setStoredInquiry] =
     useState<StoredInquirySnapshot | null>(null);
   const [storedSelectedUnits, setStoredSelectedUnits] = useState<
@@ -803,7 +808,10 @@ const ReservationRequestForm = ({
         return;
       }
 
-      const apiRes = await addRequest(mapped.dto);
+      const formData = buildAddRequestFormData(mapped.dto, attachmentFiles);
+      const apiRes = formDataHasFileEntries(formData)
+        ? await submitAddRequestFormData(formData)
+        : await addRequest(formData);
       const parsed = parseAddRequestApiResult(apiRes);
       if (!parsed.ok) {
         toast({
@@ -832,6 +840,7 @@ const ReservationRequestForm = ({
       setStoredInquiry(null);
       setStoredSelectedUnits([]);
       setInquiryGenders([]);
+      setAttachmentFiles([]);
       onStorageCleared?.();
     } finally {
       setIsSaving(false);
@@ -849,6 +858,7 @@ const ReservationRequestForm = ({
     setStoredInquiry(null);
     setStoredSelectedUnits([]);
     setInquiryGenders([]);
+    setAttachmentFiles([]);
     setPickedCompanionRows([]);
     const clearedGuests = [
       {
@@ -1159,6 +1169,11 @@ const ReservationRequestForm = ({
               name="selectedGuestIds"
               render={() => (
                 <FormItem>
+                  <RequestAttachmentsInput
+                    files={attachmentFiles}
+                    onChange={setAttachmentFiles}
+                    disabled={loading}
+                  />
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <FormLabel className="text-gray-700 text-base m-0">
                       أسماء طالب الإقامة والمرافقين

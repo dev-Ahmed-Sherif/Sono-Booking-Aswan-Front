@@ -17,17 +17,9 @@ import type {
 } from "@/lib/availability-inquiry";
 
 import {
-
   HOUSING_REQUEST_CATAGORY_EXTENSION,
-
-  mapStoredUnitToRequestUnitDto,
-
-  normalizeRequestUnitsForAddRequestDto,
-
   parseAllocationTypeEnum,
-
   type AddRequestDtoPayload,
-
 } from "@/lib/housing-request-map";
 
 
@@ -212,136 +204,59 @@ export function unitSnapshotsToAvailabilityCards(
 
 
 
-/** Maps extend review form to `AddRequestDto` for `Requests/add`. */
-
+/**
+ * Maps extend review form to `AddRequestDto` for `Requests/add`.
+ * Extension adds only send changed scalars + `PreviousRequestId`; units, companions,
+ * and attachments are resolved on the backend from the previous request.
+ */
 export function mapExtendStayToAddRequestDto(input: {
-
-  reservationId: string;
-
+  /** Request id from the completed reservation being extended. */
+  previousRequestId: string;
   startDateYmd: string;
-
   nights: number;
-
   requestTypeId: string;
-
   allocationTypeValue: string;
-
-  unitSnapshots: ReservationStoredUnitSnapshot[];
-
-  companions: ExtendStayCompanionRow[];
-
 }):
-
   | { ok: true; dto: AddRequestDtoPayload }
-
   | { ok: false; message: string } {
-
-  const reservationId = input.reservationId.trim();
-
-  if (!reservationId) {
-
-    return { ok: false, message: "معرّف الحجز غير متوفر." };
-
+  const previousRequestId = input.previousRequestId.trim();
+  if (!previousRequestId) {
+    return { ok: false, message: "معرّف الطلب السابق غير متوفر." };
   }
-
-
 
   const startDate = input.startDateYmd.trim().slice(0, 10);
-
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-
     return { ok: false, message: "تاريخ البدء غير صالح." };
-
   }
-
-
 
   const nights = Math.trunc(input.nights);
-
   if (!Number.isFinite(nights) || nights < 1) {
-
     return { ok: false, message: "عدد الليالي غير صالح." };
-
   }
-
-
 
   const requestTypeId = input.requestTypeId.trim();
-
   if (!requestTypeId) {
-
     return { ok: false, message: "نوع الطلب غير صالح." };
-
   }
-
-
 
   const requestAllocationType = parseAllocationTypeEnum(input.allocationTypeValue);
-
   if (!requestAllocationType) {
-
     return { ok: false, message: "نوع الحجز غير صالح." };
-
   }
-
-
-
-  if (input.unitSnapshots.length === 0) {
-
-    return { ok: false, message: "لا توجد وحدات مرتبطة بالإقامة الحالية." };
-
-  }
-
-
-
-  const requestUnits = [];
-
-  for (const unit of input.unitSnapshots) {
-
-    const mapped = mapStoredUnitToRequestUnitDto(unit);
-
-    if (!mapped.ok) return mapped;
-
-    requestUnits.push(mapped.dto);
-
-  }
-
-
-
-  const requestCompanions = input.companions
-
-    .map((c) => ({ companionId: c.id.trim() }))
-
-    .filter((c) => c.companionId.length > 0);
-
-
 
   return {
-
     ok: true,
-
     dto: {
-
       startDate,
-
       nights,
-
       requestTypeId,
-
       requestAllocationType,
-
       requestCatagory: HOUSING_REQUEST_CATAGORY_EXTENSION,
-
-      reservationId,
-
-      requestUnits: normalizeRequestUnitsForAddRequestDto(requestUnits),
-
-      requestCompanions,
-
+      previousRequestId,
+      requestUnits: [],
+      requestCompanions: [],
     },
-
   };
-
 }
 
 

@@ -2,7 +2,6 @@ import type { AvailableUnitType } from "@/actions/availabilityService";
 import type { GenericOption, ReservationStoredUnitSnapshot } from "@/lib/availability-inquiry";
 import { resolveInquiryGendersForRequest } from "@/lib/housing-request-detail";
 import {
-  extractNightsFromRequest,
   extractRequestAllocationTypeValue,
   extractRequestTypeId,
 } from "@/lib/housing-request-list";
@@ -13,7 +12,6 @@ import {
 import type { GuestGender } from "@/lib/reservation-guest-unit-validation";
 
 export type ExtendInquiryPrefill = {
-  nights: string;
   selectedUnitTypes: AvailableUnitType[];
   requestType: string;
   selectedGenders: GuestGender[];
@@ -84,7 +82,6 @@ export function mapHousingRequestToExtendInquiryPrefill(input: {
 }): ExtendInquiryPrefill {
   const { requestRaw, requestUnits, unitSnapshots = [] } = input;
 
-  const nightsNum = extractNightsFromRequest(requestRaw);
   const selectedUnitTypes = unitKindsFromRequestUnits(requestUnits);
 
   let requestType = extractRequestTypeId(requestRaw);
@@ -127,7 +124,6 @@ export function mapHousingRequestToExtendInquiryPrefill(input: {
   );
 
   return {
-    nights: nightsNum > 0 ? String(nightsNum) : "",
     selectedUnitTypes,
     requestType,
     selectedGenders,

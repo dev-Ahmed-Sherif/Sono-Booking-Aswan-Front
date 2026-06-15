@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExtendDetailTile } from "@/components/reservation/extend-detail-tile";
 import {
   getHousingRequestStatusPreviewMessage,
+  isHousingRequestApproved,
   type HousingRequestTableRow,
 } from "@/lib/housing-request-list";
 import { formatLocaleNumber, getDateFnsLocale } from "@/lib/locale-format";
@@ -70,29 +71,57 @@ export function ExtendSubmittedRequestPanel({
   request,
 }: ExtendSubmittedRequestPanelProps) {
   const locale = useLocale();
+  const isApproved = isHousingRequestApproved(request.status);
   const visual = statusVisual(request.status);
   const StatusIcon = visual.icon;
   const statusMessage = getHousingRequestStatusPreviewMessage(request.status);
 
   return (
     <div className="space-y-4 text-start">
-      <Card className="border-2 border-brand/25 bg-gradient-to-br from-brand-muted/50 via-card to-card shadow-sm">
-        <CardContent className="space-y-4 p-4 sm:p-5">
-          <div className="space-y-3 text-center">
-            <p className="text-xl font-bold text-foreground">تم تقديم طلب تمديد</p>
-            <div
-              className={cn(
-                "mx-auto inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold",
-                visual.badgeClass,
-              )}
-            >
-              <StatusIcon className={cn("h-5 w-5", visual.iconClass)} />
-              <span>{request.status}</span>
+      {isApproved ? (
+        <Card className="overflow-hidden border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 via-white to-emerald-50/60 shadow-md">
+          <CardContent className="space-y-4 p-5 sm:p-6">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-emerald-200 bg-emerald-100">
+                <CheckCircle2 className="h-9 w-9 text-emerald-600" />
+              </div>
+              <div className="space-y-2">
+                <p className="text-xl font-bold text-emerald-900 sm:text-2xl">
+                  تمت الموافقة على طلب التمديد
+                </p>
+                <p className="text-sm text-emerald-800/90">{statusMessage}</p>
+              </div>
+              <div
+                className={cn(
+                  "inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold",
+                  visual.badgeClass,
+                )}
+              >
+                <StatusIcon className={cn("h-5 w-5", visual.iconClass)} />
+                <span>{request.status}</span>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground">{statusMessage}</p>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-2 border-brand/25 bg-gradient-to-br from-brand-muted/50 via-card to-card shadow-sm">
+          <CardContent className="space-y-4 p-4 sm:p-5">
+            <div className="space-y-3 text-center">
+              <p className="text-xl font-bold text-foreground">تم تقديم طلب تمديد</p>
+              <div
+                className={cn(
+                  "mx-auto inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold",
+                  visual.badgeClass,
+                )}
+              >
+                <StatusIcon className={cn("h-5 w-5", visual.iconClass)} />
+                <span>{request.status}</span>
+              </div>
+              <p className="text-sm text-muted-foreground">{statusMessage}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-2 border-border shadow-sm">
         <CardHeader className="pb-3">

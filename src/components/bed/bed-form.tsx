@@ -42,6 +42,7 @@ import {
   softDeleteBedById,
   updateBedById,
 } from "@/actions/settings/bedService";
+import { submitUpdateBedFormData } from "@/lib/bed-multipart-client";
 import { getRooms } from "@/actions/settings/roomService";
 import { DataTable } from "@/components/ui/data-table";
 import { getFullFileUrl } from "@/lib/file-viewer";
@@ -390,7 +391,9 @@ export default function BedForm({
         );
       });
       const result = currentId
-        ? await updateBedById(payload)
+        ? bedImages.length > 0
+          ? await submitUpdateBedFormData(payload)
+          : await updateBedById(payload)
         : await addBed(payload);
 
       if ((result as { error?: string })?.error) {

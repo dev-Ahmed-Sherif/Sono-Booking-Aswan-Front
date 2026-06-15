@@ -233,6 +233,44 @@ export function parseRequestCatagoryApiValue(
   return undefined;
 }
 
+/** True when API row represents an extension request (`RequestCatagory.Extension`). */
+export function isExtensionRequestRecord(
+  raw: Record<string, unknown>,
+): boolean {
+  if (parseRequestCatagoryApiValue(raw) === "Extension") return true;
+  return formatRequestCatagoryForTable(raw) === EXTENSION_STAY_REQUEST_TYPE_LABEL;
+}
+
+/** Latest extension request for the user (any reservation), newest first. */
+export function findLatestExtensionRequest(
+  items: unknown[],
+  options?: MapRequestsToTableRowsOptions,
+): { row: HousingRequestTableRow; reservationId: string } | null {
+  const candidates: Array<{
+    row: HousingRequestTableRow;
+    reservationId: string;
+  }> = [];
+
+  for (const r of filterItemsByUserId(items, options?.userId)) {
+    if (options?.excludeDeleted && isHousingRequestRecordDeleted(r)) continue;
+    if (!isExtensionRequestRecord(r)) continue;
+    const row = mapApiRequestToTableRow(r, {
+      requestTypeLabelsById: options?.requestTypeLabelsById,
+    });
+    if (!row) continue;
+    candidates.push({
+      row,
+      reservationId: extractReservationIdFromRequest(r),
+    });
+  }
+
+  if (candidates.length === 0) return null;
+  const sorted = candidates.sort((a, b) =>
+    b.row.sortDate.localeCompare(a.row.sortDate),
+  );
+  return sorted[0] ?? null;
+}
+
 /** Maps `RequestCatagory` to Arabic «تصنيف الطلب» for tables and detail modals. */
 export function formatRequestCatagoryForTable(
   raw: Record<string, unknown>,
@@ -286,12 +324,17 @@ export function isHousingRequestStatusLocked(statusLabel: string): boolean {
 }
 
 export function isHousingRequestApproved(statusLabel: string): boolean {
-  return statusLabel === "تمت الموافقة";
+  const normalized = statusLabel.trim();
+  if (normalized === "تمت الموافقة") return true;
+  const lower = normalized.toLowerCase();
+  return (
+    lower.includes("approv") || lower === "مقبول" || lower === "approved"
+  );
 }
 
-/** Guest may edit unless approved or already canceled. */
+/** Guest may edit only while the request is under review. */
 export function canEditHousingRequest(statusLabel: string): boolean {
-  return !isHousingRequestApproved(statusLabel) && statusLabel !== "ملغى";
+  return statusLabel === "قيد المراجعة";
 }
 
 /** Guest may cancel while the request is still under review. */
@@ -342,7 +385,7 @@ export function findLatestExtensionRequestForReservation(
 
   for (const r of filterItemsByUserId(items, options?.userId)) {
     if (options?.excludeDeleted && isHousingRequestRecordDeleted(r)) continue;
-    if (parseRequestCatagoryApiValue(r) !== "Extension") continue;
+    if (!isExtensionRequestRecord(r)) continue;
     const rowReservationId = extractReservationIdFromRequest(r).toLowerCase();
     if (!rowReservationId || rowReservationId !== reservationKey) continue;
     const row = mapApiRequestToTableRow(r, {
@@ -602,12 +645,17 @@ export function mapExtensionsToTableRows(
   return rows;
 }
 
-/** Merges housing requests and extensions, sorted by start date (newest first). */
+/** Compare request numbers (`REQ-2026-0001`, etc.) for stable table ordering. */
+export function compareHousingRequestNumbers(a: string, b: string): number {
+  return a.localeCompare(b, "en", { numeric: true, sensitivity: "base" });
+}
+
+/** Merges housing requests and extensions, sorted by request number (highest first). */
 export function mergeAndSortHistoryTableRows(
   requests: HousingRequestTableRow[],
   extensions: HousingRequestTableRow[],
 ): HousingRequestTableRow[] {
-  return [...requests, ...extensions].sort((a, b) =>
-    b.sortDate.localeCompare(a.sortDate),
+  return [...requests, ...extensions].sort(
+    (a, b) => compareHousingRequestNumbers(b.requestNo, a.requestNo),
   );
 }

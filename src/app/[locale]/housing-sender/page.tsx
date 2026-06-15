@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { getRequestTypes } from "@/actions/settings/requestTypeService";
-import { getAllExtensions } from "@/actions/settings/extensionService";
 import { decideHousingRequest } from "@/actions/decideHousingRequest";
 import { getAllRequests } from "@/actions/requestService";
 import { canAccessHousingSenderFromCandidates } from "@/lib/role-utils";
@@ -12,9 +11,8 @@ import { useRequireRole } from "@/hooks/use-require-role";
 import {
   extractApplicantDisplayNameFromRequest,
   extractRequestTypeId,
-  mapApiExtensionToTableRow,
   mapApiRequestToTableRow,
-  parseExtensionsListFromApi,
+  parseRequestCatagoryApiValue,
   parseRequestsListFromApi,
   toYmd,
   type HousingRequestTableRow,
@@ -91,15 +89,9 @@ type SenderTableRow = {
   endDate: string;
   nights?: number;
   status: string;
+  /** Arabic «تصنيف الطلب» from `RequestCatagory` (إقامة جديدة / تمديد). */
+  requestCategory: string;
 };
-
-function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
-  for (const k of keys) {
-    const v = r[k];
-    if (v != null && String(v).trim() !== "") return String(v).trim();
-  }
-  return "";
-}
 
 function formatEndDateFromRaw(raw: Record<string, unknown>): string {
   return toYmd(raw.endDate ?? raw.EndDate) ?? "—";
@@ -109,13 +101,8 @@ function mapToSenderTableRow(
   raw: Record<string, unknown>,
   tableRow: HousingRequestTableRow,
 ): SenderTableRow {
-  const isExtension = tableRow.entryKind === "extension";
-  const requestId = isExtension
-    ? pickStr(raw, "requestId", "RequestId")
-    : tableRow.id;
-
   return {
-    requestId,
+    requestId: tableRow.id,
     requestOwnerUserId: extractRequestUserId(raw),
     requestNumber: tableRow.requestNo,
     housingTableRow: tableRow,
@@ -126,6 +113,7 @@ function mapToSenderTableRow(
     endDate: formatEndDateFromRaw(raw),
     nights: tableRow.nights,
     status: tableRow.status,
+    requestCategory: tableRow.requestClassification,
   };
 }
 
@@ -307,10 +295,7 @@ const HousingSenderPage = () => {
     setDataLoadError(null);
 
     try {
-      const [requestsRes, extensionsRes] = await Promise.all([
-        getAllRequests(),
-        getAllExtensions(),
-      ]);
+      const requestsRes = await getAllRequests();
       if (ticket !== fetchTicketRef.current) return;
 
       if (
@@ -330,6 +315,7 @@ const HousingSenderPage = () => {
 
       const pending: SenderTableRow[] = [];
       const approved: SenderTableRow[] = [];
+      const extensions: SenderTableRow[] = [];
 
       for (const item of parseRequestsListFromApi(requestsRes)) {
         if (!item || typeof item !== "object") continue;
@@ -339,30 +325,16 @@ const HousingSenderPage = () => {
         });
         if (!tableRow) continue;
         const row = mapToSenderTableRow(raw, tableRow);
+        const category = parseRequestCatagoryApiValue(raw);
+
         if (tableRow.status === "قيد المراجعة") {
-          pending.push(row);
+          if (category === "Extension") {
+            extensions.push(row);
+          } else if (category === "NewStay") {
+            pending.push(row);
+          }
         } else if (tableRow.status === "تمت الموافقة") {
           approved.push(row);
-        }
-      }
-
-      const extensions: SenderTableRow[] = [];
-      if (
-        extensionsRes &&
-        typeof extensionsRes === "object" &&
-        !("error" in extensionsRes)
-      ) {
-        for (const item of parseExtensionsListFromApi(extensionsRes)) {
-          if (!item || typeof item !== "object") continue;
-          const raw = item as Record<string, unknown>;
-          const tableRow = mapApiExtensionToTableRow(raw, {
-            requestTypeLabelsById: typeLabels,
-          });
-          if (!tableRow) continue;
-          const row = mapToSenderTableRow(raw, tableRow);
-          if (tableRow.status === "قيد المراجعة") {
-            extensions.push(row);
-          }
         }
       }
 
@@ -812,6 +784,9 @@ const HousingSenderPage = () => {
                                     سبب الطلب
                                   </TableHead>
                                   <TableHead className={senderTableHeadClassName}>
+                                    تصنيف الطلب
+                                  </TableHead>
+                                  <TableHead className={senderTableHeadClassName}>
                                     تاريخ البداية
                                   </TableHead>
                                   <TableHead className={senderTableHeadClassName}>
@@ -836,6 +811,9 @@ const HousingSenderPage = () => {
                                     </TableCell>
                                     <TableCell className={senderTableCellClassName}>
                                       {request.reason}
+                                    </TableCell>
+                                    <TableCell className={senderTableCellClassName}>
+                                      {request.requestCategory}
                                     </TableCell>
                                     <TableCell className={senderTableCellClassName}>
                                       {request.startDate}
@@ -864,7 +842,7 @@ const HousingSenderPage = () => {
                                 {filteredApproved.length === 0 && (
                                   <TableRow>
                                     <TableCell
-                                      colSpan={7}
+                                      colSpan={8}
                                       className="text-center text-muted-foreground"
                                     >
                                       لا توجد طلبات مطابقة للفلترة الحالية

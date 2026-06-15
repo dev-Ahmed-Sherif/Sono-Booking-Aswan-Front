@@ -12,6 +12,12 @@ import {
   type GuestGender,
 } from "@/lib/reservation-guest-unit-validation";
 
+/** Mirrors `AddRequestAttachDto` for update `OldImages` collection. */
+export type AddRequestOldImagePayload = {
+  id: string;
+  isPrimary?: boolean;
+};
+
 /** Mirrors swagger `RequestCatagory` enum (`AddRequestDto.requestCatagory`). */
 export type HousingRequestCatagoryApi = "NewStay" | "Extension";
 
@@ -34,8 +40,12 @@ export type AddRequestDtoPayload = {
   requestCatagory: HousingRequestCatagoryApi;
   /** Set for extension requests (`RequestCatagory.Extension`). */
   reservationId?: string;
+  /** Original stay request id (`Request.PreviousRequestId`) for extension requests. */
+  previousRequestId?: string | null;
   requestUnits: AddRequestUnitDtoPayload[];
   requestCompanions: AddRequestParticipantDtoPayload[];
+  /** Kept server attachments on update (`AddRequestDto.OldImages`). */
+  oldImages?: AddRequestOldImagePayload[];
   rejectionReason?: string;
   approvedById?: string;
   approvedAt?: string;
@@ -145,6 +155,9 @@ export function serializeAddRequestDtoForApi(
   if (payload.reservationId?.trim()) {
     body.reservationId = payload.reservationId.trim();
   }
+  if (payload.previousRequestId?.trim()) {
+    body.previousRequestId = payload.previousRequestId.trim();
+  }
   if (payload.requestNumber) body.requestNumber = payload.requestNumber;
   if (payload.status != null) {
     body.status =
@@ -158,7 +171,138 @@ export function serializeAddRequestDtoForApi(
   if (payload.approvedById) body.approvedById = payload.approvedById;
   if (payload.approvedAt) body.approvedAt = payload.approvedAt;
 
+  if (payload.oldImages?.length) {
+    body.oldImages = payload.oldImages
+      .map((img) => ({
+        id: img.id?.trim(),
+        isPrimary: Boolean(img.isPrimary),
+      }))
+      .filter((img) => img.id);
+  }
+
   return body;
+}
+
+function appendAddRequestFormScalar(
+  formData: FormData,
+  key: string,
+  value: string | number | undefined | null,
+) {
+  if (value === undefined || value === null || value === "") return;
+  formData.append(key, String(value));
+}
+
+/**
+ * Multipart body for `RequestsController` add/update (`[FromForm] AddRequestDto`).
+ * Uses PascalCase keys and indexed collections for ASP.NET model binding.
+ * Extension requests omit units, companions, and file attachments — the backend
+ * copies those from `PreviousRequestId`.
+ */
+export function buildAddRequestFormData(
+  payload: AddRequestDtoPayload & { status?: number | string },
+  attachmentFiles?: File[],
+): FormData {
+  const formData = new FormData();
+  const isExtension =
+    payload.requestCatagory === HOUSING_REQUEST_CATAGORY_EXTENSION;
+  const requestId = payload.id?.trim();
+
+  appendAddRequestFormScalar(formData, "Id", requestId);
+  appendAddRequestFormScalar(formData, "RequestNumber", payload.requestNumber);
+  appendAddRequestFormScalar(formData, "StartDate", payload.startDate);
+  appendAddRequestFormScalar(formData, "Nights", payload.nights);
+  appendAddRequestFormScalar(formData, "RequestTypeId", payload.requestTypeId);
+  appendAddRequestFormScalar(
+    formData,
+    "RequestAllocationType",
+    payload.requestAllocationType,
+  );
+  appendAddRequestFormScalar(formData, "RequestCatagory", payload.requestCatagory);
+  if (payload.previousRequestId === null) {
+    formData.append("PreviousRequestId", "");
+  } else {
+    appendAddRequestFormScalar(
+      formData,
+      "PreviousRequestId",
+      payload.previousRequestId?.trim(),
+    );
+  }
+
+  if (payload.status != null) {
+    const statusName =
+      typeof payload.status === "string"
+        ? payload.status
+        : housingRequestStatusToApiName(payload.status);
+    appendAddRequestFormScalar(formData, "Status", statusName);
+  }
+
+  appendAddRequestFormScalar(formData, "RejectionReason", payload.rejectionReason);
+  appendAddRequestFormScalar(formData, "ApprovedById", payload.approvedById);
+  appendAddRequestFormScalar(formData, "ApprovedAt", payload.approvedAt);
+
+  if (isExtension) {
+    return formData;
+  }
+
+  const units = normalizeRequestUnitsForAddRequestDto(
+    payload.requestUnits ?? [],
+    requestId,
+  );
+
+  units.forEach((unit, index) => {
+    const prefix = `RequestUnits[${index}]`;
+    appendAddRequestFormScalar(formData, `${prefix}.Id`, unit.id);
+    appendAddRequestFormScalar(formData, `${prefix}.RequestId`, unit.requestId);
+    if (unit.bedId) {
+      appendAddRequestFormScalar(formData, `${prefix}.BedId`, unit.bedId);
+    } else if (unit.roomId) {
+      appendAddRequestFormScalar(formData, `${prefix}.RoomId`, unit.roomId);
+    } else if (unit.apartmentId) {
+      appendAddRequestFormScalar(formData, `${prefix}.ApartmentId`, unit.apartmentId);
+    }
+  });
+
+  const companions = (payload.requestCompanions ?? [])
+    .map((c) => ({
+      ...c,
+      companionId: c.companionId?.trim() ?? "",
+    }))
+    .filter((c) => c.companionId.length > 0);
+
+  companions.forEach((companion, index) => {
+    const prefix = `RequestCompanions[${index}]`;
+    appendAddRequestFormScalar(formData, `${prefix}.Id`, companion.id);
+    appendAddRequestFormScalar(formData, `${prefix}.RequestId`, companion.requestId);
+    appendAddRequestFormScalar(
+      formData,
+      `${prefix}.CompanionId`,
+      companion.companionId,
+    );
+  });
+
+  (attachmentFiles ?? []).forEach((file, index) => {
+    if (!(file instanceof File) || file.size <= 0) return;
+    formData.append(`Images[${index}].Image`, file, file.name);
+  });
+
+  if (payload.oldImages !== undefined) {
+    const oldImagesToSend =
+      payload.oldImages.length > 0
+        ? payload.oldImages
+        : [{ id: "", isPrimary: false }];
+
+    oldImagesToSend.forEach((img, index) => {
+      const prefix = `OldImages[${index}]`;
+      appendAddRequestFormScalar(formData, `${prefix}.Id`, img.id?.trim());
+      appendAddRequestFormScalar(
+        formData,
+        `${prefix}.IsPrimary`,
+        img.isPrimary ? "true" : "false",
+      );
+    });
+  }
+
+  return formData;
 }
 
 /** True when a server-action result is a successful API response (not axios error wrapper). */

@@ -88,7 +88,7 @@ import { userHasEmployeeId } from "@/lib/user-employee-id";
 import {
   canEditHousingRequest,
   canSubmitNewExtensionRequest,
-  findLatestExtensionRequestForReservation,
+  isHousingRequestApproved,
   mapRequestsToTableRows,
   mergeAndSortHistoryTableRows,
   parseRequestsListFromApi,
@@ -107,6 +107,7 @@ import {
   resolveParticipantRowsForRequest,
 } from "@/lib/housing-request-detail";
 import {
+  buildAddRequestFormData,
   parseAddRequestApiResult,
   requestUnitDtosToEnrichedSnapshots,
 } from "@/lib/housing-request-map";
@@ -120,9 +121,9 @@ import {
 import {
   extensionStartDateAfterReservation,
   parseReservationsListFromApi,
-  pickLastCompletedReservation,
   type ReservationDtoPayload,
 } from "@/lib/reservation-map";
+import { resolveExtendTabState } from "@/lib/reservation-extend-tab-state";
 import {
   applyReservationInquirySnapshot,
   captureReservationInquirySnapshot,
@@ -269,12 +270,8 @@ const ReservationPage = () => {
   const [extendSubmittedRequest, setExtendSubmittedRequest] =
     useState<HousingRequestTableRow | null>(null);
   const extendFetchTicketRef = useRef(0);
-  const newInquirySnapshotRef = useRef(
-    emptyReservationInquirySnapshot(),
-  );
-  const extendInquirySnapshotRef = useRef(
-    emptyReservationInquirySnapshot(),
-  );
+  const newInquirySnapshotRef = useRef(emptyReservationInquirySnapshot());
+  const extendInquirySnapshotRef = useRef(emptyReservationInquirySnapshot());
   const currentYear = new Date().getFullYear();
   const maxSelectableDate = new Date(currentYear + 5, 11, 31);
   const minSelectableDate = new Date();
@@ -303,8 +300,21 @@ const ReservationPage = () => {
     allocationType,
   ]);
 
-  const captureCurrentInquirySnapshot = useCallback((): ReservationInquirySnapshot => {
-    return captureReservationInquirySnapshot({
+  const captureCurrentInquirySnapshot =
+    useCallback((): ReservationInquirySnapshot => {
+      return captureReservationInquirySnapshot({
+        startDate,
+        nights,
+        selectedUnitTypes,
+        selectedGenders,
+        allocationType,
+        requestType,
+        availabilitySearchStatus,
+        availabilityCards,
+        selectedAvailabilityKeys,
+        availabilityErrors,
+      });
+    }, [
       startDate,
       nights,
       selectedUnitTypes,
@@ -315,19 +325,7 @@ const ReservationPage = () => {
       availabilityCards,
       selectedAvailabilityKeys,
       availabilityErrors,
-    });
-  }, [
-    startDate,
-    nights,
-    selectedUnitTypes,
-    selectedGenders,
-    allocationType,
-    requestType,
-    availabilitySearchStatus,
-    availabilityCards,
-    selectedAvailabilityKeys,
-    availabilityErrors,
-  ]);
+    ]);
 
   const applyInquirySnapshotToState = useCallback(
     (snapshot: ReservationInquirySnapshot) => {
@@ -375,11 +373,7 @@ const ReservationPage = () => {
 
       setActiveView(view);
     },
-    [
-      activeView,
-      applyInquirySnapshotToState,
-      captureCurrentInquirySnapshot,
-    ],
+    [activeView, applyInquirySnapshotToState, captureCurrentInquirySnapshot],
   );
 
   useEffect(() => {
@@ -459,23 +453,28 @@ const ReservationPage = () => {
         return;
       }
 
-      const last = pickLastCompletedReservation(
-        parseReservationsListFromApi(reservationsRes),
-      );
-      setExtendLastCompleted(last);
+      const reservationsRaw = parseReservationsListFromApi(reservationsRes);
+      const requestsRaw =
+        requestsRes &&
+        typeof requestsRes === "object" &&
+        !("error" in requestsRes)
+          ? parseRequestsListFromApi(requestsRes)
+          : [];
 
-      if (last?.id && requestsRes && typeof requestsRes === "object" && !("error" in requestsRes)) {
-        const extensionRequest = findLatestExtensionRequestForReservation(
-          parseRequestsListFromApi(requestsRes),
-          String(last.id),
-          {
-            userId: userId || undefined,
-            requestTypeLabelsById: requestTypeLabelsByIdRef.current,
-            excludeDeleted: true,
-          },
-        );
-        setExtendSubmittedRequest(extensionRequest);
-      }
+      const mapOptions = {
+        userId: userId || undefined,
+        requestTypeLabelsById: requestTypeLabelsByIdRef.current,
+        excludeDeleted: true as const,
+      };
+
+      const { reservation, extensionRequest } = resolveExtendTabState(
+        reservationsRaw,
+        requestsRaw,
+        mapOptions,
+      );
+
+      setExtendLastCompleted(reservation);
+      setExtendSubmittedRequest(extensionRequest);
     } catch {
       if (ticket !== extendFetchTicketRef.current) return;
       setExtendReservationError("تعذر تحميل الحجز.");
@@ -544,8 +543,9 @@ const ReservationPage = () => {
       );
       const requestUnits = unitRows
         .map(parseRequestUnitFromApi)
-        .filter((u): u is NonNullable<ReturnType<typeof parseRequestUnitFromApi>> =>
-          u != null,
+        .filter(
+          (u): u is NonNullable<ReturnType<typeof parseRequestUnitFromApi>> =>
+            u != null,
         );
 
       const { bedsRaw, roomsRaw, apartmentsRaw } =
@@ -567,8 +567,7 @@ const ReservationPage = () => {
 
       const companionIds =
         extractCompanionIdsFromParticipantRows(participantRows);
-      const ownerUserId =
-        extractRequestUserId(requestRaw) || userId || "";
+      const ownerUserId = extractRequestUserId(requestRaw) || userId || "";
       const companionNameMap = buildCompanionDisplayMapForIds(
         participantRows,
         companionIds,
@@ -618,7 +617,6 @@ const ReservationPage = () => {
       const snapshot: ReservationInquirySnapshot = {
         ...emptyReservationInquirySnapshot(),
         startDate: nextStart,
-        nights: prefill.nights,
         selectedUnitTypes: prefill.selectedUnitTypes,
         selectedGenders: prefill.selectedGenders,
         requestType: prefill.requestType,
@@ -810,43 +808,41 @@ const ReservationPage = () => {
         gendersRes,
         allocationTypesRes,
       };
-    }).then(
-      ({ requestTypesRes, gendersRes, allocationTypesRes }) => {
-        if (!(requestTypesRes as { error?: string } | null)?.error) {
-          const mapped = mapGenericOptions(requestTypesRes);
-          if (mapped.length > 0) setRequestTypeOptions(mapped);
-        }
+    }).then(({ requestTypesRes, gendersRes, allocationTypesRes }) => {
+      if (!(requestTypesRes as { error?: string } | null)?.error) {
+        const mapped = mapGenericOptions(requestTypesRes);
+        if (mapped.length > 0) setRequestTypeOptions(mapped);
+      }
 
-        if (!(gendersRes as { error?: string } | null)?.error) {
-          const rawList = getLookupArray(gendersRes);
-          const uniqueValues = new Set<"male" | "female">();
-          const mapped = rawList
-            .map((item) => item as Record<string, unknown>)
-            .map((item) =>
-              normalizeGenderValue(
-                item?.nameEn ?? item?.nameAr ?? item?.value ?? item?.id,
-              ),
-            )
-            .filter((value): value is "male" | "female" => Boolean(value))
-            .filter((value) => {
-              if (uniqueValues.has(value)) return false;
-              uniqueValues.add(value);
-              return true;
-            })
-            .map((value) => ({
-              value,
-              label: value === "male" ? ("رجال" as const) : ("سيدات" as const),
-            }));
+      if (!(gendersRes as { error?: string } | null)?.error) {
+        const rawList = getLookupArray(gendersRes);
+        const uniqueValues = new Set<"male" | "female">();
+        const mapped = rawList
+          .map((item) => item as Record<string, unknown>)
+          .map((item) =>
+            normalizeGenderValue(
+              item?.nameEn ?? item?.nameAr ?? item?.value ?? item?.id,
+            ),
+          )
+          .filter((value): value is "male" | "female" => Boolean(value))
+          .filter((value) => {
+            if (uniqueValues.has(value)) return false;
+            uniqueValues.add(value);
+            return true;
+          })
+          .map((value) => ({
+            value,
+            label: value === "male" ? ("رجال" as const) : ("سيدات" as const),
+          }));
 
-          if (mapped.length > 0) setGenderOptions(mapped);
-        }
+        if (mapped.length > 0) setGenderOptions(mapped);
+      }
 
-        if (!(allocationTypesRes as { error?: string } | null)?.error) {
-          const mapped = mapGenericOptions(allocationTypesRes);
-          if (mapped.length > 0) setAllocationTypeOptions(mapped);
-        }
-      },
-    );
+      if (!(allocationTypesRes as { error?: string } | null)?.error) {
+        const mapped = mapGenericOptions(allocationTypesRes);
+        if (mapped.length > 0) setAllocationTypeOptions(mapped);
+      }
+    });
   }, []);
 
   const handleCheckAvailability = async () => {
@@ -986,13 +982,11 @@ const ReservationPage = () => {
     setExtendSubmitting(true);
     try {
       const mapped = mapExtendStayToAddRequestDto({
-        reservationId: extendContext.reservationId,
+        previousRequestId: extendContext.sourceRequestId,
         startDateYmd: startDate,
         nights: Number(nights),
         requestTypeId: requestType,
         allocationTypeValue: allocationType,
-        unitSnapshots: extendContext.unitSnapshots,
-        companions: extendContext.companions,
       });
       if (!mapped.ok) {
         toast({
@@ -1003,7 +997,7 @@ const ReservationPage = () => {
         return;
       }
 
-      const res = await addRequest(mapped.dto);
+      const res = await addRequest(buildAddRequestFormData(mapped.dto));
       const parsed = parseAddRequestApiResult(res);
       if (!parsed.ok) {
         toast({
@@ -1095,7 +1089,8 @@ const ReservationPage = () => {
 
     toast({
       title: "تم الحفظ",
-      description: "تم حفظ بيانات الاستعلام بنجاح، يمكنك متابعة تقديم طلب الحجز.",
+      description:
+        "تم حفظ بيانات الاستعلام بنجاح، يمكنك متابعة تقديم طلب الحجز.",
     });
 
     if (activeView === "new") {
@@ -1116,7 +1111,9 @@ const ReservationPage = () => {
     requestTypeOptions.find((o) => o.value === requestType)?.label ??
     requestType;
   const extendGenderLabels = selectedGenders
-    .map((value) => genderOptions.find((o) => o.value === value)?.label ?? value)
+    .map(
+      (value) => genderOptions.find((o) => o.value === value)?.label ?? value,
+    )
     .join("، ");
   const extendAllocationTypeLabel =
     allocationTypeOptions.find((o) => o.value === allocationType)?.label ??
@@ -1153,7 +1150,7 @@ const ReservationPage = () => {
   })();
 
   return (
-    <main className="w-full flex-1 min-h-0 overflow-x-hidden overflow-y-auto">
+    <main className="w-full flex-1 min-h-0">
       <motion.div
         className="container mx-auto px-2 sm:px-4 md:px-6 lg:px-8 py-4"
         variants={mainCardVariants}
@@ -1256,15 +1253,22 @@ const ReservationPage = () => {
                           <p className="text-muted-foreground text-sm mt-1 pe-1">
                             {activeView === "extend" &&
                             extendSubmittedRequest &&
-                            !extendInquiryOpen
-                              ? "تم تقديم طلب تمديد — يمكنك متابعة حالة الطلب أدناه"
-                              : activeView === "extend" && !extendInquiryOpen
-                              ? "اختر إقامتك الحالية لتمديدها"
-                              : activeView === "extend" && extendReviewOpen
-                                ? "راجع بيانات التمديد ثم أكّد الطلب"
-                                : activeView === "extend"
-                                ? "تم تحميل بيانات الطلب السابق — يمكنك تعديل تاريخ البدء وعدد الليالي ونوع الحجز"
-                                : "تحقق من توفر الوحدات السكنية في التاريخ المطلوب"}
+                            !extendInquiryOpen &&
+                            isHousingRequestApproved(
+                              extendSubmittedRequest.status,
+                            )
+                              ? "تمت الموافقة على طلب التمديد — يمكنك مراجعة التفاصيل أدناه"
+                              : activeView === "extend" &&
+                                  extendSubmittedRequest &&
+                                  !extendInquiryOpen
+                                ? "تم تقديم طلب تمديد — يمكنك متابعة حالة الطلب أدناه"
+                                : activeView === "extend" && !extendInquiryOpen
+                                  ? "اختر إقامتك الحالية لتمديدها"
+                                  : activeView === "extend" && extendReviewOpen
+                                    ? "راجع بيانات التمديد ثم أكّد الطلب"
+                                    : activeView === "extend"
+                                      ? "تم تحميل بيانات الطلب السابق — يمكنك تعديل تاريخ البدء وعدد الليالي ونوع الحجز"
+                                      : "تحقق من توفر الوحدات السكنية في التاريخ المطلوب"}
                           </p>
                         </CardHeader>
 
@@ -1283,520 +1287,556 @@ const ReservationPage = () => {
 
                           {showAvailabilityInquiry ? (
                             <>
-                          <div className="space-y-1.5">
-                            <Label className="text-foreground flex items-center gap-1.5 text-base">
-                              <CalendarDays className="h-4 w-4 text-blue-500" />
-                              تاريخ البدء
-                            </Label>
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  dir="rtl"
+                              <div className="space-y-1.5">
+                                <Label className="text-foreground flex items-center gap-1.5 text-base">
+                                  <CalendarDays className="h-4 w-4 text-blue-500" />
+                                  تاريخ البدء
+                                </Label>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      dir="rtl"
+                                      disabled={extendInquiryFullyLocked}
+                                      className={cn(
+                                        "h-[3.75rem] min-h-[3.75rem] w-full justify-between text-right text-base font-normal leading-[3.75rem] bg-background border-2 border-border hover:bg-muted px-3 py-0",
+                                        !startDate && "text-muted-foreground",
+                                        extendInquiryFullyLocked &&
+                                          "cursor-not-allowed opacity-60",
+                                      )}
+                                    >
+                                      <span>
+                                        {startDate
+                                          ? format(
+                                              new Date(`${startDate}T12:00:00`),
+                                              "PPP",
+                                              { locale: ar },
+                                            )
+                                          : "اختر التاريخ"}
+                                      </span>
+                                      <CalendarIcon className="h-4 w-4 opacity-50" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent
+                                    className="z-[10002] w-auto p-0 pointer-events-auto"
+                                    align="start"
+                                    dir="rtl"
+                                  >
+                                    <Calendar
+                                      mode="single"
+                                      selected={
+                                        startDate
+                                          ? new Date(`${startDate}T12:00:00`)
+                                          : undefined
+                                      }
+                                      onSelect={(date) => {
+                                        if (extendInquiryFullyLocked) return;
+                                        setStartDate(
+                                          date
+                                            ? format(date, "yyyy-MM-dd")
+                                            : "",
+                                        );
+                                      }}
+                                      locale={ar}
+                                      disabled={(date) =>
+                                        date > maxSelectableDate ||
+                                        date < extendMinStartDate
+                                      }
+                                      initialFocus
+                                      captionLayout="dropdown"
+                                      toYear={currentYear + 5}
+                                    />
+                                  </PopoverContent>
+                                </Popover>
+                                {availabilityErrors.startDate ? (
+                                  <p className="text-xs text-red-600">
+                                    {availabilityErrors.startDate}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <Label className="text-foreground flex items-center gap-1.5 text-base">
+                                  <Moon className="h-4 w-4 text-blue-500" />
+                                  عدد الليالي
+                                </Label>
+                                <Input
+                                  type="number"
+                                  min={1}
+                                  max={21}
+                                  placeholder="أدخل عدد الليالي"
+                                  value={nights}
                                   disabled={extendInquiryFullyLocked}
+                                  onChange={(e) => setNights(e.target.value)}
                                   className={cn(
-                                    "h-[3.75rem] min-h-[3.75rem] w-full justify-between text-right text-base font-normal leading-[3.75rem] bg-background border-2 border-border hover:bg-muted px-3 py-0",
-                                    !startDate && "text-muted-foreground",
+                                    "h-[3.75rem] min-h-[3.75rem] bg-background border-border text-foreground text-base leading-[3.75rem] placeholder:text-sm placeholder:text-muted-foreground placeholder:leading-[3.75rem] focus:border-brand focus:ring-brand/30",
                                     extendInquiryFullyLocked &&
                                       "cursor-not-allowed opacity-60",
                                   )}
-                                >
-                                  <span>
-                                    {startDate
-                                      ? format(
-                                          new Date(`${startDate}T12:00:00`),
-                                          "PPP",
-                                          { locale: ar },
-                                        )
-                                      : "اختر التاريخ"}
-                                  </span>
-                                  <CalendarIcon className="h-4 w-4 opacity-50" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent
-                                className="z-[10002] w-auto p-0 pointer-events-auto"
-                                align="start"
-                                dir="rtl"
-                              >
-                                <Calendar
-                                  mode="single"
-                                  selected={
-                                    startDate
-                                      ? new Date(`${startDate}T12:00:00`)
-                                      : undefined
-                                  }
-                                  onSelect={(date) => {
-                                    if (extendInquiryFullyLocked) return;
-                                    setStartDate(
-                                      date ? format(date, "yyyy-MM-dd") : "",
-                                    );
-                                  }}
-                                  locale={ar}
-                                  disabled={(date) =>
-                                    date > maxSelectableDate ||
-                                    date < extendMinStartDate
-                                  }
-                                  initialFocus
-                                  captionLayout="dropdown"
-                                  toYear={currentYear + 5}
                                 />
-                              </PopoverContent>
-                            </Popover>
-                            {availabilityErrors.startDate ? (
-                              <p className="text-xs text-red-600">
-                                {availabilityErrors.startDate}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <Label className="text-foreground flex items-center gap-1.5 text-base">
-                              <Moon className="h-4 w-4 text-blue-500" />
-                              عدد الليالي
-                            </Label>
-                            <Input
-                              type="number"
-                              min={1}
-                              max={21}
-                              placeholder="أدخل عدد الليالي"
-                              value={nights}
-                              disabled={extendInquiryFullyLocked}
-                              onChange={(e) => setNights(e.target.value)}
-                              className={cn(
-                                "h-[3.75rem] min-h-[3.75rem] bg-background border-border text-foreground text-base leading-[3.75rem] placeholder:text-sm placeholder:text-muted-foreground placeholder:leading-[3.75rem] focus:border-brand focus:ring-brand/30",
-                                extendInquiryFullyLocked &&
-                                  "cursor-not-allowed opacity-60",
-                              )}
-                            />
-                            {availabilityErrors.nights ? (
-                              <p className="text-xs text-red-600">
-                                {availabilityErrors.nights}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <Label className="text-foreground flex items-center gap-1.5 text-base">
-                              <Building2 className="h-4 w-4 text-blue-500" />
-                              نوع الوحدة
-                              <span className="text-red-500 text-xs">*</span>
-                              <span className="text-xs text-muted-foreground font-normal">
-                                (يمكن اختيار أكثر من نوع)
-                              </span>
-                            </Label>
-                            <div
-                              className="grid grid-cols-3 gap-2"
-                              dir="rtl"
-                              lang="ar"
-                            >
-                              {ALL_UNIT_TYPE_OPTIONS.map((opt) => (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  disabled={extendInquiryFieldsLocked}
-                                  onClick={() => {
-                                    if (extendInquiryFieldsLocked) return;
-                                    const v = opt.value as AvailableUnitType;
-                                    setSelectedUnitTypes((prev) =>
-                                      prev.includes(v)
-                                        ? prev.filter((x) => x !== v)
-                                        : [...prev, v],
-                                    );
-                                    setAvailabilityErrors((prev) => ({
-                                      ...prev,
-                                      unitType: undefined,
-                                    }));
-                                  }}
-                                  className={cn(
-                                    "py-2.5 px-2 rounded-xl border-2 font-semibold text-sm transition-all duration-200 whitespace-nowrap text-center leading-snug",
-                                    selectedUnitTypes.includes(
-                                      opt.value as AvailableUnitType,
-                                    )
-                                      ? "bg-brand border-brand text-brand-foreground shadow-md shadow-brand/25 scale-[1.02]"
-                                      : "bg-muted border-border text-foreground hover:bg-brand-muted hover:border-brand/40",
-                                    extendInquiryFieldsLocked &&
-                                      "cursor-not-allowed opacity-60 hover:bg-muted hover:border-border",
-                                  )}
-                                >
-                                  {opt.label}
-                                </button>
-                              ))}
-                            </div>
-                            {availabilityErrors.unitType ? (
-                              <p className="text-xs text-red-600">
-                                {availabilityErrors.unitType}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <Label className="text-foreground text-base flex items-center gap-1">
-                              نوع الطلب
-                              <span className="text-red-500 text-xs">*</span>
-                            </Label>
-                            <div className="flex gap-2 overflow-x-auto pb-1">
-                              {requestTypeOptions.map((opt) => (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  disabled={extendInquiryFieldsLocked}
-                                  onClick={() => {
-                                    if (extendInquiryFieldsLocked) return;
-                                    setRequestType(opt.value);
-                                    setAvailabilityErrors((prev) => ({
-                                      ...prev,
-                                      requestType: undefined,
-                                    }));
-                                  }}
-                                  className={cn(
-                                    "py-2.5 px-3 rounded-xl border-2 font-medium text-sm transition-all duration-200 whitespace-nowrap shrink-0 min-w-[calc((100%-1rem)/3)]",
-                                    requestType === opt.value
-                                      ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
-                                      : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40",
-                                    extendInquiryFieldsLocked &&
-                                      "cursor-not-allowed opacity-60 hover:bg-background hover:border-border",
-                                  )}
-                                >
-                                  {opt.label}
-                                </button>
-                              ))}
-                            </div>
-                            {availabilityErrors.requestType ? (
-                              <p className="text-xs text-red-600">
-                                {availabilityErrors.requestType}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <Label className="text-foreground text-base flex items-center gap-1">
-                              الجنس
-                              <span className="text-red-500 text-xs">*</span>
-                            </Label>
-                            <div className="grid grid-cols-2 gap-2">
-                              {genderOptions.map((opt) => (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  disabled={extendInquiryFieldsLocked}
-                                  onClick={() => {
-                                    if (extendInquiryFieldsLocked) return;
-                                    setSelectedGenders((prev) =>
-                                      prev.includes(opt.value)
-                                        ? prev.filter((v) => v !== opt.value)
-                                        : [...prev, opt.value],
-                                    );
-                                    setAvailabilityErrors((prev) => ({
-                                      ...prev,
-                                      gender: undefined,
-                                    }));
-                                  }}
-                                  className={cn(
-                                    "py-2.5 rounded-xl border-2 font-medium text-sm transition-all duration-200",
-                                    selectedGenders.includes(opt.value)
-                                      ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
-                                      : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40",
-                                    extendInquiryFieldsLocked &&
-                                      "cursor-not-allowed opacity-60 hover:bg-background hover:border-border",
-                                  )}
-                                >
-                                  {opt.label}
-                                </button>
-                              ))}
-                            </div>
-                            {availabilityErrors.gender ? (
-                              <p className="text-xs text-red-600">
-                                {availabilityErrors.gender}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <Label className="text-foreground text-base flex items-center gap-1">
-                              نوع الحجز
-                              <span className="text-red-500 text-xs">*</span>
-                            </Label>
-                            <div className="grid grid-cols-2 gap-2">
-                              {allocationTypeOptions.map((opt) => (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  disabled={extendInquiryFullyLocked}
-                                  onClick={() => {
-                                    if (extendInquiryFullyLocked) return;
-                                    setAllocationType(opt.value);
-                                    setAvailabilityErrors((prev) => ({
-                                      ...prev,
-                                      allocationType: undefined,
-                                    }));
-                                  }}
-                                  className={`py-2.5 rounded-xl border-2 font-medium text-sm transition-all duration-200 ${
-                                    allocationType === opt.value
-                                      ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
-                                      : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40"
-                                  }${extendInquiryFullyLocked ? " cursor-not-allowed opacity-60" : ""}`}
-                                >
-                                  {opt.label}
-                                </button>
-                              ))}
-                            </div>
-                            {availabilityErrors.allocationType ? (
-                              <p className="text-xs text-red-600">
-                                {availabilityErrors.allocationType}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-2">
-                            <FlexibleAllocationNotice />
-                            {showEmployeeDiscountNotice ? (
-                              <EmployeeDiscountNotice />
-                            ) : null}
-                          </div>
-
-                          {!extendInquiryFullyLocked ? (
-                          <Button
-                            type="button"
-                            onClick={handleCheckAvailability}
-                            disabled={isChecking}
-                            className="w-full py-5 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-lg transition-all duration-300 hover:scale-[1.02] hover:bg-brand-hover hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
-                          >
-                            {isChecking ? (
-                              <span className="flex items-center gap-2">
-                                <motion.div
-                                  className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
-                                  animate={{ rotate: 360 }}
-                                  transition={{
-                                    duration: 1,
-                                    repeat: Infinity,
-                                    ease: "linear",
-                                  }}
-                                />
-                                جارٍ التحقق...
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-2">
-                                <Search className="h-4 w-4" />
-                                تحقق من التوفر
-                              </span>
-                            )}
-                          </Button>
-                          ) : null}
-
-                          {availabilitySearchStatus === "success" &&
-                            activeView !== "extend" &&
-                            (() => {
-                              const searchedKinds =
-                                orderedUnitKindsFromSelection(
-                                  selectedUnitTypes,
-                                );
-                              const unavailableMessage =
-                                getUnavailableUnitTypesMessage(
-                                  searchedKinds,
-                                  availabilityCards,
-                                );
-                              if (!unavailableMessage) return null;
-                              return (
-                                <motion.div
-                                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  transition={{ duration: 0.4 }}
-                                  className="flex items-center gap-3 p-4 rounded-2xl border-2 font-semibold text-base bg-rose-50 border-rose-200 text-rose-900"
-                                >
-                                  <XCircle className="h-6 w-6 shrink-0 text-rose-600" />
-                                  {unavailableMessage}
-                                </motion.div>
-                              );
-                            })()}
-
-                          {availabilitySearchStatus === "success" &&
-                            availabilityCards.length > 0 &&
-                            extendReviewOpen &&
-                            extendContext &&
-                            activeView === "extend" && (
-                              <div className="space-y-3">
-                                <motion.div
-                                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  transition={{ duration: 0.4 }}
-                                  className="flex items-center gap-3 p-4 rounded-2xl border-2 font-semibold text-base bg-emerald-50 border-emerald-200 text-emerald-950"
-                                >
-                                  <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
-                                  الوحدات الحالية متاحة للتمديد
-                                </motion.div>
-                                <ExtendStayReviewPanel
-                                  startDate={startDate}
-                                  nights={nights}
-                                  allocationTypeLabel={extendAllocationTypeLabel}
-                                  requestTypeLabel={extendRequestTypeLabel}
-                                  genderLabels={extendGenderLabels}
-                                  unitCards={availabilityCards}
-                                  companions={extendContext.companions}
-                                  submitting={extendSubmitting}
-                                  onConfirm={() =>
-                                    void handleConfirmExtendStay()
-                                  }
-                                />
-                              </div>
-                            )}
-
-                          {availabilitySearchStatus === "success" &&
-                            availabilityCards.length > 0 &&
-                            activeView !== "extend" && (
-                              <div className="space-y-3">
-                                <motion.div
-                                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  transition={{ duration: 0.4 }}
-                                  className="flex items-center gap-3 p-4 rounded-2xl border-2 font-semibold text-base bg-emerald-50 border-emerald-200 text-emerald-950"
-                                >
-                                  <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
-                                  يوجد{" "}
-                                  {availabilityCards.length.toLocaleString(
-                                    "ar-EG",
-                                  )}{" "}
-                                  {availabilityCards.length === 1
-                                    ? "وحدة متاحة"
-                                    : "وحدات متاحة"}
-                                </motion.div>
-                                <div className="grid gap-3 sm:grid-cols-2 max-h-[min(360px,50vh)] overflow-y-auto pr-1">
-                                  {availabilityCards.map((card, cardIdx) => {
-                                    const cKey = availabilityCardKey(card);
-                                    const isSelected =
-                                      selectedAvailabilityKeys.includes(cKey);
-                                    const checkboxId =
-                                      `avail-${cardIdx}-${card.unitKind}-${card.id}`.replace(
-                                        /[^a-zA-Z0-9_-]/g,
-                                        "_",
-                                      );
-                                    return (
-                                      <motion.div
-                                        key={cKey}
-                                        layout
-                                        initial={{ opacity: 0, y: 6 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className={cn(
-                                          "rounded-2xl border-2 p-4 text-right shadow-sm transition-shadow hover:shadow-md",
-                                          card.unitKind === "bed" &&
-                                            "bg-gradient-to-br from-sky-50 via-white to-slate-50/80 border-sky-200",
-                                          card.unitKind === "room" &&
-                                            "bg-gradient-to-br from-teal-50 via-white to-slate-50/80 border-teal-200",
-                                          card.unitKind === "apartment" &&
-                                            "bg-gradient-to-br from-violet-50 via-white to-slate-50/80 border-violet-200",
-                                          isSelected &&
-                                            "ring-2 ring-offset-1 ring-brand border-brand/50",
-                                        )}
-                                      >
-                                        <label
-                                          htmlFor={checkboxId}
-                                          className="flex cursor-pointer items-center justify-between gap-2 border-b border-slate-200/70 pb-2 mb-3"
-                                        >
-                                          <span className="text-xs font-medium text-slate-600">
-                                            إضافة للاختيار
-                                          </span>
-                                          <input
-                                            id={checkboxId}
-                                            type="checkbox"
-                                            checked={isSelected}
-                                            onChange={() =>
-                                              toggleAvailabilityCard(cKey)
-                                            }
-                                            className="h-4 w-4 shrink-0 rounded border-slate-400 text-brand focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
-                                          />
-                                        </label>
-                                        <div className="flex items-start gap-3">
-                                          <div
-                                            className={cn(
-                                              "shrink-0 rounded-xl p-2.5",
-                                              card.unitKind === "bed" &&
-                                                "bg-sky-100 text-sky-800 border border-sky-200/80",
-                                              card.unitKind === "room" &&
-                                                "bg-teal-100 text-teal-800 border border-teal-200/80",
-                                              card.unitKind === "apartment" &&
-                                                "bg-violet-100 text-violet-800 border border-violet-200/80",
-                                            )}
-                                          >
-                                            {card.unitKind === "bed" ? (
-                                              <Bed className="h-5 w-5" />
-                                            ) : card.unitKind === "room" ? (
-                                              <Home className="h-5 w-5" />
-                                            ) : (
-                                              <Building2 className="h-5 w-5" />
-                                            )}
-                                          </div>
-                                          <div className="min-w-0 flex-1 space-y-1.5">
-                                            <div dir="rtl">
-                                              <p className="font-bold text-base leading-tight text-slate-900">
-                                                {card.title}
-                                              </p>
-                                            </div>
-                                            <AvailabilityUnitCardParents
-                                              card={card}
-                                            />
-                                            <AvailabilityUnitCardPrice
-                                              card={card}
-                                            />
-                                            {card.genderType ? (
-                                              <p className="text-base font-bold leading-snug text-slate-800">
-                                                <span className="font-semibold text-slate-600">
-                                                  نوع الجنس:{" "}
-                                                </span>
-                                                {card.genderType}
-                                              </p>
-                                            ) : null}
-                                            {card.buildingNumberAr ||
-                                            card.city ? (
-                                              <div className="space-y-0.5 text-sm font-semibold leading-snug text-slate-800">
-                                                {card.buildingNumberAr ? (
-                                                  <p>
-                                                    <span className="text-slate-600">
-                                                      رقم المبنى:{" "}
-                                                    </span>
-                                                    <span className="font-bold tabular-nums text-slate-900">
-                                                      {card.buildingNumberAr}
-                                                    </span>
-                                                  </p>
-                                                ) : null}
-                                                {card.city ? (
-                                                  <p>
-                                                    <span className="text-slate-600">
-                                                      المدينة:{" "}
-                                                    </span>
-                                                    <span className="font-bold text-slate-900">
-                                                      {card.city}
-                                                    </span>
-                                                  </p>
-                                                ) : null}
-                                              </div>
-                                            ) : null}
-                                            <p className="text-sm leading-relaxed text-slate-600 line-clamp-3">
-                                              {card.subtitle}
-                                            </p>
-                                          </div>
-                                        </div>
-                                      </motion.div>
-                                    );
-                                  })}
-                                </div>
-                                {selectedAvailabilityKeys.length > 0 ? (
-                                  <Button
-                                    type="button"
-                                    onClick={handleSaveReservationSelection}
-                                    className="w-full py-4 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-md transition-all duration-300 hover:bg-brand-hover hover:opacity-95"
-                                  >
-                                    <span className="inline-flex items-center justify-center gap-2">
-                                      <Bookmark className="h-4 w-4 shrink-0" />
-                                      حفظ المحدد والبيانات (
-                                      {selectedAvailabilityKeys.length.toLocaleString(
-                                        "ar-EG",
-                                      )}
-                                      )
-                                    </span>
-                                  </Button>
+                                {availabilityErrors.nights ? (
+                                  <p className="text-xs text-red-600">
+                                    {availabilityErrors.nights}
+                                  </p>
                                 ) : null}
                               </div>
-                            )}
+
+                              <div className="space-y-1.5">
+                                <Label className="text-foreground flex items-center gap-1.5 text-base">
+                                  <Building2 className="h-4 w-4 text-blue-500" />
+                                  نوع الوحدة
+                                  <span className="text-red-500 text-xs">
+                                    *
+                                  </span>
+                                  <span className="text-xs text-muted-foreground font-normal">
+                                    (يمكن اختيار أكثر من نوع)
+                                  </span>
+                                </Label>
+                                <div
+                                  className="grid grid-cols-3 gap-2"
+                                  dir="rtl"
+                                  lang="ar"
+                                >
+                                  {ALL_UNIT_TYPE_OPTIONS.map((opt) => (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      disabled={extendInquiryFieldsLocked}
+                                      onClick={() => {
+                                        if (extendInquiryFieldsLocked) return;
+                                        const v =
+                                          opt.value as AvailableUnitType;
+                                        setSelectedUnitTypes((prev) =>
+                                          prev.includes(v)
+                                            ? prev.filter((x) => x !== v)
+                                            : [...prev, v],
+                                        );
+                                        setAvailabilityErrors((prev) => ({
+                                          ...prev,
+                                          unitType: undefined,
+                                        }));
+                                      }}
+                                      className={cn(
+                                        "py-2.5 px-2 rounded-xl border-2 font-semibold text-sm transition-all duration-200 whitespace-nowrap text-center leading-snug",
+                                        selectedUnitTypes.includes(
+                                          opt.value as AvailableUnitType,
+                                        )
+                                          ? "bg-brand border-brand text-brand-foreground shadow-md shadow-brand/25 scale-[1.02]"
+                                          : "bg-muted border-border text-foreground hover:bg-brand-muted hover:border-brand/40",
+                                        extendInquiryFieldsLocked &&
+                                          "cursor-not-allowed opacity-60 hover:bg-muted hover:border-border",
+                                      )}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                                {availabilityErrors.unitType ? (
+                                  <p className="text-xs text-red-600">
+                                    {availabilityErrors.unitType}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <Label className="text-foreground text-base flex items-center gap-1">
+                                  نوع الطلب
+                                  <span className="text-red-500 text-xs">
+                                    *
+                                  </span>
+                                </Label>
+                                <div className="flex gap-2 overflow-x-auto pb-1">
+                                  {requestTypeOptions.map((opt) => (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      disabled={extendInquiryFieldsLocked}
+                                      onClick={() => {
+                                        if (extendInquiryFieldsLocked) return;
+                                        setRequestType(opt.value);
+                                        setAvailabilityErrors((prev) => ({
+                                          ...prev,
+                                          requestType: undefined,
+                                        }));
+                                      }}
+                                      className={cn(
+                                        "py-2.5 px-3 rounded-xl border-2 font-medium text-sm transition-all duration-200 whitespace-nowrap shrink-0 min-w-[calc((100%-1rem)/3)]",
+                                        requestType === opt.value
+                                          ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
+                                          : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40",
+                                        extendInquiryFieldsLocked &&
+                                          "cursor-not-allowed opacity-60 hover:bg-background hover:border-border",
+                                      )}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                                {availabilityErrors.requestType ? (
+                                  <p className="text-xs text-red-600">
+                                    {availabilityErrors.requestType}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <Label className="text-foreground text-base flex items-center gap-1">
+                                  الجنس
+                                  <span className="text-red-500 text-xs">
+                                    *
+                                  </span>
+                                </Label>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {genderOptions.map((opt) => (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      disabled={extendInquiryFieldsLocked}
+                                      onClick={() => {
+                                        if (extendInquiryFieldsLocked) return;
+                                        setSelectedGenders((prev) =>
+                                          prev.includes(opt.value)
+                                            ? prev.filter(
+                                                (v) => v !== opt.value,
+                                              )
+                                            : [...prev, opt.value],
+                                        );
+                                        setAvailabilityErrors((prev) => ({
+                                          ...prev,
+                                          gender: undefined,
+                                        }));
+                                      }}
+                                      className={cn(
+                                        "py-2.5 rounded-xl border-2 font-medium text-sm transition-all duration-200",
+                                        selectedGenders.includes(opt.value)
+                                          ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
+                                          : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40",
+                                        extendInquiryFieldsLocked &&
+                                          "cursor-not-allowed opacity-60 hover:bg-background hover:border-border",
+                                      )}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                                {availabilityErrors.gender ? (
+                                  <p className="text-xs text-red-600">
+                                    {availabilityErrors.gender}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              <div className="space-y-1.5">
+                                <Label className="text-foreground text-base flex items-center gap-1">
+                                  نوع الحجز
+                                  <span className="text-red-500 text-xs">
+                                    *
+                                  </span>
+                                </Label>
+                                <div className="grid grid-cols-2 gap-2">
+                                  {allocationTypeOptions.map((opt) => (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      disabled={extendInquiryFullyLocked}
+                                      onClick={() => {
+                                        if (extendInquiryFullyLocked) return;
+                                        setAllocationType(opt.value);
+                                        setAvailabilityErrors((prev) => ({
+                                          ...prev,
+                                          allocationType: undefined,
+                                        }));
+                                      }}
+                                      className={`py-2.5 rounded-xl border-2 font-medium text-sm transition-all duration-200 ${
+                                        allocationType === opt.value
+                                          ? "bg-brand border-brand text-brand-foreground shadow-lg shadow-brand/30 scale-[1.02]"
+                                          : "bg-background border-border text-muted-foreground hover:bg-brand-muted hover:border-brand/40"
+                                      }${extendInquiryFullyLocked ? " cursor-not-allowed opacity-60" : ""}`}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                                {availabilityErrors.allocationType ? (
+                                  <p className="text-xs text-red-600">
+                                    {availabilityErrors.allocationType}
+                                  </p>
+                                ) : null}
+                              </div>
+
+                              <div className="space-y-2">
+                                <FlexibleAllocationNotice />
+                                {showEmployeeDiscountNotice ? (
+                                  <EmployeeDiscountNotice />
+                                ) : null}
+                              </div>
+
+                              {!extendInquiryFullyLocked ? (
+                                <Button
+                                  type="button"
+                                  onClick={handleCheckAvailability}
+                                  disabled={isChecking}
+                                  className="w-full py-5 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-lg transition-all duration-300 hover:scale-[1.02] hover:bg-brand-hover hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                  {isChecking ? (
+                                    <span className="flex items-center gap-2">
+                                      <motion.div
+                                        className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full"
+                                        animate={{ rotate: 360 }}
+                                        transition={{
+                                          duration: 1,
+                                          repeat: Infinity,
+                                          ease: "linear",
+                                        }}
+                                      />
+                                      جارٍ التحقق...
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center gap-2">
+                                      <Search className="h-4 w-4" />
+                                      تحقق من التوفر
+                                    </span>
+                                  )}
+                                </Button>
+                              ) : null}
+
+                              {availabilitySearchStatus === "success" &&
+                                activeView !== "extend" &&
+                                (() => {
+                                  const searchedKinds =
+                                    orderedUnitKindsFromSelection(
+                                      selectedUnitTypes,
+                                    );
+                                  const unavailableMessage =
+                                    getUnavailableUnitTypesMessage(
+                                      searchedKinds,
+                                      availabilityCards,
+                                    );
+                                  if (!unavailableMessage) return null;
+                                  return (
+                                    <motion.div
+                                      initial={{
+                                        opacity: 0,
+                                        y: 8,
+                                        scale: 0.95,
+                                      }}
+                                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                                      transition={{ duration: 0.4 }}
+                                      className="flex items-center gap-3 p-4 rounded-2xl border-2 font-semibold text-base bg-rose-50 border-rose-200 text-rose-900"
+                                    >
+                                      <XCircle className="h-6 w-6 shrink-0 text-rose-600" />
+                                      {unavailableMessage}
+                                    </motion.div>
+                                  );
+                                })()}
+
+                              {availabilitySearchStatus === "success" &&
+                                availabilityCards.length > 0 &&
+                                extendReviewOpen &&
+                                extendContext &&
+                                activeView === "extend" && (
+                                  <div className="space-y-3">
+                                    <motion.div
+                                      initial={{
+                                        opacity: 0,
+                                        y: 8,
+                                        scale: 0.95,
+                                      }}
+                                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                                      transition={{ duration: 0.4 }}
+                                      className="flex items-center gap-3 p-4 rounded-2xl border-2 font-semibold text-base bg-emerald-50 border-emerald-200 text-emerald-950"
+                                    >
+                                      <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
+                                      الوحدات الحالية متاحة للتمديد
+                                    </motion.div>
+                                    <ExtendStayReviewPanel
+                                      startDate={startDate}
+                                      nights={nights}
+                                      allocationTypeLabel={
+                                        extendAllocationTypeLabel
+                                      }
+                                      requestTypeLabel={extendRequestTypeLabel}
+                                      genderLabels={extendGenderLabels}
+                                      unitCards={availabilityCards}
+                                      companions={extendContext.companions}
+                                      submitting={extendSubmitting}
+                                      onConfirm={() =>
+                                        void handleConfirmExtendStay()
+                                      }
+                                    />
+                                  </div>
+                                )}
+
+                              {availabilitySearchStatus === "success" &&
+                                availabilityCards.length > 0 &&
+                                activeView !== "extend" && (
+                                  <div className="space-y-3">
+                                    <motion.div
+                                      initial={{
+                                        opacity: 0,
+                                        y: 8,
+                                        scale: 0.95,
+                                      }}
+                                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                                      transition={{ duration: 0.4 }}
+                                      className="flex items-center gap-3 p-4 rounded-2xl border-2 font-semibold text-base bg-emerald-50 border-emerald-200 text-emerald-950"
+                                    >
+                                      <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
+                                      يوجد{" "}
+                                      {availabilityCards.length.toLocaleString(
+                                        "ar-EG",
+                                      )}{" "}
+                                      {availabilityCards.length === 1
+                                        ? "وحدة متاحة"
+                                        : "وحدات متاحة"}
+                                    </motion.div>
+                                    <div className="grid gap-3 sm:grid-cols-2 max-h-[min(360px,50vh)] overflow-y-auto pr-1">
+                                      {availabilityCards.map(
+                                        (card, cardIdx) => {
+                                          const cKey =
+                                            availabilityCardKey(card);
+                                          const isSelected =
+                                            selectedAvailabilityKeys.includes(
+                                              cKey,
+                                            );
+                                          const checkboxId =
+                                            `avail-${cardIdx}-${card.unitKind}-${card.id}`.replace(
+                                              /[^a-zA-Z0-9_-]/g,
+                                              "_",
+                                            );
+                                          return (
+                                            <motion.div
+                                              key={cKey}
+                                              layout
+                                              initial={{ opacity: 0, y: 6 }}
+                                              animate={{ opacity: 1, y: 0 }}
+                                              className={cn(
+                                                "rounded-2xl border-2 p-4 text-right shadow-sm transition-shadow hover:shadow-md",
+                                                card.unitKind === "bed" &&
+                                                  "bg-gradient-to-br from-sky-50 via-white to-slate-50/80 border-sky-200",
+                                                card.unitKind === "room" &&
+                                                  "bg-gradient-to-br from-teal-50 via-white to-slate-50/80 border-teal-200",
+                                                card.unitKind === "apartment" &&
+                                                  "bg-gradient-to-br from-violet-50 via-white to-slate-50/80 border-violet-200",
+                                                isSelected &&
+                                                  "ring-2 ring-offset-1 ring-brand border-brand/50",
+                                              )}
+                                            >
+                                              <label
+                                                htmlFor={checkboxId}
+                                                className="flex cursor-pointer items-center justify-between gap-2 border-b border-slate-200/70 pb-2 mb-3"
+                                              >
+                                                <span className="text-xs font-medium text-slate-600">
+                                                  إضافة للاختيار
+                                                </span>
+                                                <input
+                                                  id={checkboxId}
+                                                  type="checkbox"
+                                                  checked={isSelected}
+                                                  onChange={() =>
+                                                    toggleAvailabilityCard(cKey)
+                                                  }
+                                                  className="h-4 w-4 shrink-0 rounded border-slate-400 text-brand focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+                                                />
+                                              </label>
+                                              <div className="flex items-start gap-3">
+                                                <div
+                                                  className={cn(
+                                                    "shrink-0 rounded-xl p-2.5",
+                                                    card.unitKind === "bed" &&
+                                                      "bg-sky-100 text-sky-800 border border-sky-200/80",
+                                                    card.unitKind === "room" &&
+                                                      "bg-teal-100 text-teal-800 border border-teal-200/80",
+                                                    card.unitKind ===
+                                                      "apartment" &&
+                                                      "bg-violet-100 text-violet-800 border border-violet-200/80",
+                                                  )}
+                                                >
+                                                  {card.unitKind === "bed" ? (
+                                                    <Bed className="h-5 w-5" />
+                                                  ) : card.unitKind ===
+                                                    "room" ? (
+                                                    <Home className="h-5 w-5" />
+                                                  ) : (
+                                                    <Building2 className="h-5 w-5" />
+                                                  )}
+                                                </div>
+                                                <div className="min-w-0 flex-1 space-y-1.5">
+                                                  <div dir="rtl">
+                                                    <p className="font-bold text-base leading-tight text-slate-900">
+                                                      {card.title}
+                                                    </p>
+                                                  </div>
+                                                  <AvailabilityUnitCardParents
+                                                    card={card}
+                                                  />
+                                                  <AvailabilityUnitCardPrice
+                                                    card={card}
+                                                  />
+                                                  {card.genderType ? (
+                                                    <p className="text-base font-bold leading-snug text-slate-800">
+                                                      <span className="font-semibold text-slate-600">
+                                                        نوع الجنس:{" "}
+                                                      </span>
+                                                      {card.genderType}
+                                                    </p>
+                                                  ) : null}
+                                                  {card.buildingNumberAr ||
+                                                  card.city ? (
+                                                    <div className="space-y-0.5 text-sm font-semibold leading-snug text-slate-800">
+                                                      {card.buildingNumberAr ? (
+                                                        <p>
+                                                          <span className="text-slate-600">
+                                                            رقم المبنى:{" "}
+                                                          </span>
+                                                          <span className="font-bold tabular-nums text-slate-900">
+                                                            {
+                                                              card.buildingNumberAr
+                                                            }
+                                                          </span>
+                                                        </p>
+                                                      ) : null}
+                                                      {card.city ? (
+                                                        <p>
+                                                          <span className="text-slate-600">
+                                                            المدينة:{" "}
+                                                          </span>
+                                                          <span className="font-bold text-slate-900">
+                                                            {card.city}
+                                                          </span>
+                                                        </p>
+                                                      ) : null}
+                                                    </div>
+                                                  ) : null}
+                                                  <p className="text-sm leading-relaxed text-slate-600 line-clamp-3">
+                                                    {card.subtitle}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                            </motion.div>
+                                          );
+                                        },
+                                      )}
+                                    </div>
+                                    {selectedAvailabilityKeys.length > 0 ? (
+                                      <Button
+                                        type="button"
+                                        onClick={handleSaveReservationSelection}
+                                        className="w-full py-4 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-md transition-all duration-300 hover:bg-brand-hover hover:opacity-95"
+                                      >
+                                        <span className="inline-flex items-center justify-center gap-2">
+                                          <Bookmark className="h-4 w-4 shrink-0" />
+                                          حفظ المحدد والبيانات (
+                                          {selectedAvailabilityKeys.length.toLocaleString(
+                                            "ar-EG",
+                                          )}
+                                          )
+                                        </span>
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                )}
                             </>
                           ) : null}
                         </CardContent>
@@ -1945,7 +1985,9 @@ const ReservationPage = () => {
                                             onEdit={(r) =>
                                               openHistoryModal(r, "edit")
                                             }
-                                            onCancel={handleCancelHistoryRequest}
+                                            onCancel={
+                                              handleCancelHistoryRequest
+                                            }
                                             onDelete={
                                               handleDeleteHistoryRequest
                                             }
@@ -1984,7 +2026,7 @@ const ReservationPage = () => {
           </motion.div>
         </Card>
       </motion.div>
-      <div className="mb-14 text-transparent">t</div>
+      <div className="mb-14 h-24 text-transparent">t</div>
     </main>
   );
 };

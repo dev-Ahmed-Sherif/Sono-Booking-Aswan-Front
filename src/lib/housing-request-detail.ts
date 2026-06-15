@@ -1,10 +1,12 @@
 import { getLookupArray } from "@/lib/availability-inquiry";
 import { mapCompanionDtoToFormEntry } from "@/lib/companion-registration";
 import {
+  HOUSING_REQUEST_CATAGORY_EXTENSION,
   HOUSING_REQUEST_CATAGORY_NEW_STAY,
   housingRequestStatusToApiName,
   normalizeRequestUnitsForAddRequestDto,
   parseAllocationTypeEnum,
+  type AddRequestOldImagePayload,
   type AddRequestDtoPayload,
   type AddRequestParticipantDtoPayload,
   type AddRequestUnitDtoPayload,
@@ -46,6 +48,15 @@ export type HousingRequestDetail = {
   requestClassificationLabel: string;
   requestTypeLabel: string;
   requestAllocationTypeLabel: string;
+};
+
+/** Saved attachment row from `RequestDto.RequestAttaches`. */
+export type HousingRequestAttachmentSnapshot = {
+  id: string;
+  attachmentId: string;
+  fileName: string;
+  url: string;
+  extension?: string;
 };
 
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
@@ -366,6 +377,57 @@ export function parseRequestDetail(
   };
 }
 
+function attachmentDisplayName(
+  fileName: string,
+  url: string,
+  extension?: string,
+): string {
+  const fromName = fileName.trim();
+  if (fromName) return fromName;
+  const fromUrl = url.split("/").pop()?.trim();
+  if (fromUrl) return fromUrl;
+  const ext = extension?.trim();
+  return ext ? `attachment${ext.startsWith(".") ? ext : `.${ext}`}` : "مرفق";
+}
+
+/** Parses `RequestDto.requestAttaches` from `getRequestById` response entity. */
+export function parseRequestAttachesFromApi(
+  raw: Record<string, unknown>,
+): HousingRequestAttachmentSnapshot[] {
+  const collection = raw.requestAttaches ?? raw.RequestAttaches;
+  if (!Array.isArray(collection)) return [];
+
+  const out: HousingRequestAttachmentSnapshot[] = [];
+  for (const item of collection) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const deleted = row.isDeleted ?? row.IsDeleted;
+    if (deleted === true || deleted === "true" || deleted === 1) continue;
+
+    const id = pickStr(row, "id", "Id");
+    const attachmentId = pickStr(row, "attachmentId", "AttachmentId");
+    const url = pickStr(row, "url", "Url");
+    if (!id && !attachmentId && !url) continue;
+
+    const extension = pickStr(row, "extension", "Extension") || undefined;
+    const fileName = attachmentDisplayName(
+      pickStr(row, "fileName", "FileName"),
+      url,
+      extension,
+    );
+
+    out.push({
+      id: id || attachmentId,
+      attachmentId: attachmentId || id,
+      fileName,
+      url,
+      ...(extension ? { extension } : {}),
+    });
+  }
+
+  return out;
+}
+
 /** @deprecated Prefer `formatStoredUnitLabel` when a snapshot is available. */
 export function formatRequestUnitLabel(unit: AddRequestUnitDtoPayload): string {
   if (unit.bedId) return "سرير";
@@ -373,16 +435,31 @@ export function formatRequestUnitLabel(unit: AddRequestUnitDtoPayload): string {
   return "شقة";
 }
 
+export function buildRequestOldImagesPayload(
+  attachments: Pick<HousingRequestAttachmentSnapshot, "id">[],
+): AddRequestOldImagePayload[] {
+  return attachments
+    .map((attachment) => ({
+      id: attachment.id.trim(),
+      isPrimary: false,
+    }))
+    .filter((img) => img.id.length > 0);
+}
+
 export function buildCancelRequestPayload(
   detail: HousingRequestDetail,
   requestUnits: AddRequestUnitDtoPayload[],
   companionIds: string[],
 ): AddRequestDtoPayload & { status: string } {
+  const base = buildUpdateRequestPayload(detail, requestUnits, companionIds);
   return {
-    ...buildUpdateRequestPayload(detail, requestUnits, companionIds),
+    ...base,
     status: housingRequestStatusToApiName(
       HOUSING_REQUEST_STATUS_ENUM.Canceled,
     ),
+    ...(base.requestCatagory === HOUSING_REQUEST_CATAGORY_EXTENSION
+      ? { previousRequestId: null }
+      : {}),
   };
 }
 

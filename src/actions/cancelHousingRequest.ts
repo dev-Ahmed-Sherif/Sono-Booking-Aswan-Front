@@ -20,7 +20,6 @@ import {
   formatAddRequestErrorMessage,
   isRequestServiceSuccess,
   parseRequestServiceError,
-  serializeAddRequestDtoForApi,
 } from "@/lib/housing-request-map";
 
 export type CancelHousingRequestResult =
@@ -81,7 +80,7 @@ export async function cancelHousingRequest(
   const companionIds = extractCompanionIdsFromParticipantRows(participantRows);
 
   const payload = buildCancelRequestPayload(detail, requestUnits, companionIds);
-  const res = await updateRequestById(serializeAddRequestDtoForApi(payload));
+  const res = await updateRequestById(payload);
 
   if (!isRequestServiceSuccess(res)) {
     const message =
