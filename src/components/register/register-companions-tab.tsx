@@ -31,6 +31,7 @@ import {
   type GenericOption,
 } from "@/lib/availability-inquiry";
 import { useToast } from "@/hooks/use-toast";
+import { useTablePagination } from "@/hooks/use-table-pagination";
 import AlertModal from "@/components/modals/alert-modal";
 import useToggleState from "@/hooks/use-toggle-state";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Form } from "@/components/ui/form";
+import { TablePagination } from "@/components/ui/table-pagination";
 import {
   Table,
   TableBody,
@@ -173,6 +175,15 @@ const RegisterCompanionsTab = ({
       ),
     [relationshipOptions, savedCompanions, editingCompanionId],
   );
+
+  const {
+    paginatedItems: paginatedSavedCompanions,
+    page: companionsTablePage,
+    setPage: setCompanionsTablePage,
+    pageCount: companionsTablePageCount,
+    pageSize: companionsTablePageSize,
+    totalItems: companionsTableTotalItems,
+  } = useTablePagination(savedCompanions);
 
   const loadData = useCallback(async () => {
     if (!registeredUserId) return;
@@ -535,7 +546,7 @@ const RegisterCompanionsTab = ({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {savedCompanions.map((companion) => (
+                    {paginatedSavedCompanions.map((companion) => (
                       <TableRow key={companion.id}>
                         <TableCell className="font-medium">
                           {companion.fullName}
@@ -584,6 +595,13 @@ const RegisterCompanionsTab = ({
                     ))}
                   </TableBody>
                 </Table>
+                <TablePagination
+                  totalItems={companionsTableTotalItems}
+                  page={companionsTablePage}
+                  pageCount={companionsTablePageCount}
+                  pageSize={companionsTablePageSize}
+                  onPageChange={setCompanionsTablePage}
+                />
               </div>
             )}
           </CardContent>

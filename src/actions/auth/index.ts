@@ -2,14 +2,22 @@
 
 import * as z from "zod";
 import axios from "axios";
+import "@/lib/axios-auth";
 import {
   clearAccessToken,
   getAccessToken,
+  getRefreshToken,
+  getUserId,
   setAccessToken,
 } from "@/lib/token-helper";
+import { refreshAccessTokenOnce } from "@/lib/refresh-access-token";
 import { toPlainSerializable } from "@/lib/to-plain-serializable";
+import {
+  extractNationalIdCheckResult,
+  mapRegisterApiMessage,
+} from "@/lib/companion-registration";
 
-import { LoginSchema } from "@/schemas";
+import { LoginSchema, ForgotPasswordSchema } from "@/schemas";
 
 type RefreshTokenInput = {
   userId: string;
@@ -152,7 +160,7 @@ function registerErrorMessage(
   if (data && typeof data === "object") {
     const body = data as Record<string, unknown>;
     if (typeof body.message === "string" && body.message.trim()) {
-      return body.message;
+      return mapRegisterApiMessage(body.message, status, body.message.trim());
     }
     const errors = body.errors ?? body.Errors;
     if (errors && typeof errors === "object") {
@@ -168,10 +176,69 @@ function registerErrorMessage(
       if (lines.length > 0) return lines.join(" · ");
     }
   }
-  if (status === 400) return "بيانات غير صحيحة";
-  if (status === 409) return "البريد الإلكتروني أو المستخدم مسجل مسبقاً";
-  return fallback;
+  return mapRegisterApiMessage(undefined, status, fallback);
 }
+
+const CheckNationalIdExists = async (nationalId: string) => {
+  const trimmed = nationalId.trim();
+  if (!trimmed) {
+    return {
+      exists: false,
+      error: "InvalidFields",
+      message: "رقم الهوية مطلوب",
+    };
+  }
+
+  try {
+    const res = await axios.get(
+      `${process.env.BACK_END}/accounts/check-national-id/${encodeURIComponent(trimmed)}`,
+    );
+
+    const plain = toPlainSerializable(res.data) as Record<string, unknown> | null;
+    const check = extractNationalIdCheckResult(plain);
+    const message =
+      typeof plain?.message === "string" ? plain.message : undefined;
+
+    return {
+      exists: check.exists,
+      isEmployee: check.isEmployee,
+      employeeId: check.employeeId,
+      message: check.exists
+        ? mapRegisterApiMessage(message, 409)
+        : message,
+    };
+  } catch (error: unknown) {
+    const err = error as {
+      response?: { status?: number; data?: { message?: string } };
+      message?: string;
+    };
+    const status = err?.response?.status;
+    const apiMessage =
+      typeof err?.response?.data?.message === "string"
+        ? err.response.data.message
+        : undefined;
+
+    if (status === 400) {
+      return {
+        exists: false,
+        notEmployee: apiMessage?.trim().toUpperCase() === "NOT_EMPLOYEE",
+        error: "BadRequest",
+        status,
+        message: mapRegisterApiMessage(apiMessage, status),
+      };
+    }
+
+    return {
+      exists: false,
+      error: "FailedToCheck",
+      status,
+      message:
+        apiMessage ||
+        err?.message ||
+        "تعذر التحقق من رقم الهوية",
+    };
+  }
+};
 
 /**
  * Register a new user.
@@ -231,63 +298,103 @@ const Register = async (formData: FormData) => {
   }
 };
 
-const refreshTokenData = async (values: RefreshTokenInput) => {
+const ForgotPassword = async (values: z.infer<typeof ForgotPasswordSchema>) => {
+  const validatedFields = ForgotPasswordSchema.safeParse(values);
+  if (!validatedFields.success) {
+    return { error: "Invalid Fields!", message: "يجب إدخال بريد إلكتروني صالح" };
+  }
+
   try {
-    const accessToken = await getAccessToken();
     const res = await axios.post(
-      `${process.env.BACK_END}/accounts/refresh`,
-      {
-        userId: values.userId,
-        accessToken: values.accessToken,
-        refreshToken: values.refreshToken,
-      },
+      `${process.env.BACK_END}/accounts/forgotPassword`,
+      { identifier: validatedFields.data.email.trim() },
       {
         headers: {
           "Content-Type": "application/json",
-          withCredentials: true,
-          Authorization: `Bearer ${accessToken}`,
         },
       },
     );
 
-    const plainRoot = toPlainSerializable(res.data) as Record<
-      string,
-      unknown
-    > | null;
-    if (!plainRoot || typeof plainRoot !== "object") {
+    const plain = toPlainSerializable(res.data);
+    if (plain == null) {
       return {
-        error: "Failed to refresh token",
-        message: "Invalid response from server",
+        error: "Failed to reset password",
+        message: "استجابة غير صالحة من الخادم",
       };
     }
 
-    const inner = (plainRoot.data ?? plainRoot) as Record<string, unknown>;
-    const access = inner.accessToken ?? inner.AccessToken;
-    if (typeof access === "string" && access) {
-      await setAccessToken(access);
-    }
+    const root = plain as Record<string, unknown>;
+    const message =
+      typeof root.message === "string" && root.message.trim()
+        ? root.message.trim()
+        : "إذا كان الحساب موجوداً، ستصلك كلمة المرور الجديدة على بريدك الإلكتروني.";
 
-    const refresh =
-      inner.refreshToken ??
-      inner.RefreshToken ??
-      (plainRoot.refreshToken as string | undefined);
-
-    return {
-      ...plainRoot,
-      refreshToken: typeof refresh === "string" ? refresh : undefined,
+    return { success: true, message, data: root };
+  } catch (error: unknown) {
+    const err = error as {
+      response?: {
+        status?: number;
+        data?: { message?: string } & Record<string, unknown>;
+      };
+      message?: string;
     };
-  } catch (error: any) {
+    const data = err?.response?.data;
+    const message =
+      (data && typeof data.message === "string" && data.message.trim()) ||
+      err?.message ||
+      "تعذر إعادة تعيين كلمة المرور. يُرجى المحاولة لاحقاً.";
+
     return {
-      error: error.response?.data?.message || "Failed to refresh token",
+      error: "Failed to reset password",
+      status: err?.response?.status,
+      message,
+      data: data != null ? toPlainSerializable(data) : undefined,
     };
   }
+};
+
+const refreshTokenData = async (_values?: RefreshTokenInput) => {
+  const result = await refreshAccessTokenOnce();
+
+  if ("error" in result) {
+    return {
+      error: result.error,
+      message: result.message || "Failed to refresh token",
+    };
+  }
+
+  return {
+    ok: true,
+    refreshToken: result.refreshToken,
+  };
+};
+
+/** Reads session cookies and refreshes tokens when needed. */
+const refreshSession = async () => {
+  const [userId, accessToken, refreshToken] = await Promise.all([
+    getUserId(),
+    getAccessToken(),
+    getRefreshToken(),
+  ]);
+
+  if (!userId || !accessToken || !refreshToken) {
+    return {
+      error: "Unauthorized",
+      message: "Missing session data. Please login again.",
+    };
+  }
+
+  return refreshTokenData({ userId, accessToken, refreshToken });
 };
 
 export {
   Login,
   Logout,
   Register,
+  CheckNationalIdExists,
+  ForgotPassword,
   getUserData,
   refreshTokenData,
+  refreshSession,
   verifyAccessTokenCookie,
 };

@@ -1,7 +1,7 @@
 "use server";
 
 import * as z from "zod";
-import axios from "axios";
+import axios from "@/lib/axios-auth";
 import { getAccessToken } from "@/lib/token-helper";
 import { toPlainSerializable } from "@/lib/to-plain-serializable";
 import { runAccountUpdatePut } from "@/lib/account-update-remote";

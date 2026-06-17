@@ -122,31 +122,103 @@ export function buildUnitBlockingEndIndex(input: {
   reservationsRaw?: unknown[];
   bedsRaw?: unknown[];
   roomsRaw?: unknown[];
+  /** Request ids whose unit holds must be ignored (e.g. editing an existing request). */
+  excludeRequestIds?: string[];
 }): UnitBlockingEndIndex {
   const beds = new Map<string, string>();
   const rooms = new Map<string, string>();
   const apartments = new Map<string, string>();
 
+  const excludeRequestIds = new Set(
+    (input.excludeRequestIds ?? [])
+      .map((id) => id.trim().toLowerCase())
+      .filter(Boolean),
+  );
+
   const reservationByRequestId = new Map<string, Record<string, unknown>>();
+  const requestIdByReservationId = new Map<string, string>();
   for (const item of input.reservationsRaw ?? []) {
     if (!item || typeof item !== "object") continue;
     const r = item as Record<string, unknown>;
     const requestId = pickStr(r, "requestId", "RequestId");
+    const reservationId = pickStr(r, "id", "Id");
     if (requestId) {
       reservationByRequestId.set(requestId.toLowerCase(), r);
+      if (reservationId) {
+        requestIdByReservationId.set(
+          reservationId.toLowerCase(),
+          requestId.toLowerCase(),
+        );
+      }
     }
   }
 
   const requestEndById = new Map<string, string>();
+  const mergeRequestEnd = (requestId: string, endYmd: string) => {
+    const key = requestId.trim().toLowerCase();
+    if (!key || !endYmd) return;
+    const prev = requestEndById.get(key);
+    requestEndById.set(key, maxYmd(prev, endYmd) ?? endYmd);
+  };
+
   for (const item of input.requestsRaw) {
     if (!item || typeof item !== "object") continue;
     const r = item as Record<string, unknown>;
     if (!requestStatusBlocksUnit(r.status ?? r.Status)) continue;
     const id = pickStr(r, "id", "Id");
     if (!id) continue;
+    if (excludeRequestIds.has(id.toLowerCase())) continue;
     const reservation = reservationByRequestId.get(id.toLowerCase());
-    const endYmd = resolveBlockingEndForReservation(reservation);
-    if (endYmd) requestEndById.set(id.toLowerCase(), endYmd);
+    const endYmd =
+      resolveBlockingEndForReservation(reservation) ??
+      toYmd(r.endDate ?? r.EndDate);
+    if (endYmd) mergeRequestEnd(id, endYmd);
+  }
+
+  for (const item of input.extensionsRaw ?? []) {
+    if (!item || typeof item !== "object") continue;
+    const ext = item as Record<string, unknown>;
+    if (!requestStatusBlocksUnit(ext.status ?? ext.Status)) continue;
+    const reservationId = pickStr(ext, "reservationId", "ReservationId");
+    const endYmd = toYmd(ext.endDate ?? ext.EndDate);
+    if (!reservationId || !endYmd) continue;
+    const requestId = requestIdByReservationId.get(reservationId.toLowerCase());
+    if (requestId) mergeRequestEnd(requestId, endYmd);
+  }
+
+  const previousRequestById = new Map<string, string>();
+  for (const item of input.requestsRaw) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Record<string, unknown>;
+    const id = pickStr(r, "id", "Id");
+    const previousId = pickStr(r, "previousRequestId", "PreviousRequestId");
+    if (id && previousId) previousRequestById.set(id.toLowerCase(), previousId.toLowerCase());
+  }
+
+  const resolveRootStayRequestId = (requestId: string): string => {
+    let current = requestId.trim().toLowerCase();
+    const visited = new Set<string>();
+    while (previousRequestById.has(current)) {
+      if (visited.has(current)) break;
+      visited.add(current);
+      current = previousRequestById.get(current)!;
+    }
+    return current;
+  };
+
+  for (const item of input.requestsRaw) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Record<string, unknown>;
+    if (!requestStatusBlocksUnit(r.status ?? r.Status)) continue;
+    const category = pickStr(r, "requestCatagory", "RequestCatagory").toLowerCase();
+    if (category !== "extension" && category !== "2") continue;
+    const id = pickStr(r, "id", "Id");
+    const previousId = pickStr(r, "previousRequestId", "PreviousRequestId");
+    const endYmd = toYmd(r.endDate ?? r.EndDate);
+    if (!id || !previousId || !endYmd) continue;
+    if (excludeRequestIds.has(id.toLowerCase())) continue;
+    mergeRequestEnd(id, endYmd);
+    mergeRequestEnd(resolveRootStayRequestId(previousId), endYmd);
   }
 
   const resolveEndForRequest = (requestId: string): string | undefined =>
@@ -171,6 +243,7 @@ export function buildUnitBlockingEndIndex(input: {
     const u = item as Record<string, unknown>;
     const requestId = pickStr(u, "requestId", "RequestId");
     if (!requestId) continue;
+    if (excludeRequestIds.has(requestId.toLowerCase())) continue;
     const endYmd = resolveEndForRequest(requestId);
     if (!endYmd) continue;
 
@@ -316,6 +389,38 @@ export function filterAvailabilityListsByOccupancy(
   });
 
   return { apartments, rooms, beds };
+}
+
+/** Latest blocking checkout date for a stored unit snapshot. */
+export function blockingEndForStoredUnit(
+  unit: {
+    id: string;
+    unitKind: string;
+    roomId?: string;
+    apartmentId?: string;
+  },
+  index: UnitBlockingEndIndex | null,
+): string | undefined {
+  if (!index) return undefined;
+  const id = unit.id.trim().toLowerCase();
+  if (unit.unitKind === "bed") {
+    return maxYmd(
+      index.beds.get(id),
+      unit.roomId ? index.rooms.get(unit.roomId.trim().toLowerCase()) : undefined,
+      unit.apartmentId
+        ? index.apartments.get(unit.apartmentId.trim().toLowerCase())
+        : undefined,
+    );
+  }
+  if (unit.unitKind === "room") {
+    return maxYmd(
+      index.rooms.get(id),
+      unit.apartmentId
+        ? index.apartments.get(unit.apartmentId.trim().toLowerCase())
+        : undefined,
+    );
+  }
+  return index.apartments.get(id);
 }
 
 export function parseAvailabilityBookingArrays(responses: {

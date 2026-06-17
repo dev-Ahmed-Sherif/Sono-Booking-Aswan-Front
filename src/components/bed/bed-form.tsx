@@ -313,7 +313,28 @@ export default function BedForm({
   const loadBedRecords = async () => {
     try {
       setRecordsLoading(true);
-      const result = await getBeds();
+      let apartmentRoomIds = new Set<string>();
+      if (routeApartmentId) {
+        const roomsResult = await getRooms(routeApartmentId, {
+          allStatuses: true,
+        });
+        if (!(roomsResult as { error?: string })?.error) {
+          const roomsRaw =
+            (roomsResult as { data?: unknown }).data ?? roomsResult;
+          const roomsList = Array.isArray(roomsRaw) ? roomsRaw : [];
+          apartmentRoomIds = new Set(
+            roomsList
+              .filter(
+                (item): item is Record<string, unknown> =>
+                  item != null && typeof item === "object",
+              )
+              .map((item) => String(item.id ?? item.Id ?? "").trim())
+              .filter(Boolean),
+          );
+        }
+      }
+
+      const result = await getBeds(undefined, { allStatuses: true });
       if ((result as { error?: string })?.error) return;
       const raw = (result as { data?: unknown }).data ?? result;
       const list = Array.isArray(raw) ? raw : [];
@@ -329,7 +350,10 @@ export default function BedForm({
           status: String(item.status ?? item.Status ?? "").trim(),
           roomId: String(item.roomId ?? item.RoomId ?? "").trim(),
         }))
-        .filter((item) => item.id && item.bedNumber);
+        .filter((item) => item.id && item.bedNumber)
+        .filter((item) =>
+          routeApartmentId ? apartmentRoomIds.has(item.roomId) : true,
+        );
       setBedRecords(mapped);
     } finally {
       setRecordsLoading(false);
@@ -542,8 +566,8 @@ export default function BedForm({
   useEffect(() => {
     let cancelled = false;
     const loadRoomOptions = async () => {
-      const apartmentFilter = currentId ? "" : routeApartmentId;
-      const result = await getRooms(apartmentFilter);
+      const apartmentFilter = routeApartmentId || "";
+      const result = await getRooms(apartmentFilter, { allStatuses: true });
       if (cancelled) return;
       if ((result as { error?: string })?.error) {
         console.error("[bed-form] getRooms failed", result);
@@ -571,7 +595,7 @@ export default function BedForm({
     return () => {
       cancelled = true;
     };
-  }, [routeApartmentId, currentId]);
+  }, [routeApartmentId]);
 
   useEffect(() => {
     const currentRoomId = form.getValues("roomId");

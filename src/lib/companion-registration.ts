@@ -149,6 +149,79 @@ export function extractApiResultString(response: unknown): string | undefined {
   return undefined;
 }
 
+/** Extract boolean from typical SonoBooking `IFinalResult` payloads. */
+export function extractApiResultBoolean(response: unknown): boolean | undefined {
+  if (!response || typeof response !== "object") return undefined;
+  const o = response as Record<string, unknown>;
+  const payload = o.result ?? o.Result ?? o.data ?? o.Data;
+  if (typeof payload === "boolean") return payload;
+  return undefined;
+}
+
+export type NationalIdCheckPayload = {
+  exists: boolean;
+  isEmployee?: boolean;
+  employeeId?: string;
+};
+
+/** Parse national-id check result (boolean legacy or structured payload). */
+export function extractNationalIdCheckResult(
+  response: unknown,
+): NationalIdCheckPayload {
+  if (!response || typeof response !== "object") {
+    return { exists: false };
+  }
+
+  const o = response as Record<string, unknown>;
+  const payload = o.result ?? o.Result ?? o.data ?? o.Data;
+
+  if (typeof payload === "boolean") {
+    return { exists: payload };
+  }
+
+  if (payload && typeof payload === "object") {
+    const p = payload as Record<string, unknown>;
+    const employeeId = p.employeeId ?? p.EmployeeId;
+    const isEmployee = p.isEmployee ?? p.IsEmployee;
+    return {
+      exists: Boolean(p.exists ?? p.Exists),
+      isEmployee:
+        typeof isEmployee === "boolean"
+          ? isEmployee
+          : employeeId != null && String(employeeId).trim() !== "",
+      employeeId:
+        employeeId != null && String(employeeId).trim() !== ""
+          ? String(employeeId)
+          : undefined,
+    };
+  }
+
+  return { exists: extractApiResultBoolean(response) ?? false };
+}
+
+export const NATIONAL_ID_EXISTED_MESSAGE =
+  "رقم الهوية / المستند مسجل مسبقاً";
+
+export const EMAIL_EXISTED_MESSAGE = "البريد الإلكتروني مسجل مسبقاً";
+
+export const NOT_EMPLOYEE_MESSAGE =
+  "رقم الهوية غير مسجل كموظف فى النظام";
+
+export function mapRegisterApiMessage(
+  message: string | undefined,
+  status?: number,
+  fallback = "حدث خطأ أثناء إكمال التسجيل",
+): string {
+  const code = (message ?? "").trim().toUpperCase();
+  if (code === "NATIONAL_ID_EXISTED") return NATIONAL_ID_EXISTED_MESSAGE;
+  if (code === "EMAIL_EXISTED") return EMAIL_EXISTED_MESSAGE;
+  if (code === "NOT_EMPLOYEE") return NOT_EMPLOYEE_MESSAGE;
+  if (typeof message === "string" && message.trim()) return message.trim();
+  if (status === 409) return "البيانات مسجلة مسبقاً";
+  if (status === 400) return "بيانات غير صحيحة";
+  return fallback;
+}
+
 /** 13th digit (before last): odd = male, even = female. */
 function genderDigitFromNationalId(nationalId: string): number | undefined {
   const digits = nationalId.replace(/\D/g, "");

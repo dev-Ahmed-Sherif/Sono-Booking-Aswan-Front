@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import {
@@ -24,7 +23,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
+import { DEFAULT_TABLE_PAGE_SIZE } from "@/hooks/use-table-pagination";
 import { cn } from "@/lib/utils";
+import { TablePagination } from "@/components/ui/table-pagination";
 
 function isRowMarkedDeleted(original: unknown): boolean {
   if (original == null || typeof original !== "object") return false;
@@ -89,6 +90,11 @@ export function DataTable<TData, TValue>({
     getPaginationRowModel: getPaginationRowModel(),
     onColumnFiltersChange: setColumnFilters,
     getFilteredRowModel: getFilteredRowModel(),
+    initialState: {
+      pagination: {
+        pageSize: DEFAULT_TABLE_PAGE_SIZE,
+      },
+    },
     state: {
       columnFilters,
     },
@@ -161,24 +167,14 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-start gap-4 py-4">
-        <Button
-          variant="outline"
-          // size="sm"
-          onClick={() => table.previousPage()}
-          disabled={!table.getCanPreviousPage()}
-        >
-          السابق
-        </Button>
-        <Button
-          variant="outline"
-          // size="sm"
-          onClick={() => table.nextPage()}
-          disabled={!table.getCanNextPage()}
-        >
-          التالى
-        </Button>
-      </div>
+      <TablePagination
+        totalItems={table.getFilteredRowModel().rows.length}
+        page={table.getState().pagination.pageIndex + 1}
+        pageCount={Math.max(1, table.getPageCount())}
+        pageSize={table.getState().pagination.pageSize}
+        onPageChange={(nextPage) => table.setPageIndex(nextPage - 1)}
+        className="flex flex-wrap items-center justify-start gap-4 py-4"
+      />
     </div>
   );
 }

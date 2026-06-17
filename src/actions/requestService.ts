@@ -1,6 +1,6 @@
 "use server";
 
-import axios from "axios";
+import axios from "@/lib/axios-auth";
 import { getUserData } from "@/actions/auth";
 import { getAccessToken } from "@/lib/token-helper";
 import { toPlainSerializable } from "@/lib/to-plain-serializable";

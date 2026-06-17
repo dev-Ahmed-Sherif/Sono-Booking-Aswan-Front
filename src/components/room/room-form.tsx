@@ -321,7 +321,7 @@ export default function RoomForm({
   const loadRoomRecords = async (): Promise<RoomRecordRow[]> => {
     try {
       setRecordsLoading(true);
-      const result = await getRooms(routeUnitDataId);
+      const result = await getRooms(routeUnitDataId, { allStatuses: true });
       if ((result as { error?: string })?.error) return [];
       const raw = (result as { data?: unknown }).data ?? result;
       const list = Array.isArray(raw) ? raw : [];

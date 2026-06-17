@@ -73,7 +73,9 @@ import { getCompanionById } from "@/actions/companionService";
 import { ExtendStayReviewPanel } from "@/components/reservation/extend-stay-review-panel";
 import { ExtendStayTabContent } from "@/components/reservation/extend-stay-tab-content";
 import { AvailabilityUnitCardParents } from "@/components/reservation/availability-unit-card-parents";
+import { AvailabilityUnitCardPhotos } from "@/components/reservation/availability-unit-card-photos";
 import { AvailabilityUnitCardPrice } from "@/components/reservation/availability-unit-card-price";
+import { AvailabilityUnitCardBedsCount } from "@/components/reservation/availability-unit-card-beds-count";
 import ReservationRequestForm from "@/components/reservation/reservation-request-form";
 import {
   deleteHousingRequest,
@@ -132,6 +134,8 @@ import {
   type AvailabilitySearchStatus,
   type ReservationInquirySnapshot,
 } from "@/lib/reservation-inquiry-snapshot";
+import { TablePagination } from "@/components/ui/table-pagination";
+import { useTablePagination } from "@/hooks/use-table-pagination";
 
 type ReservationView = "new" | "extend" | "history";
 type GenderOption = { value: "male" | "female"; label: "رجال" | "سيدات" };
@@ -344,6 +348,13 @@ const ReservationPage = () => {
     },
     [],
   );
+
+  const clearNewStayAvailabilityForm = useCallback(() => {
+    const emptySnapshot = emptyReservationInquirySnapshot();
+    applyInquirySnapshotToState(emptySnapshot);
+    newInquirySnapshotRef.current = emptySnapshot;
+    setShowReservationRequestForm(false);
+  }, [applyInquirySnapshotToState]);
 
   const switchReservationView = useCallback(
     (view: ReservationView) => {
@@ -698,6 +709,15 @@ const ReservationPage = () => {
       setHistoryLoading(false);
     };
   }, [activeView, loadHistoryRequests]);
+
+  const {
+    paginatedItems: paginatedHistoryRequests,
+    page: historyPage,
+    setPage: setHistoryPage,
+    pageCount: historyPageCount,
+    pageSize: historyPageSize,
+    totalItems: historyTotalItems,
+  } = useTablePagination(historyRequests);
 
   const openHistoryModal = (
     row: HousingRequestTableRow,
@@ -1763,15 +1783,24 @@ const ReservationPage = () => {
                                                   )}
                                                 </div>
                                                 <div className="min-w-0 flex-1 space-y-1.5">
-                                                  <div dir="rtl">
+                                                  <div
+                                                    dir="rtl"
+                                                    className="flex items-center justify-between gap-2"
+                                                  >
                                                     <p className="font-bold text-base leading-tight text-slate-900">
                                                       {card.title}
                                                     </p>
+                                                    <AvailabilityUnitCardPrice
+                                                      card={card}
+                                                    />
                                                   </div>
                                                   <AvailabilityUnitCardParents
                                                     card={card}
                                                   />
-                                                  <AvailabilityUnitCardPrice
+                                                  <AvailabilityUnitCardBedsCount
+                                                    card={card}
+                                                  />
+                                                  <AvailabilityUnitCardPhotos
                                                     card={card}
                                                   />
                                                   {card.genderType ? (
@@ -1856,6 +1885,7 @@ const ReservationPage = () => {
                             applicantName={applicantDisplayName}
                             initialStartDate={startDate}
                             initialNumberOfNights={initialNightsForRequest}
+                            onSuccess={clearNewStayAvailabilityForm}
                             onNavigateToHistory={() => {
                               setShowReservationRequestForm(false);
                               switchReservationView("history");
@@ -1946,7 +1976,7 @@ const ReservationPage = () => {
                                     </TableCell>
                                   </TableRow>
                                 ) : (
-                                  historyRequests.map((row) => (
+                                  paginatedHistoryRequests.map((row) => (
                                     <TableRow key={row.id}>
                                       <TableCell className="text-center py-3">
                                         {row.requestNo}
@@ -2003,6 +2033,13 @@ const ReservationPage = () => {
                                 )}
                               </TableBody>
                             </Table>
+                            <TablePagination
+                              totalItems={historyTotalItems}
+                              page={historyPage}
+                              pageCount={historyPageCount}
+                              pageSize={historyPageSize}
+                              onPageChange={setHistoryPage}
+                            />
                           </div>
                           {historyModalOpen && historyModalRequestId ? (
                             <HousingRequestDetailModal

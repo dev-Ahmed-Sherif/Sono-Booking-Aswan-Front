@@ -44,10 +44,18 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ToastAction } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
-import { getUserData, Login, verifyAccessTokenCookie } from "@/actions/auth";
+import { ForgotPassword, getUserData, Login, verifyAccessTokenCookie } from "@/actions/auth";
+import { PASSWORD_RESET_CONTACT_ADMIN_MESSAGE } from "@/lib/auth-messages";
 import {
   guideCookieName,
   refreshTokenCookieName,
@@ -64,7 +72,7 @@ import {
 } from "@/redux/userReducer";
 import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
-import { LoginSchema } from "@/schemas";
+import { ForgotPasswordSchema, LoginSchema } from "@/schemas";
 import type {
   AvailabilityUnitCard,
   GenericOption,
@@ -84,7 +92,9 @@ import {
 import { getPostLoginPath } from "@/lib/role-utils";
 import { FlexibleAllocationNotice } from "@/components/reservation/allocation-type-notices";
 import { AvailabilityUnitCardParents } from "@/components/reservation/availability-unit-card-parents";
+import { AvailabilityUnitCardPhotos } from "@/components/reservation/availability-unit-card-photos";
 import { AvailabilityUnitCardPrice } from "@/components/reservation/availability-unit-card-price";
+import { AvailabilityUnitCardBedsCount } from "@/components/reservation/availability-unit-card-beds-count";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -312,8 +322,10 @@ export function LoginForm({ Cookie }: LoginFormProps) {
   const reservation = useLocalStorage("reservation");
 
   const [isPending, startTransition] = useTransition();
+  const [isForgotPasswordPending, startForgotPasswordTransition] = useTransition();
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
 
   // Availability check state
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
@@ -351,6 +363,11 @@ export function LoginForm({ Cookie }: LoginFormProps) {
   const form = useForm<z.infer<typeof LoginSchema>>({
     resolver: zodResolver(LoginSchema),
     defaultValues: { email: "", password: "" },
+  });
+
+  const forgotPasswordForm = useForm<z.infer<typeof ForgotPasswordSchema>>({
+    resolver: zodResolver(ForgotPasswordSchema),
+    defaultValues: { email: "" },
   });
 
   // Redirect if already logged in
@@ -685,6 +702,47 @@ export function LoginForm({ Cookie }: LoginFormProps) {
     });
   };
 
+  const onForgotPasswordSubmit = (values: z.infer<typeof ForgotPasswordSchema>) => {
+    startForgotPasswordTransition(() => {
+      ForgotPassword(values)
+        .then((result) => {
+          if ("error" in result && result.error) {
+            toast({
+              variant: "destructive",
+              title: "خطأ",
+              description: result.message || "تعذر إعادة تعيين كلمة المرور",
+            });
+            return;
+          }
+
+          const description =
+            result.message ||
+            "إذا كان الحساب موجوداً، ستصلك كلمة المرور الجديدة على بريدك الإلكتروني.";
+
+          if (description === PASSWORD_RESET_CONTACT_ADMIN_MESSAGE) {
+            toast({
+              title: "تنبيه",
+              description,
+            });
+          } else {
+            toast({
+              title: "تم الإرسال",
+              description,
+            });
+          }
+          forgotPasswordForm.reset();
+          setForgotPasswordOpen(false);
+        })
+        .catch(() => {
+          toast({
+            variant: "destructive",
+            title: "خطأ",
+            description: "تعذر إعادة تعيين كلمة المرور. يُرجى المحاولة لاحقاً.",
+          });
+        });
+    });
+  };
+
   const onSubmit = (values: z.infer<typeof LoginSchema>) => {
     setIsLoggingIn(true);
     startTransition(() => {
@@ -834,7 +892,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
       <div className="absolute inset-0 bg-muted z-0" aria-hidden />
 
       {/* ── Main Content ── */}
-      <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-8">
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-start px-4 py-8">
         <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* ═══════════════════════════════════════════
               Right Panel  —  استعلام عن الوحدات
@@ -1144,152 +1202,6 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                     );
                   })()}
 
-                {/* Result: cards */}
-                {availabilitySearchStatus === "success" &&
-                  availabilityCards.length > 0 && (
-                    <div className="space-y-3">
-                      <motion.div
-                        initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        transition={{ duration: 0.4 }}
-                        className="flex items-center gap-3 p-4 rounded-2xl border-2 font-semibold text-base bg-emerald-50 border-emerald-200 text-emerald-950"
-                      >
-                        <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
-                        يوجد {availabilityCards.length.toLocaleString("ar-EG")}{" "}
-                        {availabilityCards.length === 1
-                          ? "وحدة متاحة"
-                          : "وحدات متاحة"}
-                      </motion.div>
-                      <div className="grid gap-3 sm:grid-cols-2 max-h-[min(360px,50vh)] overflow-y-auto pr-1">
-                        {availabilityCards.map((card, cardIdx) => {
-                          const cKey = availabilityCardKey(card);
-                          const isSelected =
-                            selectedAvailabilityKeys.includes(cKey);
-                          const checkboxId =
-                            `avail-${cardIdx}-${card.unitKind}-${card.id}`.replace(
-                              /[^a-zA-Z0-9_-]/g,
-                              "_",
-                            );
-                          return (
-                            <motion.div
-                              key={cKey}
-                              layout
-                              initial={{ opacity: 0, y: 6 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className={cn(
-                                "rounded-2xl border-2 p-4 text-right shadow-sm transition-shadow hover:shadow-md",
-                                card.unitKind === "bed" &&
-                                  "bg-gradient-to-br from-sky-50 via-white to-slate-50/80 border-sky-200",
-                                card.unitKind === "room" &&
-                                  "bg-gradient-to-br from-teal-50 via-white to-slate-50/80 border-teal-200",
-                                card.unitKind === "apartment" &&
-                                  "bg-gradient-to-br from-violet-50 via-white to-slate-50/80 border-violet-200",
-                                isSelected &&
-                                  "ring-2 ring-offset-1 ring-brand border-brand/50",
-                              )}
-                            >
-                              <label
-                                htmlFor={checkboxId}
-                                className="flex cursor-pointer items-center justify-between gap-2 border-b border-slate-200/70 pb-2 mb-3"
-                              >
-                                <span className="text-xs font-medium text-slate-600">
-                                  إضافة للاختيار
-                                </span>
-                                <input
-                                  id={checkboxId}
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => toggleAvailabilityCard(cKey)}
-                                  className="h-4 w-4 shrink-0 rounded border-slate-400 text-brand focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
-                                />
-                              </label>
-                              <div className="flex items-start gap-3">
-                                <div
-                                  className={cn(
-                                    "shrink-0 rounded-xl p-2.5",
-                                    card.unitKind === "bed" &&
-                                      "bg-sky-100 text-sky-800 border border-sky-200/80",
-                                    card.unitKind === "room" &&
-                                      "bg-teal-100 text-teal-800 border border-teal-200/80",
-                                    card.unitKind === "apartment" &&
-                                      "bg-violet-100 text-violet-800 border border-violet-200/80",
-                                  )}
-                                >
-                                  {card.unitKind === "bed" ? (
-                                    <Bed className="h-5 w-5" />
-                                  ) : card.unitKind === "room" ? (
-                                    <Home className="h-5 w-5" />
-                                  ) : (
-                                    <Building2 className="h-5 w-5" />
-                                  )}
-                                </div>
-                                <div className="min-w-0 flex-1 space-y-1.5">
-                                  <div dir="rtl">
-                                    <p className="font-bold text-base leading-tight text-slate-900">
-                                      {card.title}
-                                    </p>
-                                  </div>
-                                  <AvailabilityUnitCardParents card={card} />
-                                  <AvailabilityUnitCardPrice card={card} />
-                                  {card.genderType ? (
-                                    <p className="text-base font-bold leading-snug text-slate-800">
-                                      <span className="font-semibold text-slate-600">
-                                        نوع الجنس:{" "}
-                                      </span>
-                                      {card.genderType}
-                                    </p>
-                                  ) : null}
-                                  {card.buildingNumberAr || card.city ? (
-                                    <div className="space-y-0.5 text-sm font-semibold leading-snug text-slate-800">
-                                      {card.buildingNumberAr ? (
-                                        <p>
-                                          <span className="text-slate-600">
-                                            رقم المبنى:{" "}
-                                          </span>
-                                          <span className="font-bold tabular-nums text-slate-900">
-                                            {card.buildingNumberAr}
-                                          </span>
-                                        </p>
-                                      ) : null}
-                                      {card.city ? (
-                                        <p>
-                                          <span className="text-slate-600">
-                                            المدينة:{" "}
-                                          </span>
-                                          <span className="font-bold text-slate-900">
-                                            {card.city}
-                                          </span>
-                                        </p>
-                                      ) : null}
-                                    </div>
-                                  ) : null}
-                                  <p className="text-sm leading-relaxed text-slate-600 line-clamp-3">
-                                    {card.subtitle}
-                                  </p>
-                                </div>
-                              </div>
-                            </motion.div>
-                          );
-                        })}
-                      </div>
-                      {selectedAvailabilityKeys.length > 0 ? (
-                        <Button
-                          type="button"
-                          onClick={handleSaveReservationSelection}
-                          className="w-full py-4 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-md transition-all duration-300 hover:bg-brand-hover hover:opacity-95"
-                        >
-                          <span className="inline-flex items-center justify-center gap-2">
-                            <Bookmark className="h-4 w-4 shrink-0" />
-                            حفظ المحدد والبيانات (
-                            {selectedAvailabilityKeys.length.toLocaleString(
-                              "ar-EG",
-                            )}
-                            )
-                          </span>
-                        </Button>
-                      ) : null}
-                    </div>
-                  )}
               </CardContent>
             </Card>
           </motion.div>
@@ -1377,15 +1289,19 @@ export function LoginForm({ Cookie }: LoginFormProps) {
 
                     {/* Forgot password link */}
                     <div className="flex justify-start">
-                      <span
-                        className="text-xs text-muted-foreground cursor-not-allowed select-none"
-                        title="ستكون متاحة في مرحلة قادمة"
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentEmail = form.getValues("email")?.trim();
+                          if (currentEmail) {
+                            forgotPasswordForm.setValue("email", currentEmail);
+                          }
+                          setForgotPasswordOpen(true);
+                        }}
+                        className="text-base text-brand hover:text-brand-hover hover:underline transition-colors"
                       >
                         نسيت كلمة المرور؟
-                        <span className="ms-1 text-[10px] text-muted-foreground/70">
-                          (قريباً)
-                        </span>
-                      </span>
+                      </button>
                     </div>
 
                     {/* Login button */}
@@ -1438,6 +1354,151 @@ export function LoginForm({ Cookie }: LoginFormProps) {
             </Card>
           </motion.div>
         </div>
+
+        {availabilitySearchStatus === "success" && availabilityCards.length > 0 && (
+          <Card className="mt-6 w-full max-w-5xl border-2 border-border rounded-3xl shadow-lg bg-card text-card-foreground">
+            <CardHeader className="pb-3">
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.4 }}
+                className="flex items-center gap-3 p-4 rounded-2xl border-2 font-semibold text-base bg-emerald-50 border-emerald-200 text-emerald-950"
+              >
+                <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
+                يوجد {availabilityCards.length.toLocaleString("ar-EG")}{" "}
+                {availabilityCards.length === 1 ? "وحدة متاحة" : "وحدات متاحة"}
+              </motion.div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2 max-h-[min(520px,65vh)] overflow-y-auto pr-1">
+                {availabilityCards.map((card, cardIdx) => {
+                  const cKey = availabilityCardKey(card);
+                  const isSelected = selectedAvailabilityKeys.includes(cKey);
+                  const checkboxId =
+                    `avail-${cardIdx}-${card.unitKind}-${card.id}`.replace(
+                      /[^a-zA-Z0-9_-]/g,
+                      "_",
+                    );
+                  return (
+                    <motion.div
+                      key={cKey}
+                      layout
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={cn(
+                        "rounded-2xl border-2 p-4 text-right shadow-sm transition-shadow hover:shadow-md",
+                        card.unitKind === "bed" &&
+                          "bg-gradient-to-br from-sky-50 via-white to-slate-50/80 border-sky-200",
+                        card.unitKind === "room" &&
+                          "bg-gradient-to-br from-teal-50 via-white to-slate-50/80 border-teal-200",
+                        card.unitKind === "apartment" &&
+                          "bg-gradient-to-br from-violet-50 via-white to-slate-50/80 border-violet-200",
+                        isSelected && "ring-2 ring-offset-1 ring-brand border-brand/50",
+                      )}
+                    >
+                      <label
+                        htmlFor={checkboxId}
+                        className="flex cursor-pointer items-center justify-between gap-2 border-b border-slate-200/70 pb-2 mb-3"
+                      >
+                        <span className="text-xs font-medium text-slate-600">
+                          إضافة للاختيار
+                        </span>
+                        <input
+                          id={checkboxId}
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleAvailabilityCard(cKey)}
+                          className="h-4 w-4 shrink-0 rounded border-slate-400 text-brand focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+                        />
+                      </label>
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={cn(
+                            "shrink-0 rounded-xl p-2.5",
+                            card.unitKind === "bed" &&
+                              "bg-sky-100 text-sky-800 border border-sky-200/80",
+                            card.unitKind === "room" &&
+                              "bg-teal-100 text-teal-800 border border-teal-200/80",
+                            card.unitKind === "apartment" &&
+                              "bg-violet-100 text-violet-800 border border-violet-200/80",
+                          )}
+                        >
+                          {card.unitKind === "bed" ? (
+                            <Bed className="h-5 w-5" />
+                          ) : card.unitKind === "room" ? (
+                            <Home className="h-5 w-5" />
+                          ) : (
+                            <Building2 className="h-5 w-5" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                                  <div
+                                    dir="rtl"
+                                    className="flex items-center justify-between gap-2"
+                                  >
+                                    <p className="font-bold text-base leading-tight text-slate-900">
+                                      {card.title}
+                                    </p>
+                                    <AvailabilityUnitCardPrice card={card} />
+                          </div>
+                          <AvailabilityUnitCardParents card={card} />
+                          <AvailabilityUnitCardBedsCount card={card} />
+                          <AvailabilityUnitCardPhotos card={card} />
+                          {card.genderType ? (
+                            <p className="text-base font-bold leading-snug text-slate-800">
+                              <span className="font-semibold text-slate-600">
+                                نوع الجنس:{" "}
+                              </span>
+                              {card.genderType}
+                            </p>
+                          ) : null}
+                          {card.buildingNumberAr || card.city ? (
+                            <div className="space-y-0.5 text-sm font-semibold leading-snug text-slate-800">
+                              {card.buildingNumberAr ? (
+                                <p>
+                                  <span className="text-slate-600">
+                                    رقم المبنى:{" "}
+                                  </span>
+                                  <span className="font-bold tabular-nums text-slate-900">
+                                    {card.buildingNumberAr}
+                                  </span>
+                                </p>
+                              ) : null}
+                              {card.city ? (
+                                <p>
+                                  <span className="text-slate-600">المدينة: </span>
+                                  <span className="font-bold text-slate-900">
+                                    {card.city}
+                                  </span>
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          <p className="text-sm leading-relaxed text-slate-600 line-clamp-3">
+                            {card.subtitle}
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+              {selectedAvailabilityKeys.length > 0 ? (
+                <Button
+                  type="button"
+                  onClick={handleSaveReservationSelection}
+                  className="w-full py-4 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-md transition-all duration-300 hover:bg-brand-hover hover:opacity-95"
+                >
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Bookmark className="h-4 w-4 shrink-0" />
+                    حفظ المحدد والبيانات (
+                    {selectedAvailabilityKeys.length.toLocaleString("ar-EG")})
+                  </span>
+                </Button>
+              ) : null}
+            </CardContent>
+          </Card>
+        )}
       </main>
 
       <div className="mb-20 text-transparent">t</div>
@@ -1457,6 +1518,64 @@ export function LoginForm({ Cookie }: LoginFormProps) {
           <p className="mt-1 text-sm text-muted-foreground">يرجى الانتظار</p>
         </div>
       )}
+
+      <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>نسيت كلمة المرور؟</DialogTitle>
+            <DialogDescription>
+              أدخل بريدك الإلكتروني وسنرسل كلمة مرور جديدة إلى بريدك المسجل.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...forgotPasswordForm}>
+            <form
+              onSubmit={forgotPasswordForm.handleSubmit(onForgotPasswordSubmit)}
+              className="space-y-4"
+            >
+              <FormField
+                control={forgotPasswordForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>البريد الإلكتروني</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="email"
+                        inputMode="email"
+                        disabled={isForgotPasswordPending}
+                        placeholder="example@aswan.gov.eg"
+                        autoComplete="email"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setForgotPasswordOpen(false)}
+                  disabled={isForgotPasswordPending}
+                >
+                  إلغاء
+                </Button>
+                <Button type="submit" disabled={isForgotPasswordPending}>
+                  {isForgotPasswordPending ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      جارٍ الإرسال...
+                    </span>
+                  ) : (
+                    "إرسال كلمة مرور جديدة"
+                  )}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }

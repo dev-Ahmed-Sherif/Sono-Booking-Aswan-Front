@@ -58,8 +58,10 @@ import { ClipboardList, Eye, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useTablePagination } from "@/hooks/use-table-pagination";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TablePagination } from "@/components/ui/table-pagination";
 import {
   Dialog,
   DialogContent,
@@ -392,6 +394,15 @@ export default function HousingReceiverDashboard() {
   ]);
 
   const showCancelReasonCol = showCancelationReasonColumn(tableRows);
+
+  const {
+    paginatedItems: paginatedTableRows,
+    page: receiverTablePage,
+    setPage: setReceiverTablePage,
+    pageCount: receiverTablePageCount,
+    pageSize: receiverTablePageSize,
+    totalItems: receiverTableTotalItems,
+  } = useTablePagination(tableRows, undefined, activeView);
 
   const tableColSpan = useMemo(() => {
     if (activeView === "upcoming") return 4;
@@ -859,7 +870,8 @@ export default function HousingReceiverDashboard() {
                               <span>جاري تحميل الحجوزات…</span>
                             </div>
                           ) : (
-                            <Table>
+                            <>
+                              <Table>
                               <TableHeader>
                                 <TableRow>
                                   <TableHead
@@ -899,7 +911,7 @@ export default function HousingReceiverDashboard() {
                                 </TableRow>
                               </TableHeader>
                               <TableBody className={receiverTableBodyClassName}>
-                                {tableRows.map((reservation) => (
+                                {paginatedTableRows.map((reservation) => (
                                   <TableRow key={reservation.id}>
                                     <TableCell
                                       className={receiverTableCellClassName}
@@ -952,6 +964,14 @@ export default function HousingReceiverDashboard() {
                                 ) : null}
                               </TableBody>
                             </Table>
+                            <TablePagination
+                              totalItems={receiverTableTotalItems}
+                              page={receiverTablePage}
+                              pageCount={receiverTablePageCount}
+                              pageSize={receiverTablePageSize}
+                              onPageChange={setReceiverTablePage}
+                            />
+                            </>
                           )}
                         </div>
                       </motion.div>

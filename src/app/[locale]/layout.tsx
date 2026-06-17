@@ -15,6 +15,7 @@ import ThemeProvider from "@/providers/theme-provider";
 import ToastProvider from "@/providers/toast-provider";
 import StoreProvider from "@/providers/store-provider";
 import { FullscreenProvider } from "@/components/layout/fullscreen-provider";
+import { AuthTokenRefresh } from "@/components/auth/auth-token-refresh";
 
 const inter = Cairo({ subsets: ["latin"] });
 
@@ -70,6 +71,7 @@ export default async function RootLayout({
           <ThemeProvider attribute="class" enableSystem>
             <NextIntlClientProvider messages={messages}>
               <FullscreenProvider>
+                <AuthTokenRefresh />
                 <div className="sticky top-0 z-[9999] w-full max-w-full min-w-0">
                   <AppHeader />
                   <Navbar cookie={access} locale={locale} />

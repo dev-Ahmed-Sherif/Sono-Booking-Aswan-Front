@@ -27,6 +27,13 @@ export const LoginSchema = z.object({
   password: z.string().min(1, { message: "يجب إدخال كلمة المرور" }),
 });
 
+export const ForgotPasswordSchema = z.object({
+  email: z
+    .string()
+    .min(1, { message: "يجب إدخال البريد الإلكتروني" })
+    .email({ message: "البريد الإلكتروني غير صالح" }),
+});
+
 const birthDateSchema = z.date({
   required_error: "تاريخ الميلاد مطلوب",
   invalid_type_error: "تاريخ الميلاد غير صالح",

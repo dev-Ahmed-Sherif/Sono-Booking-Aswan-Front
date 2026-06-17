@@ -266,6 +266,28 @@ function indexRowsById(rows: unknown[]): Map<string, Record<string, unknown>> {
   return m;
 }
 
+/** `AllocationType` enum: Fixed = 1, Flexible = 2. */
+function parseApartmentAllocationType(value: unknown): 1 | 2 | undefined {
+  if (value === 1 || value === 2) return value;
+  const s = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (!s) return undefined;
+  if (s === "1" || s === "fixed" || s === "ثابت") return 1;
+  if (
+    s === "2" ||
+    s === "flexible" ||
+    s === "مرن" ||
+    s === "متحرك" ||
+    s === "movable"
+  ) {
+    return 2;
+  }
+  const n = Number(s);
+  if (n === 1 || n === 2) return n as 1 | 2;
+  return undefined;
+}
+
 function apartmentRowForUnit(
   unit: ReservationStoredUnitSnapshot,
   aptById: Map<string, Record<string, unknown>>,
@@ -291,6 +313,21 @@ function apartmentRowForUnit(
   return undefined;
 }
 
+/** Gender rules apply only when the parent apartment allocation type is ثابت (Fixed). */
+export function isFixedApartmentAllocationForUnit(
+  unit: ReservationStoredUnitSnapshot,
+  aptById: Map<string, Record<string, unknown>>,
+  roomById: Map<string, Record<string, unknown>>,
+  bedById: Map<string, Record<string, unknown>>,
+): boolean {
+  const apt = apartmentRowForUnit(unit, aptById, roomById, bedById);
+  if (!apt) return true;
+  const allocationType = parseApartmentAllocationType(
+    apt.allocationType ?? apt.AllocationType,
+  );
+  return allocationType !== 2;
+}
+
 /** Collect distinct inquiry genders from saved units using the availability hierarchy. */
 export function collectInquiryGendersFromUnits(
   units: ReservationStoredUnitSnapshot[],
@@ -310,6 +347,32 @@ export function collectInquiryGendersFromUnits(
     if (g && !out.includes(g)) out.push(g);
   }
 
+  return out;
+}
+
+/**
+ * Inquiry genders for validation/submit: resolve from unit hierarchy first,
+ * then fall back to stored unit labels (never stale request inquiry metadata).
+ */
+export function resolveInquiryGendersFromSelectedUnits(
+  units: ReservationStoredUnitSnapshot[],
+  bedsRaw: unknown[],
+  roomsRaw: unknown[],
+  apartmentsRaw: unknown[],
+): GuestGender[] {
+  const fromHierarchy = collectInquiryGendersFromUnits(
+    units,
+    bedsRaw,
+    roomsRaw,
+    apartmentsRaw,
+  );
+  if (fromHierarchy.length > 0) return fromHierarchy;
+
+  const out: GuestGender[] = [];
+  for (const unit of units) {
+    const g = normalizeUnitGender(unit.genderType);
+    if (g && !out.includes(g)) out.push(g);
+  }
   return out;
 }
 
@@ -452,7 +515,15 @@ export function validateReservationGuestsAgainstUnits(
     guestGenders.push({ guest, gender });
   }
 
-  if (inquiryGenders.length > 0) {
+  const aptIndex = indexRowsById(input.apartmentsRaw);
+  const roomIndex = indexRowsById(input.roomsRaw);
+  const bedIndex = indexRowsById(input.bedsRaw);
+
+  const hasFixedGenderUnits = units.some((unit) =>
+    isFixedApartmentAllocationForUnit(unit, aptIndex, roomIndex, bedIndex),
+  );
+
+  if (hasFixedGenderUnits && inquiryGenders.length > 0) {
     const inquirySet = new Set(inquiryGenders);
     for (const { guest, gender } of guestGenders) {
       if (!inquirySet.has(gender)) {
@@ -466,10 +537,6 @@ export function validateReservationGuestsAgainstUnits(
     }
   }
 
-  const aptIndex = indexRowsById(input.apartmentsRaw);
-  const roomIndex = indexRowsById(input.roomsRaw);
-  const bedIndex = indexRowsById(input.bedsRaw);
-
   const index = buildBedCapacityIndex(input.bedsRaw, input.roomsRaw);
 
   let totalCapacity = 0;
@@ -482,6 +549,14 @@ export function validateReservationGuestsAgainstUnits(
       };
     }
     totalCapacity += cap;
+
+    const enforceGender = isFixedApartmentAllocationForUnit(
+      unit,
+      aptIndex,
+      roomIndex,
+      bedIndex,
+    );
+    if (!enforceGender) continue;
 
     const unitGender =
       resolveUnitGuestGender(unit, aptIndex, roomIndex, bedIndex, inquiryGenders) ??

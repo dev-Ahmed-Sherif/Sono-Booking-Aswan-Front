@@ -8,12 +8,21 @@ export {
   type AvailabilityInquiryDates,
 } from "@/lib/availability-dates";
 import type { AvailabilityInquiryDates } from "@/lib/availability-dates";
+import { isUnitFreeFromInquiryStart } from "@/lib/availability-dates";
 import {
   filterBedsWithAvailableRoom,
   filterRoomsWithAvailableApartment,
   applyAvailabilityHierarchyFilters,
 } from "@/lib/availability-hierarchy";
-import type { UnitBlockingEndIndex } from "@/lib/availability-occupancy";
+import {
+  blockingEndForStoredUnit,
+  type UnitBlockingEndIndex,
+} from "@/lib/availability-occupancy";
+import {
+  fetchRequestUnitHierarchyRows,
+  type RequestUnitRef,
+} from "@/actions/reservationUnitHierarchy";
+import { formatAllocationTypeAr } from "@/lib/housing-request-list";
 
 export type AvailabilityUnitCard = {
   id: string;
@@ -35,6 +44,14 @@ export type AvailabilityUnitCard = {
   /** City / governorate name from API. */
   city?: string;
   priceLabel?: string;
+  /** Primary unit photo URLs only (for preview modal). */
+  primaryPhotoUrls?: string[];
+  /** For room/apartment cards only: number of available beds under it. */
+  availableBedsCountLabel?: string;
+  /** For room/apartment cards only: number of not-available beds under it. */
+  unavailableBedsCountLabel?: string;
+  /** For room/apartment cards only: allocation type label (ثابت / مرن). */
+  allocationTypeLabel?: string;
 };
 
 export type GenericOption = { value: string; label: string };
@@ -64,6 +81,9 @@ export type ReservationStoredUnitSnapshot = Pick<
   | "genderType"
   | "buildingNumberAr"
   | "city"
+  | "primaryPhotoUrls"
+  | "availableBedsCountLabel"
+  | "unavailableBedsCountLabel"
 >;
 
 export function toReservationStoredUnits(
@@ -84,6 +104,9 @@ export function toReservationStoredUnits(
       : {}),
     buildingNumberAr: u.buildingNumberAr,
     city: u.city,
+    primaryPhotoUrls: u.primaryPhotoUrls,
+    availableBedsCountLabel: u.availableBedsCountLabel,
+    unavailableBedsCountLabel: u.unavailableBedsCountLabel,
   }));
 }
 
@@ -142,6 +165,19 @@ function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
     if (v != null && String(v).trim() !== "") return String(v).trim();
   }
   return "";
+}
+
+function pickAllocationTypeLabel(
+  ...rows: Array<Record<string, unknown> | undefined>
+): string | undefined {
+  for (const r of rows) {
+    if (!r) continue;
+    const raw = pickStr(r, "allocationType", "AllocationType");
+    if (!raw) continue;
+    const label = formatAllocationTypeAr(raw);
+    if (label && label !== "—") return label;
+  }
+  return undefined;
 }
 
 function normalizeGenderPrimitive(v: unknown): string | undefined {
@@ -407,6 +443,91 @@ function pickPriceLabel(
   return undefined;
 }
 
+function pickPrimaryPhotoUrls(
+  ...rows: Array<Record<string, unknown> | undefined>
+): string[] {
+  const primaryUrls: string[] = [];
+  const anyUrls: string[] = [];
+  const seenPrimary = new Set<string>();
+  const seenAny = new Set<string>();
+
+  const isPrimary = (item: Record<string, unknown>): boolean => {
+    const raw =
+      item.isPrimary ??
+      item.IsPrimary ??
+      item.primary ??
+      item.Primary ??
+      item.isMain ??
+      item.IsMain;
+    if (raw == null) return false;
+    if (typeof raw === "boolean") return raw;
+    const text = String(raw).trim().toLowerCase();
+    return text === "true" || text === "1" || text === "yes";
+  };
+
+  const pushPrimaryIfValid = (raw: unknown) => {
+    const url = String(raw ?? "").trim();
+    if (!url || seenPrimary.has(url)) return;
+    seenPrimary.add(url);
+    primaryUrls.push(url);
+  };
+
+  const pushAnyIfValid = (raw: unknown) => {
+    const url = String(raw ?? "").trim();
+    if (!url || seenAny.has(url)) return;
+    seenAny.add(url);
+    anyUrls.push(url);
+  };
+
+  for (const row of rows) {
+    if (!row) continue;
+    const arrays = [
+      row.images,
+      row.Images,
+      row.unitImages,
+      row.UnitImages,
+      row.photos,
+      row.Photos,
+    ];
+    for (const arr of arrays) {
+      if (!Array.isArray(arr)) continue;
+      for (const item of arr) {
+        if (!item || typeof item !== "object") continue;
+        const img = item as Record<string, unknown>;
+        const url =
+          img.imageUrl ??
+          img.ImageUrl ??
+          img.url ??
+          img.Url ??
+          img.path ??
+          img.Path ??
+          (img.attachment &&
+          typeof img.attachment === "object"
+            ? (img.attachment as Record<string, unknown>).url ??
+              (img.attachment as Record<string, unknown>).Url
+            : undefined);
+        pushAnyIfValid(url);
+        if (isPrimary(img)) {
+          pushPrimaryIfValid(url);
+        }
+      }
+    }
+
+    if (primaryUrls.length === 0) {
+      pushPrimaryIfValid(
+        row.primaryImageUrl ??
+          row.PrimaryImageUrl ??
+          row.mainImageUrl ??
+          row.MainImageUrl,
+      );
+    }
+  }
+
+  if (primaryUrls.length > 0) return primaryUrls;
+  // Fallback: if no row flags a primary image, keep the UI usable by showing the first available image.
+  return anyUrls.length > 0 ? [anyUrls[0]] : [];
+}
+
 function mapRawToCards(
   unitType: AvailableUnitType,
   raw: unknown[],
@@ -419,9 +540,11 @@ function mapRawToCards(
     const genderType = pickGenderTypeLabel(r);
     const buildingNumberAr = mergeBuildingNumberArFromRows(r);
     const city = mergeCityFromRows(r);
+    const primaryPhotoUrls = pickPrimaryPhotoUrls(r);
     const locFields = {
       ...(buildingNumberAr ? { buildingNumberAr } : {}),
       ...(city ? { city } : {}),
+      ...(primaryPhotoUrls.length > 0 ? { primaryPhotoUrls } : {}),
     };
 
     if (unitType === "bed") {
@@ -439,6 +562,7 @@ function mapRawToCards(
       };
     }
     if (unitType === "room") {
+      const allocationTypeLabel = pickAllocationTypeLabel(r);
       const num = pickStr(r, "roomNumber", "RoomNumber");
       const numAr = num ? formatArUnitNumber(num) : "";
       const desc = pickStr(r, "description", "Description");
@@ -454,6 +578,7 @@ function mapRawToCards(
         ...(genderType ? { genderType } : {}),
         ...locFields,
         priceLabel,
+        ...(allocationTypeLabel ? { allocationTypeLabel } : {}),
       };
     }
     const num = pickStr(r, "apartmentNumber", "ApartmentNumber");
@@ -463,6 +588,7 @@ function mapRawToCards(
     const sub = [at, desc ? desc.slice(0, 80) : ""]
       .filter(Boolean)
       .join(" · ");
+    const allocationTypeLabel = pickAllocationTypeLabel(r);
     return {
       id,
       unitKind: "apartment",
@@ -471,6 +597,7 @@ function mapRawToCards(
       ...(genderType ? { genderType } : {}),
       ...locFields,
       priceLabel,
+      ...(allocationTypeLabel ? { allocationTypeLabel } : {}),
     };
   });
 }
@@ -501,6 +628,34 @@ export function formatStoredUnitLabel(
   const sub = unit.subtitle?.trim();
   if (!sub || sub === "—") return title;
   return `${title} · ${sub}`;
+}
+
+/** Apartment — room — bed hierarchy for saved request units. */
+export function formatStoredUnitHierarchyLabel(
+  unit: ReservationStoredUnitSnapshot,
+): string {
+  const leaf =
+    unit.title?.trim() ||
+    UNIT_TYPE_LABEL_AR[unit.unitKind] ||
+    "وحدة";
+
+  if (unit.unitKind === "apartment") {
+    return leaf;
+  }
+
+  const segments: string[] = [];
+  const apt = unit.parentApartmentLabel?.trim();
+  const room = unit.parentRoomLabel?.trim();
+
+  if (apt) segments.push(apt);
+  if (unit.unitKind === "bed" && room) segments.push(room);
+  segments.push(leaf);
+
+  if (segments.length <= 1) {
+    return formatStoredUnitLabel(unit);
+  }
+
+  return segments.join(" - ");
 }
 
 /**
@@ -639,6 +794,8 @@ function formatApartmentLabel(r: Record<string, unknown>): string {
 export type AvailabilityHierarchyRaw = {
   apartmentsRaw?: unknown[];
   roomsRaw?: unknown[];
+  bedsRaw?: unknown[];
+  allBedsRaw?: unknown[];
 };
 
 export async function enrichAvailabilityCards(
@@ -647,6 +804,45 @@ export async function enrichAvailabilityCards(
   hierarchy?: AvailabilityHierarchyRaw,
 ): Promise<AvailabilityUnitCard[]> {
   if (unitKind === "apartment") {
+    const bedsRawForCount = hierarchy?.bedsRaw ?? [];
+    const allBedsRawForCount = hierarchy?.allBedsRaw ?? bedsRawForCount;
+    const roomsRawForCount = hierarchy?.roomsRaw ?? [];
+
+    // Map roomId -> apartmentId so we can count beds under each apartment.
+    const roomApartmentById = new Map<string, string>();
+    for (const row of roomsRawForCount) {
+      if (!row || typeof row !== "object") continue;
+      const r = row as Record<string, unknown>;
+      const roomId = pickStr(r, "id", "Id");
+      const aptId = pickStr(r, "apartmentId", "ApartmentId");
+      if (!roomId || !aptId) continue;
+      roomApartmentById.set(roomId.toLowerCase(), aptId.toLowerCase());
+    }
+
+    const availableBedCountByApartmentId = new Map<string, number>();
+    for (const bedRow of bedsRawForCount) {
+      if (!bedRow || typeof bedRow !== "object") continue;
+      const b = bedRow as Record<string, unknown>;
+      const roomId = pickStr(b, "roomId", "RoomId");
+      if (!roomId) continue;
+      const aptId = roomApartmentById.get(roomId.toLowerCase());
+      if (!aptId) continue;
+      const prev = availableBedCountByApartmentId.get(aptId) ?? 0;
+      availableBedCountByApartmentId.set(aptId, prev + 1);
+    }
+
+    const totalBedCountByApartmentId = new Map<string, number>();
+    for (const bedRow of allBedsRawForCount) {
+      if (!bedRow || typeof bedRow !== "object") continue;
+      const b = bedRow as Record<string, unknown>;
+      const roomId = pickStr(b, "roomId", "RoomId");
+      if (!roomId) continue;
+      const aptId = roomApartmentById.get(roomId.toLowerCase());
+      if (!aptId) continue;
+      const prev = totalBedCountByApartmentId.get(aptId) ?? 0;
+      totalBedCountByApartmentId.set(aptId, prev + 1);
+    }
+
     const base = mapRawToCards(unitKind, rawList);
     const safeBase = (idx: number): AvailabilityUnitCard =>
       base[idx] ?? {
@@ -675,7 +871,19 @@ export async function enrichAvailabilityCards(
       const buildingNumberAr =
         mergeBuildingNumberArFromRows(r) ?? b.buildingNumberAr;
       const cityMerged = mergeCityFromRows(r) ?? b.city;
+      const primaryFromRows = pickPrimaryPhotoUrls(r);
+      const primaryPhotoUrls =
+        primaryFromRows.length > 0 ? primaryFromRows : (b.primaryPhotoUrls ?? []);
       const aptId = pickStr(r, "id", "Id");
+      const availableBedsCount =
+        aptId && availableBedCountByApartmentId.has(aptId.toLowerCase())
+          ? (availableBedCountByApartmentId.get(aptId.toLowerCase()) ?? 0)
+          : 0;
+      const totalBedsCount =
+        aptId && totalBedCountByApartmentId.has(aptId.toLowerCase())
+          ? (totalBedCountByApartmentId.get(aptId.toLowerCase()) ?? 0)
+          : availableBedsCount;
+      const unavailableBedsCount = Math.max(0, totalBedsCount - availableBedsCount);
       const priceLabel = pickPriceLabel(r) ?? b.priceLabel;
       return {
         ...b,
@@ -685,11 +893,39 @@ export async function enrichAvailabilityCards(
         ...(genderType ? { genderType } : {}),
         ...(buildingNumberAr ? { buildingNumberAr } : {}),
         ...(cityMerged ? { city: cityMerged } : {}),
+        ...(primaryPhotoUrls.length > 0 ? { primaryPhotoUrls } : {}),
+        ...(Number.isFinite(availableBedsCount)
+          ? { availableBedsCountLabel: String(availableBedsCount) }
+          : {}),
+        ...(Number.isFinite(unavailableBedsCount)
+          ? { unavailableBedsCountLabel: String(unavailableBedsCount) }
+          : {}),
       };
     });
   }
 
   if (unitKind === "room") {
+    const bedsRawForCount = hierarchy?.bedsRaw ?? [];
+    const allBedsRawForCount = hierarchy?.allBedsRaw ?? bedsRawForCount;
+    const availableBedCountByRoomId = new Map<string, number>();
+    for (const bedRow of bedsRawForCount) {
+      if (!bedRow || typeof bedRow !== "object") continue;
+      const b = bedRow as Record<string, unknown>;
+      const roomId = pickStr(b, "roomId", "RoomId");
+      if (!roomId) continue;
+      const prev = availableBedCountByRoomId.get(roomId.toLowerCase()) ?? 0;
+      availableBedCountByRoomId.set(roomId.toLowerCase(), prev + 1);
+    }
+    const totalBedCountByRoomId = new Map<string, number>();
+    for (const bedRow of allBedsRawForCount) {
+      if (!bedRow || typeof bedRow !== "object") continue;
+      const b = bedRow as Record<string, unknown>;
+      const roomId = pickStr(b, "roomId", "RoomId");
+      if (!roomId) continue;
+      const prev = totalBedCountByRoomId.get(roomId.toLowerCase()) ?? 0;
+      totalBedCountByRoomId.set(roomId.toLowerCase(), prev + 1);
+    }
+
     let aptRows: unknown[] = hierarchy?.apartmentsRaw ?? [];
     if (!aptRows.length) {
       const aptRes = await getAvailableUnits("apartment");
@@ -715,13 +951,26 @@ export async function enrichAvailabilityCards(
       const roomId = pickStr(r, "id", "Id");
       const aptId = pickStr(r, "apartmentId", "ApartmentId");
       const apt = aptId ? aptById.get(aptId.trim().toLowerCase()) : undefined;
+      const allocationTypeLabel = pickAllocationTypeLabel(r, apt) ?? b.allocationTypeLabel;
       const parentApartmentLabel = apt ? formatApartmentLabel(apt) : undefined;
       const title = formatRoomLabel(r);
       const genderType = mergeGenderFromRows(r, apt) ?? b.genderType;
       const buildingNumberAr =
         mergeBuildingNumberArFromRows(r, apt) ?? b.buildingNumberAr;
       const cityMerged = mergeCityFromRows(r, apt) ?? b.city;
+      const primaryFromRows = pickPrimaryPhotoUrls(r, apt);
+      const primaryPhotoUrls =
+        primaryFromRows.length > 0 ? primaryFromRows : (b.primaryPhotoUrls ?? []);
       const priceLabel = pickPriceLabel(r, apt) ?? b.priceLabel;
+      const availableBedsCount =
+        roomId && availableBedCountByRoomId.has(roomId.toLowerCase())
+          ? (availableBedCountByRoomId.get(roomId.toLowerCase()) ?? 0)
+          : 0;
+      const totalBedsCount =
+        roomId && totalBedCountByRoomId.has(roomId.toLowerCase())
+          ? (totalBedCountByRoomId.get(roomId.toLowerCase()) ?? 0)
+          : availableBedsCount;
+      const unavailableBedsCount = Math.max(0, totalBedsCount - availableBedsCount);
       return {
         ...b,
         title,
@@ -729,9 +978,17 @@ export async function enrichAvailabilityCards(
         roomId: roomId || b.roomId,
         ...(parentApartmentLabel ? { parentApartmentLabel } : {}),
         ...(priceLabel ? { priceLabel } : {}),
+        ...(allocationTypeLabel ? { allocationTypeLabel } : {}),
         ...(genderType ? { genderType } : {}),
         ...(buildingNumberAr ? { buildingNumberAr } : {}),
         ...(cityMerged ? { city: cityMerged } : {}),
+        ...(primaryPhotoUrls.length > 0 ? { primaryPhotoUrls } : {}),
+        ...(Number.isFinite(availableBedsCount)
+          ? { availableBedsCountLabel: String(availableBedsCount) }
+          : {}),
+        ...(Number.isFinite(unavailableBedsCount)
+          ? { unavailableBedsCountLabel: String(unavailableBedsCount) }
+          : {}),
       };
     });
   }
@@ -789,11 +1046,16 @@ export async function enrichAvailabilityCards(
     const apt = aptId ? aptById.get(aptId.trim().toLowerCase()) : undefined;
     const parentRoomLabel = room ? formatRoomLabel(room) : undefined;
     const parentApartmentLabel = apt ? formatApartmentLabel(apt) : undefined;
+    const allocationTypeLabel =
+      pickAllocationTypeLabel(apt, room) ?? b.allocationTypeLabel;
     const title = formatBedLabel(r);
     const genderType = mergeGenderFromRows(r, room, apt) ?? b.genderType;
     const buildingNumberAr =
       mergeBuildingNumberArFromRows(r, room, apt) ?? b.buildingNumberAr;
     const cityMerged = mergeCityFromRows(r, room, apt) ?? b.city;
+    const primaryFromRows = pickPrimaryPhotoUrls(r, room, apt);
+    const primaryPhotoUrls =
+      primaryFromRows.length > 0 ? primaryFromRows : (b.primaryPhotoUrls ?? []);
     const priceLabel = pickPriceLabel(r, room, apt) ?? b.priceLabel;
     return {
       ...b,
@@ -803,9 +1065,11 @@ export async function enrichAvailabilityCards(
       ...(parentRoomLabel ? { parentRoomLabel } : {}),
       ...(parentApartmentLabel ? { parentApartmentLabel } : {}),
       ...(priceLabel ? { priceLabel } : {}),
+      ...(allocationTypeLabel ? { allocationTypeLabel } : {}),
       ...(genderType ? { genderType } : {}),
       ...(buildingNumberAr ? { buildingNumberAr } : {}),
       ...(cityMerged ? { city: cityMerged } : {}),
+      ...(primaryPhotoUrls.length > 0 ? { primaryPhotoUrls } : {}),
     };
   });
 }
@@ -935,6 +1199,8 @@ export async function fetchMergedAvailabilityCards(
       ...(await enrichAvailabilityCards(unitKind, list, {
         apartmentsRaw,
         roomsRaw,
+        bedsRaw: filtered.beds,
+        allBedsRaw: bedsRaw,
       })),
     );
   }
@@ -980,4 +1246,99 @@ export async function hierarchyFilteredAvailabilityLists(input: {
     roomsRaw: filtered.rooms,
     apartmentsRaw: filtered.apartments,
   };
+}
+
+function selectedUnitsToHierarchyRefs(
+  units: ReservationStoredUnitSnapshot[],
+): RequestUnitRef[] {
+  return units.map((unit) => {
+    const id = unit.id.trim();
+    if (unit.unitKind === "bed") {
+      return { bedId: id, apartmentId: unit.apartmentId?.trim() || undefined };
+    }
+    if (unit.unitKind === "room") {
+      return { roomId: id, apartmentId: unit.apartmentId?.trim() || undefined };
+    }
+    return { apartmentId: id };
+  });
+}
+
+export type ValidateSelectedUnitsResult =
+  | { ok: true; validatedUnits: ReservationStoredUnitSnapshot[] }
+  | { ok: false; message: string };
+
+function unavailableUnitsMessage(
+  units: ReservationStoredUnitSnapshot[],
+): ValidateSelectedUnitsResult {
+  const labels = units.map((unit) => `«${unit.title}»`).join("، ");
+  return {
+    ok: false,
+    message: `الوحدات التالية غير متاحة للتواريخ المحددة: ${labels}. عدّل التواريخ أو اختر وحدات أخرى.`,
+  };
+}
+
+/** Ensures each selected unit is bookable for the inquiry dates (used on request update). */
+export async function validateSelectedUnitsForInquiry(input: {
+  units: ReservationStoredUnitSnapshot[];
+  inquiry: AvailabilityInquiryDates;
+  /** When editing a request, ignore that request's own holds on units. */
+  excludeRequestId?: string;
+}): Promise<ValidateSelectedUnitsResult> {
+  if (input.units.length === 0) {
+    return { ok: false, message: "يجب اختيار وحدة واحدة على الأقل." };
+  }
+
+  const kinds = orderedUnitKindsFromSelection(
+    input.units.map((unit) => unit.unitKind),
+  );
+  const kindsToSearch: AvailableUnitType[] =
+    kinds.length > 0 ? kinds : ["bed", "room", "apartment"];
+
+  const { cards, fatalError } = await fetchMergedAvailabilityCards(
+    kindsToSearch,
+    input.inquiry,
+  );
+  if (fatalError) {
+    return { ok: false, message: fatalError };
+  }
+
+  const availableKeys = new Set(cards.map((card) => availabilityCardKey(card)));
+  const missing = input.units.filter(
+    (unit) => !availableKeys.has(availabilityCardKey(unit)),
+  );
+
+  if (missing.length === 0) {
+    return { ok: true, validatedUnits: input.units };
+  }
+
+  const excludeId = input.excludeRequestId?.trim();
+  if (!excludeId) {
+    return unavailableUnitsMessage(missing);
+  }
+
+  const { bedsRaw, roomsRaw } = await fetchRequestUnitHierarchyRows(
+    selectedUnitsToHierarchyRefs(missing),
+  );
+  const occupancyIndex = await loadUnitBlockingEndIndex(
+    bedsRaw,
+    roomsRaw,
+    excludeId,
+  );
+  if (!occupancyIndex) {
+    return unavailableUnitsMessage(missing);
+  }
+
+  const stillBlocked: ReservationStoredUnitSnapshot[] = [];
+  for (const unit of missing) {
+    const bookingEnd = blockingEndForStoredUnit(unit, occupancyIndex);
+    if (!isUnitFreeFromInquiryStart(input.inquiry.startDateYmd, bookingEnd)) {
+      stillBlocked.push(unit);
+    }
+  }
+
+  if (stillBlocked.length > 0) {
+    return unavailableUnitsMessage(stillBlocked);
+  }
+
+  return { ok: true, validatedUnits: input.units };
 }

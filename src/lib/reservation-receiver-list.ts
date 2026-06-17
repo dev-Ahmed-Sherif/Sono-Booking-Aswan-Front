@@ -1,4 +1,7 @@
-import { formatStoredUnitLabel, getLookupArray } from "@/lib/availability-inquiry";
+import {
+  formatStoredUnitHierarchyLabel,
+  getLookupArray,
+} from "@/lib/availability-inquiry";
 import { parseBirthDateValue } from "@/lib/companion-registration";
 import { extractApplicantDisplayNameFromRequest } from "@/lib/housing-request-list";
 import {
@@ -7,6 +10,7 @@ import {
   filterRowsByRequestId,
   parseRequestUnitFromApi,
   resolveParticipantRowsForRequest,
+  resolveRequestLinkedContentRequestId,
 } from "@/lib/housing-request-detail";
 import {
   enrichRequestUnitRowsFromHierarchy,
@@ -189,7 +193,9 @@ function unitLabelsForRequest(
     apartmentsRaw,
   );
 
-  return snapshots.map((u) => formatStoredUnitLabel(u)).filter(Boolean);
+  return snapshots
+    .map((u) => formatStoredUnitHierarchyLabel(u))
+    .filter(Boolean);
 }
 
 function pickRelationshipLabel(row: Record<string, unknown>): string {
@@ -297,9 +303,17 @@ export function mapReservationToReceiverRow(
   const requestRaw = requestId
     ? (requestById.get(requestId.toLowerCase()) ?? {})
     : {};
-  const reservationUnits = requestId
+  const linkedRequestId = requestId
+    ? resolveRequestLinkedContentRequestId(requestRaw, requestId)
+    : "";
+  const contentRequestRaw =
+    linkedRequestId &&
+    linkedRequestId.toLowerCase() !== requestId.toLowerCase()
+      ? (requestById.get(linkedRequestId.toLowerCase()) ?? requestRaw)
+      : requestRaw;
+  const reservationUnits = linkedRequestId
     ? unitLabelsForRequest(
-        requestId,
+        linkedRequestId,
         requestUnitsRes,
         bedsRaw,
         roomsRaw,
@@ -314,9 +328,9 @@ export function mapReservationToReceiverRow(
     room: reservationUnits.length > 0 ? reservationUnits.join("، ") : "—",
     reservationUnits,
     companions: companionsForRequest(
-      requestRaw,
+      contentRequestRaw,
       participantsRes,
-      requestId,
+      linkedRequestId || requestId,
       companionById,
       relationshipLabelById,
     ),
@@ -366,6 +380,16 @@ export function isReservationStillInHouse(row: {
   return row.status === RESERVATION_STATUS_COMPLETED;
 }
 
+function sortReceiverReservationRowsAsc(
+  rows: ReceiverReservationRow[],
+): ReceiverReservationRow[] {
+  return [...rows].sort((a, b) => {
+    const byStart = a.startDateYmd.localeCompare(b.startDateYmd);
+    if (byStart !== 0) return byStart;
+    return a.userName.localeCompare(b.userName, "ar", { sensitivity: "base" });
+  });
+}
+
 /**
  * Active tab (reception):
  * - `Reserved` arrivals whose start date is today
@@ -375,31 +399,33 @@ export function filterActiveReservationsToday(
   rows: ReceiverReservationRow[],
   todayYmd: string = todayYmdLocal(),
 ): ReceiverReservationRow[] {
-  return rows.filter((row) => {
-    if (
-      row.status === RESERVATION_STATUS_CANCELED ||
-      row.status === RESERVATION_STATUS_CHECKOUT ||
-      row.status === RESERVATION_STATUS_NO_SHOW
-    ) {
+  return sortReceiverReservationRowsAsc(
+    rows.filter((row) => {
+      if (
+        row.status === RESERVATION_STATUS_CANCELED ||
+        row.status === RESERVATION_STATUS_CHECKOUT ||
+        row.status === RESERVATION_STATUS_NO_SHOW
+      ) {
+        return false;
+      }
+
+      if (
+        row.status === RESERVATION_STATUS_RESERVED &&
+        row.startDateYmd === todayYmd
+      ) {
+        return true;
+      }
+
+      if (
+        row.status === RESERVATION_STATUS_COMPLETED &&
+        isReservationStillInHouse(row)
+      ) {
+        return true;
+      }
+
       return false;
-    }
-
-    if (
-      row.status === RESERVATION_STATUS_RESERVED &&
-      row.startDateYmd === todayYmd
-    ) {
-      return true;
-    }
-
-    if (
-      row.status === RESERVATION_STATUS_COMPLETED &&
-      isReservationStillInHouse(row)
-    ) {
-      return true;
-    }
-
-    return false;
-  });
+    }),
+  );
 }
 
 /** Approved future `Reserved` stays (start after today). */
@@ -407,9 +433,11 @@ export function filterUpcomingReservations(
   rows: ReceiverReservationRow[],
   todayYmd: string = todayYmdLocal(),
 ): ReceiverReservationRow[] {
-  return rows.filter(
-    (row) =>
-      row.status === RESERVATION_STATUS_RESERVED && row.startDateYmd > todayYmd,
+  return sortReceiverReservationRowsAsc(
+    rows.filter(
+      (row) =>
+        row.status === RESERVATION_STATUS_RESERVED && row.startDateYmd > todayYmd,
+    ),
   );
 }
 

@@ -13,6 +13,7 @@ import {
   type ReservationRequestFormValues,
 } from "@/schemas";
 import { Button } from "@/components/ui/button";
+import { TablePagination } from "@/components/ui/table-pagination";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -54,6 +55,7 @@ import { formDataHasFileEntries } from "@/lib/form-data-relay";
 import { RequestAttachmentsInput } from "@/components/reservation/request-attachments-input";
 import { getRelationships } from "@/actions/settings/relationshipService";
 import { useToast } from "@/hooks/use-toast";
+import { useTablePagination } from "@/hooks/use-table-pagination";
 import {
   getLookupArray,
   hierarchyFilteredAvailabilityLists,
@@ -454,6 +456,15 @@ const ReservationRequestForm = ({
       savedCompanionOptions,
     ],
   );
+
+  const {
+    paginatedItems: paginatedGuests,
+    page: guestsTablePage,
+    setPage: setGuestsTablePage,
+    pageCount: guestsTablePageCount,
+    pageSize: guestsTablePageSize,
+    totalItems: guestsTableTotalItems,
+  } = useTablePagination(guests);
 
   const relationshipLabelByCompanionId = useMemo(() => {
     const m = new Map<string, string>();
@@ -1228,7 +1239,10 @@ const ReservationRequestForm = ({
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {guests.map((guest, index) => {
+                        {paginatedGuests.map((guest, pageIndex) => {
+                          const index =
+                            (guestsTablePage - 1) * guestsTablePageSize +
+                            pageIndex;
                           const isBaseRow = index < baseGuestCount;
                           const pickRow = !isBaseRow
                             ? pickedCompanionRows[index - baseGuestCount]
@@ -1329,6 +1343,13 @@ const ReservationRequestForm = ({
                         })}
                       </TableBody>
                     </Table>
+                    <TablePagination
+                      totalItems={guestsTableTotalItems}
+                      page={guestsTablePage}
+                      pageCount={guestsTablePageCount}
+                      pageSize={guestsTablePageSize}
+                      onPageChange={setGuestsTablePage}
+                    />
                   </div>
                   <FormMessage />
                 </FormItem>

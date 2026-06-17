@@ -27,6 +27,7 @@ import {
   formatRequestAllocationTypeForTable,
   formatRequestCatagoryForTable,
   formatRequestTypeForTable,
+  isExtensionRequestRecord,
   parseRequestCatagoryApiValue,
   toYmd,
 } from "@/lib/housing-request-list";
@@ -48,6 +49,8 @@ export type HousingRequestDetail = {
   requestClassificationLabel: string;
   requestTypeLabel: string;
   requestAllocationTypeLabel: string;
+  /** Leader rejection note when status is «مرفوض». */
+  rejectionReason?: string;
 };
 
 /** Saved attachment row from `RequestDto.RequestAttaches`. */
@@ -177,6 +180,33 @@ export function normalizeCompanionId(value: string): string {
 /** `RequestDto.UserId` — owner of the housing request (for companions lookup). */
 export function extractRequestUserId(raw: Record<string, unknown>): string {
   return pickStr(raw, "userId", "UserId");
+}
+
+/** `RequestDto.PreviousRequestId` — original stay when `RequestCatagory` is extension. */
+export function extractPreviousRequestId(raw: Record<string, unknown>): string {
+  return pickStr(raw, "previousRequestId", "PreviousRequestId");
+}
+
+/**
+ * Extension requests store units, companions, and attachments on the prior stay.
+ * Use this id when loading linked request content for display or leader decisions.
+ */
+export function resolveRequestLinkedContentRequestId(
+  requestRaw: Record<string, unknown>,
+  requestId: string,
+): string {
+  const previousRequestId = extractPreviousRequestId(requestRaw);
+  if (!previousRequestId) return requestId.trim();
+
+  if (
+    parseRequestCatagoryApiValue(requestRaw) ===
+      HOUSING_REQUEST_CATAGORY_EXTENSION ||
+    isExtensionRequestRecord(requestRaw)
+  ) {
+    return previousRequestId;
+  }
+
+  return requestId.trim();
 }
 
 export function extractApiEntity(
@@ -374,6 +404,13 @@ export function parseRequestDetail(
       options?.requestTypeLabelsById,
     ),
     requestAllocationTypeLabel: formatRequestAllocationTypeForTable(raw),
+    rejectionReason: pickStr(
+      raw,
+      "rejectionReason",
+      "RejectionReason",
+      "rejectionNote",
+      "RejectionNote",
+    ),
   };
 }
 
@@ -521,6 +558,7 @@ export function buildLeaderRequestDecisionPayload(
     decision === "reject" ? String(options.rejectionReason ?? "").trim() : "";
 
   const requestId = pickStr(raw, "id", "Id");
+  const previousRequestId = extractPreviousRequestId(raw);
 
   return {
     id: requestId,
@@ -532,6 +570,7 @@ export function buildLeaderRequestDecisionPayload(
     requestAllocationType: parseAllocationTypeEnum(allocationValue) ?? 1,
     requestCatagory:
       parseRequestCatagoryApiValue(raw) ?? HOUSING_REQUEST_CATAGORY_NEW_STAY,
+    ...(previousRequestId ? { previousRequestId } : {}),
     requestUnits: normalizeRequestUnitsForAddRequestDto(
       requestUnits,
       requestId,
@@ -564,6 +603,31 @@ export type InquiryGenderAvailabilityContext = {
   roomsRaw: unknown[];
   apartmentsRaw: unknown[];
 };
+
+/** Genders for availability API headers (applicant + companions, then unit fallback). */
+export function collectInquiryGendersForAvailability(input: {
+  applicantGender?: GuestGender;
+  companionIds: string[];
+  companionGenderById: Map<string, GuestGender>;
+  unitFallback?: GuestGender[];
+}): GuestGender[] {
+  const out: GuestGender[] = [];
+  const push = (gender?: GuestGender) => {
+    if (gender && !out.includes(gender)) out.push(gender);
+  };
+
+  push(input.applicantGender);
+  for (const id of input.companionIds) {
+    push(input.companionGenderById.get(id));
+  }
+
+  if (out.length > 0) return out;
+
+  for (const gender of input.unitFallback ?? []) {
+    push(gender);
+  }
+  return out;
+}
 
 /** Distinct genders from request participant rows (applicant + companions). */
 export function collectInquiryGendersFromParticipants(

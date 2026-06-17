@@ -1,6 +1,6 @@
 "use server";
 
-import axios from "axios";
+import axios from "@/lib/axios-auth";
 import { getAccessToken } from "@/lib/token-helper";
 
 const getGenders = async () => {

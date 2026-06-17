@@ -1,6 +1,6 @@
 "use server";
 
-import axios from "axios";
+import axios from "@/lib/axios-auth";
 import { getAllExtensions } from "@/actions/settings/extensionService";
 import { getAllReservations } from "@/actions/reservationService";
 import { getAllRequests, getRequestUnitsAll } from "@/actions/requestService";
@@ -124,6 +124,7 @@ export async function getAvailableUnits(
 export async function loadUnitBlockingEndIndex(
   bedsRaw: unknown[],
   roomsRaw: unknown[],
+  excludeRequestId?: string,
 ): Promise<UnitBlockingEndIndex | null> {
   const token = await getAccessToken();
   if (!token) return null;
@@ -156,6 +157,9 @@ export async function loadUnitBlockingEndIndex(
       ...booking,
       bedsRaw,
       roomsRaw,
+      ...(excludeRequestId?.trim()
+        ? { excludeRequestIds: [excludeRequestId.trim()] }
+        : {}),
     });
   } catch {
     return null;

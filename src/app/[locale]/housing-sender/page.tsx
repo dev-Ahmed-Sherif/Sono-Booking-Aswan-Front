@@ -19,6 +19,7 @@ import {
 } from "@/lib/housing-request-list";
 import {
   extractRequestUserId,
+  resolveRequestLinkedContentRequestId,
   type LeaderRequestDecision,
 } from "@/lib/housing-request-detail";
 import {
@@ -29,11 +30,11 @@ import {
 import { cn } from "@/lib/utils";
 import { ClipboardList, Loader2 } from "lucide-react";
 
-import {
-  HousingSenderDecisionDialog,
-} from "@/components/housing-sender/housing-sender-decision-dialog";
+import { HousingSenderDecisionDialog } from "@/components/housing-sender/housing-sender-decision-dialog";
 import { HousingRequestDetailModal } from "@/components/reservation/housing-request-detail-modal";
+import { TablePagination } from "@/components/ui/table-pagination";
 import { useToast } from "@/hooks/use-toast";
+import { useTablePagination } from "@/hooks/use-table-pagination";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -72,12 +73,13 @@ const senderTableCellClassName = cn(
   "[&>div]:mx-auto [&>div]:flex [&>div]:flex-wrap [&>div]:justify-center [&>div]:gap-2",
   "[&>button]:mx-auto",
 );
-const senderTableButtonClassName =
-  "h-10 min-h-10 px-4 text-base font-medium";
+const senderTableButtonClassName = "h-10 min-h-10 px-4 text-base font-medium";
 
 type SenderTableRow = {
-  /** Entity id for `getRequestById` (parent request when row is an extension). */
+  /** Entity id for `getRequestById` (extension request id when row is a stay extension). */
   requestId: string;
+  /** Prior stay id for units/companions when `requestCategory` is extension. */
+  linkedContentRequestId: string;
   /** `RequestDto.UserId` — passed to companions API as `UserId` header for leaders. */
   requestOwnerUserId: string;
   requestNumber: string;
@@ -85,6 +87,8 @@ type SenderTableRow = {
   applicant: string;
   requestTypeId: string;
   reason: string;
+  /** Arabic label from API `RequestAllocationType` (ثابت / مرن). */
+  requestAllocationType: string;
   startDate: string;
   endDate: string;
   nights?: number;
@@ -103,18 +107,51 @@ function mapToSenderTableRow(
 ): SenderTableRow {
   return {
     requestId: tableRow.id,
+    linkedContentRequestId: resolveRequestLinkedContentRequestId(
+      raw,
+      tableRow.id,
+    ),
     requestOwnerUserId: extractRequestUserId(raw),
     requestNumber: tableRow.requestNo,
     housingTableRow: tableRow,
     applicant: extractApplicantDisplayNameFromRequest(raw),
     requestTypeId: extractRequestTypeId(raw),
     reason: tableRow.requestType,
+    requestAllocationType: tableRow.requestAllocationType,
     startDate: tableRow.startDate,
     endDate: formatEndDateFromRaw(raw),
     nights: tableRow.nights,
     status: tableRow.status,
     requestCategory: tableRow.requestClassification,
   };
+}
+
+function sortSenderTableRowsAsc(rows: SenderTableRow[]): SenderTableRow[] {
+  const reasonPriority = new Map<string, number>([
+    ["مامورية", 0],
+    ["علاج", 1],
+    ["شخصى", 2],
+  ]);
+
+  return [...rows].sort((a, b) => {
+    const byStart = a.startDate.localeCompare(b.startDate);
+    if (byStart !== 0) return byStart;
+
+    const aPriority = reasonPriority.get(a.reason.trim()) ?? Number.MAX_SAFE_INTEGER;
+    const bPriority = reasonPriority.get(b.reason.trim()) ?? Number.MAX_SAFE_INTEGER;
+    const byReasonPriority = aPriority - bPriority;
+    if (byReasonPriority !== 0) return byReasonPriority;
+
+    const byReason = a.reason.localeCompare(b.reason, "ar", {
+      sensitivity: "base",
+    });
+    if (byReason !== 0) return byReason;
+
+    return a.requestNumber.localeCompare(b.requestNumber, "en", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
 }
 
 const pageContentVariants = {
@@ -171,9 +208,7 @@ const matchesFilters = (
     (row.requestTypeId !== "" && row.requestTypeId === selectedType) ||
     row.reason === requestTypeLabelsById.get(selectedType);
   const matchesDate =
-    !selectedDate ||
-    startDate === selectedDate ||
-    endDate === selectedDate;
+    !selectedDate || startDate === selectedDate || endDate === selectedDate;
   return matchesType && matchesDate;
 };
 
@@ -195,7 +230,9 @@ const viewTitles: Record<SenderView, { title: string; description: string }> = {
 function getLoggedInUserId(): string {
   try {
     const raw =
-      typeof window !== "undefined" ? window.localStorage.getItem("user") : null;
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("user")
+        : null;
     if (!raw || raw === "undefined" || raw === "null") return "";
     const u = JSON.parse(raw) as { id?: string };
     return String(u?.id ?? "").trim();
@@ -233,10 +270,11 @@ const HousingSenderPage = () => {
     useState<HousingRequestTableRow | null>(null);
   const [detailModalStatus, setDetailModalStatus] = useState("");
   const [detailModalOwnerUserId, setDetailModalOwnerUserId] = useState("");
+  const [detailLinkedContentRequestId, setDetailLinkedContentRequestId] =
+    useState("");
   const [decisionOpen, setDecisionOpen] = useState(false);
-  const [decisionKind, setDecisionKind] = useState<LeaderRequestDecision | null>(
-    null,
-  );
+  const [decisionKind, setDecisionKind] =
+    useState<LeaderRequestDecision | null>(null);
   const [decisionTarget, setDecisionTarget] = useState<SenderTableRow | null>(
     null,
   );
@@ -256,6 +294,7 @@ const HousingSenderPage = () => {
     if (!row.requestId.trim()) return;
     setDetailModalRequestId(row.requestId);
     setDetailModalOwnerUserId(row.requestOwnerUserId);
+    setDetailLinkedContentRequestId(row.linkedContentRequestId);
     setDetailModalRow(row.housingTableRow);
     setDetailModalStatus(row.status);
     setDetailModalOpen(true);
@@ -265,6 +304,7 @@ const HousingSenderPage = () => {
     setDetailModalOpen(false);
     setDetailModalRequestId(null);
     setDetailModalOwnerUserId("");
+    setDetailLinkedContentRequestId("");
     setDetailModalRow(null);
     setDetailModalStatus("");
   }, []);
@@ -395,8 +435,7 @@ const HousingSenderPage = () => {
         decision: decisionKind,
         leaderUserId,
         ownerUserId: decisionTarget.requestOwnerUserId.trim() || undefined,
-        rejectionReason:
-          decisionKind === "reject" ? decisionNote : "",
+        rejectionReason: decisionKind === "reject" ? decisionNote : "",
       });
 
       if (!result.ok) {
@@ -462,14 +501,16 @@ const HousingSenderPage = () => {
 
   const filteredPending = useMemo(
     () =>
-      pendingRequests.filter((r) =>
-        matchesFilters(
-          r,
-          r.startDate,
-          r.endDate,
-          selectedType,
-          selectedDate,
-          requestTypeLabelsById,
+      sortSenderTableRowsAsc(
+        pendingRequests.filter((r) =>
+          matchesFilters(
+            r,
+            r.startDate,
+            r.endDate,
+            selectedType,
+            selectedDate,
+            requestTypeLabelsById,
+          ),
         ),
       ),
     [pendingRequests, requestTypeLabelsById, selectedDate, selectedType],
@@ -477,14 +518,16 @@ const HousingSenderPage = () => {
 
   const filteredApproved = useMemo(
     () =>
-      recentlyApprovedRequests.filter((r) =>
-        matchesFilters(
-          r,
-          r.startDate,
-          r.endDate,
-          selectedType,
-          selectedDate,
-          requestTypeLabelsById,
+      sortSenderTableRowsAsc(
+        recentlyApprovedRequests.filter((r) =>
+          matchesFilters(
+            r,
+            r.startDate,
+            r.endDate,
+            selectedType,
+            selectedDate,
+            requestTypeLabelsById,
+          ),
         ),
       ),
     [
@@ -497,17 +540,43 @@ const HousingSenderPage = () => {
 
   const filteredExtension = useMemo(
     () =>
-      extensionRequests.filter((r) =>
-        matchesFilters(
-          r,
-          r.startDate,
-          r.endDate,
-          selectedType,
-          selectedDate,
-          requestTypeLabelsById,
+      sortSenderTableRowsAsc(
+        extensionRequests.filter((r) =>
+          matchesFilters(
+            r,
+            r.startDate,
+            r.endDate,
+            selectedType,
+            selectedDate,
+            requestTypeLabelsById,
+          ),
         ),
       ),
     [extensionRequests, requestTypeLabelsById, selectedDate, selectedType],
+  );
+
+  const activeFilteredRequests = useMemo(() => {
+    if (activeView === "new") return filteredPending;
+    if (activeView === "approved") return filteredApproved;
+    return filteredExtension;
+  }, [
+    activeView,
+    filteredApproved,
+    filteredExtension,
+    filteredPending,
+  ]);
+
+  const {
+    paginatedItems: paginatedSenderRequests,
+    page: senderTablePage,
+    setPage: setSenderTablePage,
+    pageCount: senderTablePageCount,
+    pageSize: senderTablePageSize,
+    totalItems: senderTableTotalItems,
+  } = useTablePagination(
+    activeFilteredRequests,
+    undefined,
+    `${activeView}:${selectedType}:${selectedDate}`,
   );
 
   if (!isRoleReady || !allowed) {
@@ -515,7 +584,10 @@ const HousingSenderPage = () => {
   }
 
   return (
-    <main className="w-full flex-1 min-h-0 overflow-x-hidden overflow-y-auto" dir="rtl">
+    <main
+      className="w-full flex-1 min-h-0 overflow-x-hidden overflow-y-auto"
+      dir="rtl"
+    >
       <motion.div
         className="container mx-auto px-2 py-4 sm:px-4 md:px-6 lg:px-8"
         variants={mainCardVariants}
@@ -546,17 +618,25 @@ const HousingSenderPage = () => {
                       <CardTitle className="text-base">أقسام الطلبات</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-2">
-                      <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                      <motion.div
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                      >
                         <Button
                           type="button"
                           onClick={() => setActiveView("extension")}
-                          variant={activeView === "extension" ? "default" : "outline"}
+                          variant={
+                            activeView === "extension" ? "default" : "outline"
+                          }
                           className="h-auto min-h-11 w-full justify-start py-3 text-base"
                         >
                           قسم طلبات التمديد
                         </Button>
                       </motion.div>
-                      <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                      <motion.div
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                      >
                         <Button
                           type="button"
                           onClick={() => setActiveView("new")}
@@ -566,11 +646,16 @@ const HousingSenderPage = () => {
                           قسم الطلبات الجديدة
                         </Button>
                       </motion.div>
-                      <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                      <motion.div
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                      >
                         <Button
                           type="button"
                           onClick={() => setActiveView("approved")}
-                          variant={activeView === "approved" ? "default" : "outline"}
+                          variant={
+                            activeView === "approved" ? "default" : "outline"
+                          }
                           className="h-auto min-h-11 w-full justify-start py-3 text-base"
                         >
                           قسم الطلبات الموافق عليها مؤخرًا
@@ -580,7 +665,10 @@ const HousingSenderPage = () => {
                   </Card>
                 </motion.div>
 
-                <motion.section className="min-h-[420px]" variants={sectionVariants}>
+                <motion.section
+                  className="min-h-[420px]"
+                  variants={sectionVariants}
+                >
                   <Card className="h-full rounded-3xl border-2 border-blue-200 bg-white text-gray-800 shadow-lg">
                     <CardHeader className="pb-3">
                       <div className="flex items-center gap-2">
@@ -610,13 +698,17 @@ const HousingSenderPage = () => {
                         </p>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           <div className="space-y-1.5">
-                            <Label className="text-sm text-gray-700">حسب نوع الطلب</Label>
+                            <Label className="text-sm text-gray-700">
+                              حسب نوع الطلب
+                            </Label>
                             <Select
                               value={selectedType}
                               onValueChange={setSelectedType}
                               dir="rtl"
                             >
-                              <SelectTrigger className={senderFilterSelectTriggerClassName}>
+                              <SelectTrigger
+                                className={senderFilterSelectTriggerClassName}
+                              >
                                 <SelectValue placeholder="الكل" />
                               </SelectTrigger>
                               <SelectContent className="z-50 text-right">
@@ -630,12 +722,17 @@ const HousingSenderPage = () => {
                             </Select>
                           </div>
                           <div className="space-y-1.5">
-                            <Label className="text-sm text-gray-700">حسب التاريخ</Label>
+                            <Label className="text-sm text-gray-700">
+                              حسب التاريخ
+                            </Label>
                             <Input
                               type="date"
                               value={selectedDate}
                               onChange={(e) => setSelectedDate(e.target.value)}
-                              className={cn(senderFilterFieldClassName, "text-right")}
+                              className={cn(
+                                senderFilterFieldClassName,
+                                "text-right",
+                              )}
                             />
                           </div>
                         </div>
@@ -663,45 +760,83 @@ const HousingSenderPage = () => {
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     رقم الطلب
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     اسم الطالب
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     سبب الطلب
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
+                                    نوع الحجز
+                                  </TableHead>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     تاريخ البداية
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     تاريخ النهاية
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     إجراءات
                                   </TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody className={senderTableBodyClassName}>
-                                {filteredPending.map((request) => (
-                                  <TableRow key={request.requestId || request.requestNumber}>
-                                    <TableCell className={senderTableCellClassName}>
+                                {paginatedSenderRequests.map((request) => (
+                                  <TableRow
+                                    key={
+                                      request.requestId || request.requestNumber
+                                    }
+                                  >
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.requestNumber}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.applicant}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.reason}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
+                                      {request.requestAllocationType}
+                                    </TableCell>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.startDate}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.endDate}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       <div className="flex flex-wrap justify-center gap-2">
                                         <Button
                                           type="button"
@@ -733,10 +868,7 @@ const HousingSenderPage = () => {
                                             !request.requestId
                                           }
                                           onClick={() =>
-                                            openDecisionModal(
-                                              request,
-                                              "reject",
-                                            )
+                                            openDecisionModal(request, "reject")
                                           }
                                         >
                                           رفض
@@ -756,10 +888,10 @@ const HousingSenderPage = () => {
                                     </TableCell>
                                   </TableRow>
                                 ))}
-                                {filteredPending.length === 0 && (
+                                {activeFilteredRequests.length === 0 && (
                                   <TableRow>
                                     <TableCell
-                                      colSpan={6}
+                                      colSpan={7}
                                       className="text-center text-muted-foreground"
                                     >
                                       لا توجد طلبات مطابقة للفلترة الحالية
@@ -774,57 +906,103 @@ const HousingSenderPage = () => {
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     رقم الطلب
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     اسم الطالب
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     سبب الطلب
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
+                                    نوع الحجز
+                                  </TableHead>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     تصنيف الطلب
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     تاريخ البداية
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     تاريخ النهاية
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     عدد الليالي
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     إجراءات
                                   </TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody className={senderTableBodyClassName}>
-                                {filteredApproved.map((request) => (
-                                  <TableRow key={request.requestId || request.requestNumber}>
-                                    <TableCell className={senderTableCellClassName}>
+                                {paginatedSenderRequests.map((request) => (
+                                  <TableRow
+                                    key={
+                                      request.requestId || request.requestNumber
+                                    }
+                                  >
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.requestNumber}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.applicant}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.reason}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
+                                      {request.requestAllocationType}
+                                    </TableCell>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.requestCategory}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.startDate}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.endDate}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.nights ?? "—"}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       <Button
                                         type="button"
                                         variant="outline"
@@ -839,10 +1017,10 @@ const HousingSenderPage = () => {
                                     </TableCell>
                                   </TableRow>
                                 ))}
-                                {filteredApproved.length === 0 && (
+                                {activeFilteredRequests.length === 0 && (
                                   <TableRow>
                                     <TableCell
-                                      colSpan={8}
+                                      colSpan={9}
                                       className="text-center text-muted-foreground"
                                     >
                                       لا توجد طلبات مطابقة للفلترة الحالية
@@ -857,59 +1035,116 @@ const HousingSenderPage = () => {
                             <Table>
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     رقم الطلب
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     اسم الطالب
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     سبب الطلب
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
+                                    نوع الحجز
+                                  </TableHead>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     تاريخ البداية
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     تاريخ النهاية
                                   </TableHead>
-                                  <TableHead className={senderTableHeadClassName}>
+                                  <TableHead
+                                    className={senderTableHeadClassName}
+                                  >
                                     إجراءات
                                   </TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody className={senderTableBodyClassName}>
-                                {filteredExtension.map((request) => (
-                                  <TableRow key={request.requestId || request.requestNumber}>
-                                    <TableCell className={senderTableCellClassName}>
+                                {paginatedSenderRequests.map((request) => (
+                                  <TableRow
+                                    key={
+                                      request.requestId || request.requestNumber
+                                    }
+                                  >
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.requestNumber}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.applicant}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.reason}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
+                                      {request.requestAllocationType}
+                                    </TableCell>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.startDate}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       {request.endDate}
                                     </TableCell>
-                                    <TableCell className={senderTableCellClassName}>
+                                    <TableCell
+                                      className={senderTableCellClassName}
+                                    >
                                       <div className="flex flex-wrap justify-center gap-2">
                                         <Button
+                                          type="button"
                                           className={cn(
                                             senderTableButtonClassName,
                                             "bg-brand text-brand-foreground hover:bg-brand-hover",
                                           )}
+                                          disabled={
+                                            decisionSubmitting ||
+                                            !request.requestId
+                                          }
+                                          onClick={() =>
+                                            openDecisionModal(
+                                              request,
+                                              "approve",
+                                            )
+                                          }
                                         >
                                           موافقة
                                         </Button>
                                         <Button
+                                          type="button"
                                           className={cn(
                                             senderTableButtonClassName,
                                             "bg-red-600 text-white hover:bg-red-700",
                                           )}
+                                          disabled={
+                                            decisionSubmitting ||
+                                            !request.requestId
+                                          }
+                                          onClick={() =>
+                                            openDecisionModal(request, "reject")
+                                          }
                                         >
                                           رفض
                                         </Button>
@@ -928,10 +1163,10 @@ const HousingSenderPage = () => {
                                     </TableCell>
                                   </TableRow>
                                 ))}
-                                {filteredExtension.length === 0 && (
+                                {activeFilteredRequests.length === 0 && (
                                   <TableRow>
                                     <TableCell
-                                      colSpan={6}
+                                      colSpan={7}
                                       className="text-center text-muted-foreground"
                                     >
                                       لا توجد طلبات مطابقة للفلترة الحالية
@@ -941,6 +1176,15 @@ const HousingSenderPage = () => {
                               </TableBody>
                             </Table>
                           )}
+                          {!dataLoading ? (
+                            <TablePagination
+                              totalItems={senderTableTotalItems}
+                              page={senderTablePage}
+                              pageCount={senderTablePageCount}
+                              pageSize={senderTablePageSize}
+                              onPageChange={setSenderTablePage}
+                            />
+                          ) : null}
                         </div>
                       </motion.div>
                     </CardContent>
@@ -958,6 +1202,7 @@ const HousingSenderPage = () => {
           mode="view"
           requestId={detailModalRequestId}
           requestOwnerUserId={detailModalOwnerUserId}
+          linkedContentRequestId={detailLinkedContentRequestId}
           statusLabel={detailModalStatus}
           tableRow={detailModalRow}
           onClose={closeRequestDetails}
@@ -976,6 +1221,7 @@ const HousingSenderPage = () => {
         }}
         onConfirm={() => void handleDecisionConfirm()}
       />
+      <div className="mb-14 h-24 text-transparent">t</div>
     </main>
   );
 };

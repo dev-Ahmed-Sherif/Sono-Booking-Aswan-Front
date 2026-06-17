@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import {
   accessTokenCookieName,
   authCookieDomain,
+  guideCookieName,
   refreshTokenCookieName,
 } from "@/lib/auth-cookies";
 
@@ -22,6 +23,11 @@ export const getAccessToken = async () => {
 export const getRefreshToken = async () => {
   const backEndCookies = await getCookies();
   return backEndCookies.get(refreshTokenCookieName())?.value;
+};
+
+export const getUserId = async () => {
+  const backEndCookies = await getCookies();
+  return backEndCookies.get(guideCookieName())?.value;
 };
 
 // Cookie maxAge/expires: env value is in SECONDS (e.g. 604800 = 7 days)

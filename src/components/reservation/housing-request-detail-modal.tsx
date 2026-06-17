@@ -15,7 +15,10 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { getAvailableUnits } from "@/actions/availabilityService";
+import {
+  fetchRequestUnitHierarchyRows,
+  type RequestUnitRef,
+} from "@/actions/reservationUnitHierarchy";
 import {
   getCompanionById,
   getCompanions,
@@ -62,18 +65,21 @@ import {
   availabilityCardKey,
   fetchMergedAvailabilityCards,
   getLookupArray,
-  hierarchyFilteredAvailabilityLists,
   mapGenericOptions,
-  formatStoredUnitLabel,
+  orderedUnitKindsFromSelection,
+  formatStoredUnitHierarchyLabel,
   toReservationStoredUnits,
+  validateSelectedUnitsForInquiry,
   type AvailabilityUnitCard,
   type ReservationStoredUnitSnapshot,
 } from "@/lib/availability-inquiry";
+import { buildAvailabilityInquiryFromForm } from "@/lib/availability-dates";
 import { cn } from "@/lib/utils";
 import {
-  extractAvailabilityList,
+  enrichUnitsWithApartmentGender,
   parseGuestGenderStrict,
   resolveGuestsForReservationValidation,
+  resolveInquiryGendersFromSelectedUnits,
   resolvePersonGuestGender,
   type GuestGender,
 } from "@/lib/reservation-guest-unit-validation";
@@ -81,15 +87,19 @@ import {
   applyCompanionDisplayNameToMap,
   buildCompanionDisplayMapForIds,
   buildCompanionGenderMap,
+  buildCompanionNameMap,
+  collectInquiryGendersForAvailability,
   buildUpdateRequestPayload,
   buildRequestOldImagesPayload,
   companionDisplayNameFromRecord,
   lookupCompanionName,
+  mergeCompanionNameMaps,
   extractApiEntity,
   extractCompanionIdsFromParticipantRows,
   extractRequestUserId,
   filterRowsByRequestId,
   resolveParticipantRowsForRequest,
+  resolveRequestLinkedContentRequestId,
   parseRequestDetail,
   parseRequestAttachesFromApi,
   parseRequestUnitFromApi,
@@ -133,6 +143,11 @@ type HousingRequestDetailModalProps = {
    * API always uses this id in the `UserId` header, not the logged-in user from localStorage.
    */
   requestOwnerUserId?: string;
+  /**
+   * When set (e.g. housing sender extension rows), units/companions load from this id
+   * instead of re-deriving from the extension request payload.
+   */
+  linkedContentRequestId?: string;
   requestTypeLabelsById?: Map<string, string>;
   onClose: () => void;
   onChanged?: () => void;
@@ -163,6 +178,25 @@ function mergeDetailWithTableRow(
 
 const ADD_UNIT_PLACEHOLDER = "__add_unit__";
 
+function normalizeCompanionKey(id: string): string {
+  return id.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function unitSnapshotsToHierarchyRefs(
+  units: ReservationStoredUnitSnapshot[],
+): RequestUnitRef[] {
+  return units.map((unit) => {
+    const id = unit.id.trim();
+    if (unit.unitKind === "bed") {
+      return { bedId: id, apartmentId: unit.apartmentId?.trim() || undefined };
+    }
+    if (unit.unitKind === "room") {
+      return { roomId: id, apartmentId: unit.apartmentId?.trim() || undefined };
+    }
+    return { apartmentId: id };
+  });
+}
+
 type LookupOption = { value: string; label: string };
 
 type EditFieldErrors = {
@@ -191,6 +225,7 @@ export function HousingRequestDetailModal({
   statusLabel,
   tableRow = null,
   requestOwnerUserId: requestOwnerUserIdProp,
+  linkedContentRequestId: linkedContentRequestIdProp,
   requestTypeLabelsById,
   onClose,
   onChanged,
@@ -211,7 +246,11 @@ export function HousingRequestDetailModal({
     Map<string, GuestGender>
   >(new Map());
   const [inquiryGenders, setInquiryGenders] = useState<GuestGender[]>([]);
+  const [applicantGender, setApplicantGender] = useState<
+    GuestGender | undefined
+  >(undefined);
   const [unitCards, setUnitCards] = useState<AvailabilityUnitCard[]>([]);
+  const [unitCardsLoading, setUnitCardsLoading] = useState(false);
   const [addUnitKey, setAddUnitKey] = useState("");
   const [addCompanionId, setAddCompanionId] = useState("");
   const [requestTypeOptions, setRequestTypeOptions] = useState<LookupOption[]>(
@@ -259,6 +298,50 @@ export function HousingRequestDetailModal({
     [],
   );
 
+  const availabilityFilterGenders = useMemo(
+    () =>
+      collectInquiryGendersForAvailability({
+        applicantGender,
+        companionIds,
+        companionGenderById,
+        unitFallback: inquiryGenders,
+      }),
+    [applicantGender, companionIds, companionGenderById, inquiryGenders],
+  );
+
+  const loadAvailableUnitCards = useCallback(async () => {
+    if (!isEdit || !detail || isExtensionRequest) {
+      setUnitCards([]);
+      return;
+    }
+
+    const inquiry = buildAvailabilityInquiryFromForm({
+      startDate: detail.startDate,
+      nights: nightsInput || detail.nights,
+      genders: availabilityFilterGenders,
+    });
+    if (!inquiry) {
+      setUnitCards([]);
+      return;
+    }
+
+    setUnitCardsLoading(true);
+    try {
+      const kinds = orderedUnitKindsFromSelection(["bed", "room", "apartment"]);
+      const { cards, fatalError } = await fetchMergedAvailabilityCards(
+        kinds,
+        inquiry,
+      );
+      if (fatalError) {
+        setUnitCards([]);
+        return;
+      }
+      setUnitCards(cards);
+    } finally {
+      setUnitCardsLoading(false);
+    }
+  }, [isEdit, detail, isExtensionRequest, nightsInput, availabilityFilterGenders]);
+
   const loadDetail = useCallback(async () => {
     if (!requestId) return;
     setLoading(true);
@@ -267,6 +350,8 @@ export function HousingRequestDetailModal({
     setCompanionIds([]);
     setCompanionGenderById(new Map());
     setInquiryGenders([]);
+    setApplicantGender(undefined);
+    setUnitCards([]);
     setExistingAttachments([]);
     setRemovedAttachmentIds(new Set());
     setRequestOwnerUserId("");
@@ -287,27 +372,16 @@ export function HousingRequestDetailModal({
           ? getCompanionsForRequestOwner(ownerUserId)
           : getCompanions();
 
-      const [
-        unitsRes,
-        partsRes,
-        compRes,
-        bedsRes,
-        roomsRes,
-        aptRes,
-        requestTypesRes,
-        allocationTypesRes,
-      ] = await Promise.all([
-        getRequestUnitsAll(),
-        ownerUserId
-          ? getRequestParticipantsAll(ownerUserId)
-          : getRequestParticipantsAll(),
-        companionsListPromise,
-        getAvailableUnits("bed"),
-        getAvailableUnits("room"),
-        getAvailableUnits("apartment"),
-        isEdit ? getRequestTypes() : Promise.resolve(null),
-        isEdit ? getAllocationTypes() : Promise.resolve(null),
-      ]);
+      const [unitsRes, partsRes, compRes, requestTypesRes, allocationTypesRes] =
+        await Promise.all([
+          getRequestUnitsAll(),
+          ownerUserId
+            ? getRequestParticipantsAll(ownerUserId)
+            : getRequestParticipantsAll(),
+          companionsListPromise,
+          isEdit ? getRequestTypes() : Promise.resolve(null),
+          isEdit ? getAllocationTypes() : Promise.resolve(null),
+        ]);
 
       const reqRaw = extractApiEntity(reqRes);
       if (!reqRaw) {
@@ -364,14 +438,27 @@ export function HousingRequestDetailModal({
         }
       }
 
+      const contentRequestId =
+        linkedContentRequestIdProp?.trim() ||
+        resolveRequestLinkedContentRequestId(reqRaw, requestId);
+
+      let contentRequestRaw = reqRaw;
+      if (contentRequestId !== requestId) {
+        const previousReqRes = await getRequestById(contentRequestId);
+        const previousRaw = extractApiEntity(previousReqRes);
+        if (previousRaw) {
+          contentRequestRaw = previousRaw;
+        }
+      }
+
       const unitRows = filterRowsByRequestId(
         getLookupArray(unitsRes),
-        requestId,
+        contentRequestId,
       );
       const participantRows = resolveParticipantRowsForRequest(
-        reqRaw,
+        contentRequestRaw,
         partsRes,
-        requestId,
+        contentRequestId,
         reqRes,
       );
 
@@ -379,9 +466,8 @@ export function HousingRequestDetailModal({
         .map(parseRequestUnitFromApi)
         .filter((u): u is AddRequestUnitDtoPayload => u != null);
 
-      const bedsRaw = extractAvailabilityList(bedsRes);
-      const roomsRaw = extractAvailabilityList(roomsRes);
-      const apartmentsRaw = extractAvailabilityList(aptRes);
+      const { bedsRaw, roomsRaw, apartmentsRaw } =
+        await fetchRequestUnitHierarchyRows(parsedUnits);
 
       const enriched = requestUnitDtosToEnrichedSnapshots(
         parsedUnits,
@@ -394,8 +480,10 @@ export function HousingRequestDetailModal({
         participantRows,
       );
 
+      const attachmentsSourceRaw = contentRequestRaw;
+
       setDetail(parsedDetail);
-      setExistingAttachments(parseRequestAttachesFromApi(reqRaw));
+      setExistingAttachments(parseRequestAttachesFromApi(attachmentsSourceRaw));
       setNightsInput(
         parsedDetail.nights > 0 ? String(parsedDetail.nights) : "",
       );
@@ -430,28 +518,41 @@ export function HousingRequestDetailModal({
         );
       }
 
-      setCompanionNames(displayMap);
+      const allCompanionNames = mergeCompanionNameMaps(
+        displayMap,
+        compRes && !(compRes as { error?: string }).error
+          ? buildCompanionNameMap(compRes)
+          : new Map(),
+      );
+      setCompanionNames(allCompanionNames);
       setCompanionGenderById(
         compRes && !(compRes as { error?: string }).error
           ? buildCompanionGenderMap(compRes)
           : new Map(),
       );
       setInquiryGenders(
-        resolveInquiryGendersForRequest(reqRaw, enriched, {
+        resolveInquiryGendersForRequest(attachmentsSourceRaw, enriched, {
           bedsRaw,
           roomsRaw,
           apartmentsRaw,
         }),
       );
 
-      if (isEdit) {
-        const { cards } = await fetchMergedAvailabilityCards([
-          "bed",
-          "room",
-          "apartment",
-        ]);
-        setUnitCards(cards);
+      let loadedApplicantGender: GuestGender | undefined;
+      if (ownerUserId) {
+        try {
+          const userRes = await getUserById(ownerUserId);
+          const data = (userRes as { data?: Record<string, unknown> })?.data;
+          if (data && !(userRes as { error?: string })?.error) {
+            loadedApplicantGender =
+              parseGuestGenderStrict(data.gender ?? data.Gender) ??
+              resolvePersonGuestGender(data);
+          }
+        } catch {
+          // ignore
+        }
       }
+      setApplicantGender(loadedApplicantGender);
     } catch {
       toast({
         variant: "destructive",
@@ -463,6 +564,7 @@ export function HousingRequestDetailModal({
     }
   }, [
     isEdit,
+    linkedContentRequestIdProp,
     mode,
     requestId,
     requestOwnerUserIdProp,
@@ -493,6 +595,11 @@ export function HousingRequestDetailModal({
     void loadDetailRef.current();
   }, [open, requestId, mode]);
 
+  useEffect(() => {
+    if (!isEdit || loading || !detail) return;
+    void loadAvailableUnitCards();
+  }, [isEdit, loading, detail, loadAvailableUnitCards]);
+
   const availableUnitOptions = useMemo(() => {
     const selectedKeys = new Set(
       unitSnapshots.map((u) => `${u.unitKind}:${u.id}`),
@@ -502,32 +609,66 @@ export function HousingRequestDetailModal({
     );
   }, [unitCards, unitSnapshots]);
 
+  const formatAvailableUnitOptionLabel = useCallback(
+    (card: AvailabilityUnitCard): string => {
+      const segments: string[] = [];
+      const apartment = card.parentApartmentLabel?.trim();
+      const room = card.parentRoomLabel?.trim();
+      const title = card.title?.trim() || "وحدة";
+      if (apartment) segments.push(apartment);
+      if (room) segments.push(room);
+      segments.push(title);
+
+      const hierarchy = segments.join(" - ");
+      const price = card.priceLabel?.trim();
+      return price ? `${hierarchy} - ${price}` : hierarchy;
+    },
+    [],
+  );
+
   const availableCompanions = useMemo(() => {
-    const chosen = new Set(companionIds);
-    return Array.from(companionNames.entries()).filter(([id]) => !chosen.has(id));
+    const chosen = new Set(
+      companionIds.map((id) => normalizeCompanionKey(id)).filter(Boolean),
+    );
+    const seen = new Set<string>();
+    const unique: Array<[string, string]> = [];
+
+    for (const [id, name] of Array.from(companionNames.entries())) {
+      const key = normalizeCompanionKey(id);
+      if (!key || chosen.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      unique.push([id, name]);
+    }
+
+    return unique;
   }, [companionIds, companionNames]);
 
   const handleAddUnit = async (cardKey: string) => {
     const card = unitCards.find((c) => availabilityCardKey(c) === cardKey);
     if (!card) return;
-    const [bedsRes, roomsRes, aptRes] = await Promise.all([
-      getAvailableUnits("bed"),
-      getAvailableUnits("room"),
-      getAvailableUnits("apartment"),
-    ]);
-    const { bedsRaw, roomsRaw, apartmentsRaw } =
-      await hierarchyFilteredAvailabilityLists({
-        bedsRaw: extractAvailabilityList(bedsRes),
-        roomsRaw: extractAvailabilityList(roomsRes),
-        apartmentsRaw: extractAvailabilityList(aptRes),
-      });
+    const hierarchy = await fetchRequestUnitHierarchyRows(
+      unitSnapshotsToHierarchyRefs(toReservationStoredUnits([card])),
+    );
     const enriched = enrichStoredUnitsWithHierarchyIds(
       toReservationStoredUnits([card]),
-      bedsRaw,
-      roomsRaw,
-      apartmentsRaw,
+      hierarchy.bedsRaw,
+      hierarchy.roomsRaw,
+      hierarchy.apartmentsRaw,
     );
-    const mapped = mapStoredUnitToRequestUnitDto(enriched[0]);
+    const inquiryFromUnit = resolveInquiryGendersFromSelectedUnits(
+      enriched,
+      hierarchy.bedsRaw,
+      hierarchy.roomsRaw,
+      hierarchy.apartmentsRaw,
+    );
+    const withGender = enrichUnitsWithApartmentGender(
+      enriched,
+      hierarchy.bedsRaw,
+      hierarchy.roomsRaw,
+      hierarchy.apartmentsRaw,
+      inquiryFromUnit,
+    );
+    const mapped = mapStoredUnitToRequestUnitDto(withGender[0]);
     if (!mapped.ok) {
       toast({
         variant: "destructive",
@@ -536,7 +677,8 @@ export function HousingRequestDetailModal({
       });
       return;
     }
-    setUnitSnapshots((prev) => [...prev, enriched[0]]);
+    setUnitSnapshots((prev) => [...prev, withGender[0]]);
+    setInquiryGenders(inquiryFromUnit);
     setAddUnitKey("");
   };
 
@@ -636,49 +778,68 @@ export function HousingRequestDetailModal({
 
     setSaving(true);
     try {
-      const inquiryStartYmd = validatedDetail?.startDate?.trim();
-      const inquiryDates =
-        inquiryStartYmd != null
-          ? {
-              startDateYmd: inquiryStartYmd,
-              nights: validatedDetail?.nights,
-            }
-          : undefined;
+      let unitsForSubmit = unitSnapshots;
 
-      const [bedsRes, roomsRes, aptRes] = await Promise.all([
-        getAvailableUnits("bed", inquiryDates),
-        getAvailableUnits("room", inquiryDates),
-        getAvailableUnits("apartment", inquiryDates),
-      ]);
-      const { bedsRaw, roomsRaw, apartmentsRaw } =
-        await hierarchyFilteredAvailabilityLists({
-          bedsRaw: extractAvailabilityList(bedsRes),
-          roomsRaw: extractAvailabilityList(roomsRes),
-          apartmentsRaw: extractAvailabilityList(aptRes),
-          inquiry: inquiryDates,
+      if (isEdit && !isExtensionRequest) {
+        const inquiry = buildAvailabilityInquiryFromForm({
+          startDate: validatedDetail.startDate,
+          nights: validatedDetail.nights,
+          genders: collectInquiryGendersForAvailability({
+            applicantGender,
+            companionIds,
+            companionGenderById,
+            unitFallback: inquiryGenders,
+          }),
         });
+        if (inquiry) {
+          const availabilityCheck = await validateSelectedUnitsForInquiry({
+            units: unitSnapshots,
+            inquiry,
+            excludeRequestId: requestId,
+          });
+          if (!availabilityCheck.ok) {
+            toast({
+              variant: "destructive",
+              title: "لا يمكن الحفظ",
+              description: availabilityCheck.message,
+            });
+            return;
+          }
+          unitsForSubmit = availabilityCheck.validatedUnits;
+        }
+      }
 
-      let applicantGender: GuestGender | undefined;
-      try {
-        const userRaw =
-          typeof window !== "undefined"
-            ? window.localStorage.getItem("user")
-            : null;
-        if (userRaw && userRaw !== "undefined" && userRaw !== "null") {
-          const user = JSON.parse(userRaw) as { id?: string };
-          const id = user?.id ? String(user.id).trim() : "";
-          if (id) {
-            const res = await getUserById(id);
+      const { bedsRaw, roomsRaw, apartmentsRaw } =
+        await fetchRequestUnitHierarchyRows(
+          unitSnapshotsToHierarchyRefs(unitsForSubmit),
+        );
+
+      let applicantGenderForSave = applicantGender;
+      if (!applicantGenderForSave) {
+        try {
+          let applicantUserId = requestOwnerUserId.trim();
+          if (!applicantUserId) {
+            const userRaw =
+              typeof window !== "undefined"
+                ? window.localStorage.getItem("user")
+                : null;
+            if (userRaw && userRaw !== "undefined" && userRaw !== "null") {
+              const user = JSON.parse(userRaw) as { id?: string };
+              applicantUserId = user?.id ? String(user.id).trim() : "";
+            }
+          }
+          if (applicantUserId) {
+            const res = await getUserById(applicantUserId);
             const data = (res as { data?: Record<string, unknown> })?.data;
             if (data && !(res as { error?: string })?.error) {
-              applicantGender =
+              applicantGenderForSave =
                 parseGuestGenderStrict(data.gender ?? data.Gender) ??
                 resolvePersonGuestGender(data);
             }
           }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
       }
 
       const genderById = new Map(companionGenderById);
@@ -702,15 +863,22 @@ export function HousingRequestDetailModal({
         }
       }
 
+      const effectiveInquiryGenders = resolveInquiryGendersFromSelectedUnits(
+        unitsForSubmit,
+        bedsRaw,
+        roomsRaw,
+        apartmentsRaw,
+      );
+
       const prepared = prepareHousingRequestForSubmit({
         guests: guestsForValidation,
-        inquiryGenders,
-        units: unitSnapshots,
+        inquiryGenders: effectiveInquiryGenders,
+        units: unitsForSubmit,
         bedsRaw,
         roomsRaw,
         apartmentsRaw,
         getGuestGender: (guestId) => {
-          if (guestId === "applicant") return applicantGender;
+          if (guestId === "applicant") return applicantGenderForSave;
           return genderById.get(guestId);
         },
       });
@@ -1023,6 +1191,14 @@ export function HousingRequestDetailModal({
                 <span className="text-muted-foreground">الحالة: </span>
                 <span className="font-medium">{detail.statusLabel}</span>
               </div>
+              {detail.rejectionReason?.trim() ? (
+                <div className="sm:col-span-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm">
+                  <span className="text-muted-foreground">سبب الرفض: </span>
+                  <span className="font-medium text-red-900">
+                    {detail.rejectionReason.trim()}
+                  </span>
+                </div>
+              ) : null}
             </div>
 
             <div className="space-y-2">
@@ -1038,8 +1214,8 @@ export function HousingRequestDetailModal({
                       key={`${unit.unitKind}:${unit.id}-${idx}`}
                       className="flex items-center justify-between gap-2 text-sm"
                     >
-                      <span>{formatStoredUnitLabel(unit)}</span>
-                      {isEdit && !isExtensionRequest ? (
+                      <span>{formatStoredUnitHierarchyLabel(unit)}</span>
+                      {isEdit && !isExtensionRequest && (unitCardsLoading || availableUnitOptions.length > 0) ? (
                         <Button
                           type="button"
                           variant="ghost"
@@ -1068,19 +1244,34 @@ export function HousingRequestDetailModal({
                         if (v === ADD_UNIT_PLACEHOLDER) return;
                         void handleAddUnit(v);
                       }}
+                      disabled={unitCardsLoading}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="إضافة وحدة" />
+                      <SelectTrigger dir="rtl" className="text-right">
+                        <SelectValue
+                          placeholder={
+                            unitCardsLoading
+                              ? "جاري تحميل الوحدات المتاحة..."
+                              : "إضافة وحدة"
+                          }
+                        />
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={ADD_UNIT_PLACEHOLDER} disabled>
+                      <SelectContent dir="rtl" className="text-right">
+                        <SelectItem
+                          value={ADD_UNIT_PLACEHOLDER}
+                          disabled
+                          className="text-right"
+                        >
                           اختر وحدة لإضافتها
                         </SelectItem>
                         {availableUnitOptions.map((card) => {
                           const key = availabilityCardKey(card);
                           return (
-                            <SelectItem key={key} value={key}>
-                              {card.title}
+                            <SelectItem
+                              key={key}
+                              value={key}
+                              className="text-right"
+                            >
+                              {formatAvailableUnitOptionLabel(card)}
                             </SelectItem>
                           );
                         })}
@@ -1092,13 +1283,23 @@ export function HousingRequestDetailModal({
                     variant="outline"
                     size="sm"
                     className="gap-1"
-                    disabled={!addUnitKey}
+                    disabled={!addUnitKey || unitCardsLoading}
                     onClick={() => addUnitKey && void handleAddUnit(addUnitKey)}
                   >
                     <Plus className="h-4 w-4" />
                     إضافة
                   </Button>
                 </div>
+              ) : isEdit && !isExtensionRequest && !unitCardsLoading ? (
+                <p className="text-sm text-muted-foreground">
+                  {buildAvailabilityInquiryFromForm({
+                    startDate: detail?.startDate,
+                    nights: nightsInput || detail?.nights,
+                    genders: availabilityFilterGenders,
+                  })
+                    ? "لا توجد وحدات متاحة للتواريخ والجنس المحددين."
+                    : "حدّد تاريخ البدء وعدد الليالي لعرض الوحدات المتاحة."}
+                </p>
               ) : null}
             </div>
 
@@ -1148,18 +1349,50 @@ export function HousingRequestDetailModal({
                         setCompanionIds((prev) =>
                           prev.includes(v) ? prev : [...prev, v],
                         );
+                        const gender = companionGenderById.get(v);
+                        if (!gender) {
+                          void (async () => {
+                            try {
+                              const res = requestOwnerUserId.trim()
+                                ? await getCompanionById(
+                                    v,
+                                    requestOwnerUserId.trim(),
+                                  )
+                                : await getCompanionById(v);
+                              const raw = extractApiEntity(res);
+                              if (!raw) return;
+                              const resolved = resolvePersonGuestGender(raw);
+                              if (!resolved) return;
+                              setCompanionGenderById((prev) => {
+                                const next = new Map(prev);
+                                next.set(v, resolved);
+                                return next;
+                              });
+                            } catch {
+                              // ignore
+                            }
+                          })();
+                        }
                         setAddCompanionId("");
                       }}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger dir="rtl" className="text-right">
                         <SelectValue placeholder="إضافة مرافق" />
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__" disabled>
+                      <SelectContent dir="rtl" className="text-right">
+                        <SelectItem
+                          value="__none__"
+                          disabled
+                          className="text-right"
+                        >
                           اختر مرافقاً
                         </SelectItem>
                         {availableCompanions.map(([id, name]) => (
-                          <SelectItem key={id} value={id}>
+                          <SelectItem
+                            key={id}
+                            value={id}
+                            className="text-right"
+                          >
                             {name}
                           </SelectItem>
                         ))}
@@ -1170,12 +1403,12 @@ export function HousingRequestDetailModal({
               ) : null}
             </div>
 
-            {!isExtensionRequest &&
-            (visibleExistingAttachments.length > 0 || isEdit) ? (
+            {(visibleExistingAttachments.length > 0 ||
+              (isEdit && !isExtensionRequest)) ? (
               <RequestSavedAttachmentsList
                 attachments={visibleExistingAttachments}
-                showUploadHint={isEdit}
-                editable={isEdit}
+                showUploadHint={isEdit && !isExtensionRequest}
+                editable={isEdit && !isExtensionRequest}
                 disabled={saving || loading}
                 onRemove={handleRemoveSavedAttachment}
               />

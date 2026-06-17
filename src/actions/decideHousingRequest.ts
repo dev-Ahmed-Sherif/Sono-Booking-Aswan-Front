@@ -15,6 +15,7 @@ import {
   filterRowsByRequestId,
   parseRequestUnitFromApi,
   resolveParticipantRowsForRequest,
+  resolveRequestLinkedContentRequestId,
   type LeaderRequestDecision,
 } from "@/lib/housing-request-detail";
 import { getLookupArray } from "@/lib/availability-inquiry";
@@ -85,6 +86,8 @@ export async function decideHousingRequest(
 
   const ownerUserId = input.ownerUserId?.trim();
 
+  const contentRequestId = resolveRequestLinkedContentRequestId(raw, requestId);
+
   const [unitsRes, partsRes, bedsRes, roomsRes] = await Promise.all([
     getRequestUnitsAll(),
     ownerUserId
@@ -99,8 +102,17 @@ export async function decideHousingRequest(
     return { ok: false, message: unitsLoadError };
   }
 
+  let contentRequestRaw = raw;
+  if (contentRequestId !== requestId) {
+    const previousReqRes = await getRequestById(contentRequestId);
+    const previousRaw = extractApiEntity(previousReqRes);
+    if (previousRaw) {
+      contentRequestRaw = previousRaw;
+    }
+  }
+
   const unitRows = enrichRequestUnitRowsFromHierarchy(
-    filterRowsByRequestId(getLookupArray(unitsRes), requestId),
+    filterRowsByRequestId(getLookupArray(unitsRes), contentRequestId),
     getLookupArray(bedsRes),
     getLookupArray(roomsRes),
   );
@@ -112,9 +124,9 @@ export async function decideHousingRequest(
     );
 
   const participantRows = resolveParticipantRowsForRequest(
-    raw,
+    contentRequestRaw,
     partsRes,
-    requestId,
+    contentRequestId,
     reqRes,
   );
   const companionIds =

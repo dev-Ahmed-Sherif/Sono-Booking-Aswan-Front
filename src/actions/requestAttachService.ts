@@ -1,6 +1,6 @@
 "use server";
 
-import axios from "axios";
+import axios from "@/lib/axios-auth";
 import { getAccessToken } from "@/lib/token-helper";
 
 const BASE = "RequestAttaches";
@@ -27,6 +27,10 @@ async function request(
   };
 
   try {
+    if (method === "get") {
+      const res = await axios.get(url, config);
+      return res.data;
+    }
     if (method === "delete") {
       const res = await axios.delete(url, {
         ...config,
@@ -34,8 +38,11 @@ async function request(
       });
       return res.data;
     }
-
-    const res = await axios[method](url, data, config);
+    if (method === "post") {
+      const res = await axios.post(url, data, config);
+      return res.data;
+    }
+    const res = await axios.put(url, data, config);
     return res.data;
   } catch (error: unknown) {
     const err = error as {

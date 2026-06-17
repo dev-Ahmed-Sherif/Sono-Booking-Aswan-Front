@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios from "@/lib/axios-auth";
 
 function errorMessageFromAxios(data: unknown, fallback: string): string {
   if (typeof data === "string" && data.trim()) return data;

@@ -1,6 +1,6 @@
 "use server";
 
-import axios from "axios";
+import axios from "@/lib/axios-auth";
 import { getAccessToken } from "@/lib/token-helper";
 
 type Payload = Record<string, unknown>;
@@ -173,12 +173,30 @@ async function request(
   }
 }
 
-const getRooms = async (apartmentId?: string) => {
+type GetRoomsOptions = {
+  /**
+   * When true, omits the availability `Status` header so authenticated callers
+   * receive all rooms for the apartment (available, reserved, occupied).
+   * Default keeps catalog behavior (available units only).
+   */
+  allStatuses?: boolean;
+};
+
+const getRooms = async (apartmentId?: string, options?: GetRoomsOptions) => {
   const trimmed = apartmentId?.trim();
-  return request("get", `${process.env.BACK_END}/${BASE}/getAll`, undefined, {
-    Status: AVAILABLE_UNIT_STATUS_HEADER,
-    ...(trimmed ? { ApartmentId: trimmed } : {}),
-  });
+  const headers: Record<string, string> = {};
+  if (!options?.allStatuses) {
+    headers.Status = AVAILABLE_UNIT_STATUS_HEADER;
+  }
+  if (trimmed) {
+    headers.ApartmentId = trimmed;
+  }
+  return request(
+    "get",
+    `${process.env.BACK_END}/${BASE}/getAll`,
+    undefined,
+    Object.keys(headers).length > 0 ? headers : undefined,
+  );
 };
 const getRoomById = async (id: string) =>
   id === "new" ? undefined : request("get", `${process.env.BACK_END}/${BASE}/get/${id}`);

@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { format } from "date-fns";
 import { ar, enUS } from "date-fns/locale";
-import { CalendarIcon } from "lucide-react";
+import { CalendarIcon, Loader2 } from "lucide-react";
 import type { FieldPath, UseFormReturn } from "react-hook-form";
 import type { DocumentType } from "@/schemas";
 import { documentTypeLabels } from "@/schemas";
+import { CheckNationalIdExists } from "@/actions/auth";
 import { Button } from "@/components/ui/button";
 import {
   FormControl,
@@ -35,6 +36,7 @@ import {
   birthDateFromEgyptianNationalId,
   documentTypeDerivesBirthDate,
   genderFormValueFromNationalId,
+  NATIONAL_ID_EXISTED_MESSAGE,
 } from "@/lib/companion-registration";
 
 export const profileFieldInputClassName =
@@ -85,6 +87,8 @@ type RegistrationProfileFieldsProps<T extends RegistrationProfileFormShape> = {
   afterEmailField?: ReactNode;
   /** Rendered after email/mobile grid, before identity file upload */
   betweenMainFieldsAndIdentity?: ReactNode;
+  /** Live duplicate check for registration national ID / document number */
+  checkNationalIdAvailability?: boolean;
 };
 
 const RegistrationProfileFields = <T extends RegistrationProfileFormShape>({
@@ -98,9 +102,14 @@ const RegistrationProfileFields = <T extends RegistrationProfileFormShape>({
   phoneField = "mobile",
   afterEmailField,
   betweenMainFieldsAndIdentity,
+  checkNationalIdAvailability = false,
 }: RegistrationProfileFieldsProps<T>) => {
   const dateFnsLocale = locale === "ar" || locale.startsWith("ar-") ? ar : enUS;
   const currentYear = new Date().getFullYear();
+  const nationalIdCheckRequestId = useRef(0);
+  const [nationalIdCheckStatus, setNationalIdCheckStatus] = useState<
+    "idle" | "checking" | "available" | "taken"
+  >("idle");
 
   const docIdPath = documentIdField as FieldPath<T>;
   const phonePath = phoneField as FieldPath<T>;
@@ -143,6 +152,56 @@ const RegistrationProfileFields = <T extends RegistrationProfileFormShape>({
       );
     }
   }, [documentType, documentIdValue, form]);
+
+  useEffect(() => {
+    if (!checkNationalIdAvailability || documentIdField !== "nationalId") {
+      setNationalIdCheckStatus("idle");
+      return;
+    }
+
+    const trimmed = (documentIdValue ?? "").trim();
+    if (!trimmed) {
+      setNationalIdCheckStatus("idle");
+      form.clearErrors(docIdPath);
+      return;
+    }
+
+    const requestId = ++nationalIdCheckRequestId.current;
+    setNationalIdCheckStatus("checking");
+
+    const timer = window.setTimeout(async () => {
+      const result = await CheckNationalIdExists(trimmed);
+      if (requestId !== nationalIdCheckRequestId.current) return;
+
+      if (result.exists) {
+        setNationalIdCheckStatus("taken");
+        form.setError(docIdPath, {
+          type: "manual",
+          message: result.message || NATIONAL_ID_EXISTED_MESSAGE,
+        });
+        return;
+      }
+
+      if (result.error) {
+        setNationalIdCheckStatus("idle");
+        return;
+      }
+
+      setNationalIdCheckStatus("available");
+      const currentError = form.getFieldState(docIdPath).error;
+      if (currentError?.type === "manual") {
+        form.clearErrors(docIdPath);
+      }
+    }, 600);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    checkNationalIdAvailability,
+    documentIdField,
+    documentIdValue,
+    docIdPath,
+    form,
+  ]);
 
   const nameLabel = nameField === "userName" ? "userName" : "fullName";
   const nameTitle =
@@ -230,6 +289,15 @@ const RegistrationProfileFields = <T extends RegistrationProfileFormShape>({
                   }
                 />
               </FormControl>
+              {checkNationalIdAvailability && nationalIdCheckStatus === "checking" ? (
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  جاري التحقق من رقم المستند...
+                </p>
+              ) : null}
+              {checkNationalIdAvailability && nationalIdCheckStatus === "available" ? (
+                <p className="text-xs text-emerald-600">رقم المستند متاح</p>
+              ) : null}
               <FormMessage />
             </FormItem>
           )}

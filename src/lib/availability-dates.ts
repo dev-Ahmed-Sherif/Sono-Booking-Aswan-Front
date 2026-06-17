@@ -40,6 +40,28 @@ export function normalizeInquiryStartYmd(value: unknown): string | undefined {
   return toYmd(value);
 }
 
+/** Builds availability inquiry params (same shape as reservation «استعلام التوفر»). */
+export function buildAvailabilityInquiryFromForm(input: {
+  startDate: unknown;
+  nights: unknown;
+  genders: AvailabilityInquiryGender[];
+}): AvailabilityInquiryDates | undefined {
+  const startDateYmd = normalizeInquiryStartYmd(input.startDate);
+  const nightsNumber = Number(String(input.nights ?? "").trim());
+  const genders = input.genders.filter(
+    (g): g is AvailabilityInquiryGender => g === "male" || g === "female",
+  );
+  if (
+    !startDateYmd ||
+    !Number.isFinite(nightsNumber) ||
+    nightsNumber < 1 ||
+    genders.length === 0
+  ) {
+    return undefined;
+  }
+  return { startDateYmd, nights: nightsNumber, genders };
+}
+
 export function compareYmd(a: string, b: string): number {
   if (a < b) return -1;
   if (a > b) return 1;

@@ -11,10 +11,12 @@ import {
   registrationSchema,
   type RegistrationFormValues,
 } from "@/schemas";
-import { Register } from "@/actions/auth";
+import { Register, CheckNationalIdExists } from "@/actions/auth";
 import {
   extractApiResultString,
   genderToApiString,
+  mapRegisterApiMessage,
+  NATIONAL_ID_EXISTED_MESSAGE,
 } from "@/lib/companion-registration";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -116,13 +118,29 @@ const RegisterForm = () => {
         return;
       }
 
+      const nationalIdCheck = await CheckNationalIdExists(values.nationalId);
+      if (nationalIdCheck.exists) {
+        const message =
+          nationalIdCheck.message || NATIONAL_ID_EXISTED_MESSAGE;
+        form.setError("nationalId", { type: "manual", message });
+        toast({
+          variant: "destructive",
+          title: "بيانات مكررة",
+          description: message,
+        });
+        return;
+      }
+
       const result = await Register(buildRegisterFormData(values));
       const errorKind = (result as { error?: string } | undefined)?.error;
       if (errorKind) {
         const status = (result as { status?: number } | undefined)?.status;
-        const message =
-          (result as { message?: string } | undefined)?.message ||
-          "حدث خطأ أثناء إكمال التسجيل";
+        const rawMessage = (result as { message?: string } | undefined)?.message;
+        const message = mapRegisterApiMessage(
+          rawMessage,
+          status,
+          "حدث خطأ أثناء إكمال التسجيل",
+        );
         toast({
           variant: "destructive",
           title:
@@ -133,6 +151,12 @@ const RegisterForm = () => {
                 : "تعذر إكمال التسجيل",
           description: message,
         });
+        if (
+          status === 409 &&
+          rawMessage?.trim().toUpperCase() === "NATIONAL_ID_EXISTED"
+        ) {
+          form.setError("nationalId", { type: "manual", message });
+        }
         return;
       }
 
@@ -245,6 +269,7 @@ const RegisterForm = () => {
                     disabled={isSubmitting}
                     nameField="fullName"
                     identityRequired
+                    checkNationalIdAvailability
                     afterEmailField={
                       <FormField
                         control={form.control}

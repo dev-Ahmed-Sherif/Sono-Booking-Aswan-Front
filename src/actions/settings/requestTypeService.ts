@@ -1,6 +1,6 @@
 "use server";
 
-import axios from "axios";
+import axios from "@/lib/axios-auth";
 
 type Payload = Record<string, unknown>;
 const BASE = "RequestTypes";
