@@ -38,6 +38,7 @@ import {
 import {
   RESERVATION_STATUS_CANCELED,
   RESERVATION_STATUS_COMPLETED,
+  RESERVATION_STATUS_NO_SHOW,
   RESERVATION_STATUS_RESERVED,
 } from "@/lib/reservation-map";
 import {
@@ -156,15 +157,16 @@ const viewTitles: Record<ReceiverView, { title: string; description: string }> =
       description: "عرض الحجوزات القادمة المعتمدة",
     },
     canceled: {
-      title: "قسم الحجوزات الملغاة",
-      description: "عرض الحجوزات الملغاة وإمكانية إعادتها إلى محجوز",
+      title: "قسم الحجوزات الملغاة ولم يظهر",
+      description:
+        "عرض الحجوزات الملغاة أو التي لم يظهر ضيفها وإمكانية إعادتها إلى محجوز",
     },
   };
 
 const emptyMessages: Record<ReceiverView, string> = {
   active: "لا توجد حجوزات وصول اليوم ولا نزلاء مقيمون حالياً.",
   upcoming: "لا توجد حجوزات مستقبلية.",
-  canceled: "لا توجد حجوزات ملغاة.",
+  canceled: "لا توجد حجوزات ملغاة أو لم يظهر ضيفها.",
 };
 
 function ReservationTableEmpty({
@@ -199,7 +201,10 @@ function canCheckout(row: ReceiverReservationRow) {
 }
 
 function canRestore(status: ReceiverReservationRow["status"]) {
-  return status === RESERVATION_STATUS_CANCELED;
+  return (
+    status === RESERVATION_STATUS_CANCELED ||
+    status === RESERVATION_STATUS_NO_SHOW
+  );
 }
 
 function showCancelationReasonColumn(rows: ReceiverReservationRow[]) {
@@ -378,7 +383,11 @@ export default function HousingReceiverDashboard() {
 
   const canceledReservations = useMemo(
     () =>
-      allRows.filter((row) => row.status === RESERVATION_STATUS_CANCELED),
+      allRows.filter(
+        (row) =>
+          row.status === RESERVATION_STATUS_CANCELED ||
+          row.status === RESERVATION_STATUS_NO_SHOW,
+      ),
     [allRows],
   );
 
