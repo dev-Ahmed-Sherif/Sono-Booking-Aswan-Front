@@ -225,8 +225,14 @@ export function parseRequestCatagoryApiValue(
   }
 
   const normalized = String(value).trim().toLowerCase().replace(/[_\s-]/g, "");
-  if (normalized === "newstay") return "NewStay";
-  if (normalized === "extension" || normalized === "extensionstay") {
+  if (normalized === "newstay" || normalized === "طلبإقامةجديد") {
+    return "NewStay";
+  }
+  if (
+    normalized === "extension" ||
+    normalized === "extensionstay" ||
+    normalized === "طلبتمديد"
+  ) {
     return "Extension";
   }
 
@@ -337,6 +343,22 @@ export function canEditHousingRequest(statusLabel: string): boolean {
   return statusLabel === "قيد المراجعة";
 }
 
+/** Leader may adjust units on a pending flexible request that overlaps an approved stay. */
+export function canLeaderEditHousingRequestUnits(input: {
+  statusLabel: string;
+  allocationLabel: string;
+  hasApprovedUnitOverlap?: boolean;
+}): boolean {
+  if (input.statusLabel !== "قيد المراجعة") return false;
+  const allocation = input.allocationLabel.trim();
+  const isFlexible =
+    allocation === "مرن" ||
+    allocation === "متحرك" ||
+    allocation.toLowerCase().includes("flex");
+  if (!isFlexible) return false;
+  return input.hasApprovedUnitOverlap === true;
+}
+
 /** Guest may cancel while the request is still under review. */
 export function canCancelHousingRequest(statusLabel: string): boolean {
   return statusLabel === "قيد المراجعة";
@@ -437,12 +459,40 @@ export function extractApplicantDisplayNameFromRequest(
 
 export function toYmd(value: unknown): string | undefined {
   if (value == null) return undefined;
+  if (typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    const y = o.year ?? o.Year;
+    const m = o.month ?? o.Month;
+    const d = o.day ?? o.Day;
+    if (y != null && m != null && d != null) {
+      const year = Number(y);
+      const month = Number(m);
+      const day = Number(d);
+      if (
+        Number.isFinite(year) &&
+        Number.isFinite(month) &&
+        Number.isFinite(day)
+      ) {
+        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      }
+    }
+  }
   const raw = String(value).trim();
   if (!raw) return undefined;
   const dateOnly = raw.match(/^(\d{4}-\d{2}-\d{2})/);
   if (dateOnly) return dateOnly[1];
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return undefined;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Matches backend `EndDate = StartDate.AddDays(Nights)`. */
+export function addDaysToYmd(startYmd: string, days: number): string {
+  const d = new Date(`${startYmd.slice(0, 10)}T12:00:00`);
+  d.setDate(d.getDate() + Math.max(0, Math.trunc(days)));
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -479,32 +529,81 @@ export function extractNightsFromRequest(raw: Record<string, unknown>): number {
   return countNightsBetweenStartAndEnd(startRaw, endRaw);
 }
 
-/** Maps `SonoBooking.Domain.Status` to Arabic labels for the table. */
-export function formatHousingRequestStatusAr(status: unknown): string {
-  if (status == null) return "—";
-  const n = typeof status === "number" ? status : Number(String(status).trim());
+/** Maps `SonoBooking.Domain.Status` to a normalized bucket. */
+export type NormalizedHousingRequestStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "canceled"
+  | "unknown";
+
+/** Backend `Status`: Pending=1, Approved=2, Rejected=3, Canceled=4. */
+export function normalizeHousingRequestStatus(
+  value: unknown,
+): NormalizedHousingRequestStatus {
+  if (value == null) return "unknown";
+
+  const n = typeof value === "number" ? value : Number(String(value).trim());
   if (Number.isFinite(n)) {
     switch (n) {
       case 1:
-        return "تمت الموافقة";
+        return "pending";
       case 2:
-        return "مرفوض";
+        return "approved";
       case 3:
-        return "قيد المراجعة";
+        return "rejected";
       case 4:
-        return "ملغى";
+        return "canceled";
       default:
         break;
     }
   }
-  const t = String(status).trim().toLowerCase();
-  if (t.includes("approv") || t === "مقبول") return "تمت الموافقة";
-  if (t.includes("reject") || t === "مرفوض") return "مرفوض";
-  if (t.includes("cancel") || t === "ملغى") return "ملغى";
-  if (t.includes("pending") || t.includes("complet") || t === "معلق") {
-    return "قيد المراجعة";
+
+  const t = String(value).trim().toLowerCase();
+  if (!t) return "unknown";
+  if (
+    t.includes("pending") ||
+    t.includes("complet") ||
+    t === "معلق" ||
+    t === "قيد المراجعة"
+  ) {
+    return "pending";
   }
-  return String(status);
+  if (
+    t.includes("approv") ||
+    t === "مقبول" ||
+    t === "تمت الموافقة"
+  ) {
+    return "approved";
+  }
+  if (t.includes("reject") || t === "مرفوض") return "rejected";
+  if (t.includes("cancel") || t === "ملغى" || t === "ملغي") return "canceled";
+  return "unknown";
+}
+
+export function isRequestStatusPending(value: unknown): boolean {
+  return normalizeHousingRequestStatus(value) === "pending";
+}
+
+export function isRequestStatusApproved(value: unknown): boolean {
+  return normalizeHousingRequestStatus(value) === "approved";
+}
+
+/** Maps `SonoBooking.Domain.Status` to Arabic labels for the table. */
+export function formatHousingRequestStatusAr(status: unknown): string {
+  if (status == null) return "—";
+  switch (normalizeHousingRequestStatus(status)) {
+    case "approved":
+      return "تمت الموافقة";
+    case "rejected":
+      return "مرفوض";
+    case "canceled":
+      return "ملغى";
+    case "pending":
+      return "قيد المراجعة";
+    default:
+      return String(status);
+  }
 }
 
 export function mapApiRequestToTableRow(

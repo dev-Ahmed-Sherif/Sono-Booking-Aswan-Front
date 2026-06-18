@@ -3,6 +3,7 @@
 import { getBeds } from "@/actions/settings/bedService";
 import { getRooms } from "@/actions/settings/roomService";
 import {
+  getAllRequests,
   getRequestById,
   getRequestParticipantsAll,
   getRequestUnitsAll,
@@ -26,7 +27,16 @@ import {
   parseRequestServiceError,
   validateLeaderDecisionPayload,
 } from "@/lib/housing-request-map";
-import { addReservation } from "@/actions/reservationService";
+import {
+  buildApprovedStayWindowsForOverlap,
+  buildOverlapUnitsByRequestId,
+  buildUnitHierarchyMaps,
+  extractRequestStayWindow,
+  findPendingUnitOverlaps,
+  HOUSING_REQUEST_OVERLAP_APPROVE_MESSAGE,
+} from "@/lib/housing-request-overlap";
+import { getAllExtensions } from "@/actions/settings/extensionService";
+import { addReservation, getAllReservations } from "@/actions/reservationService";
 import { reserveHousingUnitsForApproval } from "@/actions/reserveHousingUnits";
 import {
   buildAddReservationDtoFromRequest,
@@ -93,8 +103,8 @@ export async function decideHousingRequest(
     ownerUserId
       ? getRequestParticipantsAll(ownerUserId)
       : getRequestParticipantsAll(),
-    getBeds(),
-    getRooms(),
+    getBeds(undefined, { allStatuses: true }),
+    getRooms(undefined, { allStatuses: true }),
   ]);
 
   const unitsLoadError = parseRequestServiceError(unitsRes);
@@ -146,6 +156,45 @@ export async function decideHousingRequest(
   const validation = validateLeaderDecisionPayload(payload);
   if (!validation.ok) {
     return { ok: false, message: validation.message };
+  }
+
+  if (input.decision === "approve") {
+    const pendingStay = extractRequestStayWindow(raw);
+    if (pendingStay) {
+      const bedsRaw = getLookupArray(bedsRes);
+      const roomsRaw = getLookupArray(roomsRes);
+      const maps = buildUnitHierarchyMaps(bedsRaw, roomsRaw);
+      const [allRequestsRes, extensionsRes, reservationsRes] = await Promise.all([
+        getAllRequests(),
+        getAllExtensions(),
+        getAllReservations(),
+      ]);
+      const allRequests = getLookupArray(allRequestsRes);
+      const unitsByRequestId = buildOverlapUnitsByRequestId(
+        allRequests,
+        getLookupArray(unitsRes),
+        bedsRaw,
+        roomsRaw,
+        parseRequestUnitFromApi,
+      );
+
+      const approvedStays = buildApprovedStayWindowsForOverlap(allRequests, {
+        extensionsRaw: getLookupArray(extensionsRes),
+        reservationsRaw: getLookupArray(reservationsRes),
+      });
+
+      const overlaps = findPendingUnitOverlaps({
+        pending: [pendingStay],
+        approved: approvedStays,
+        unitsByRequestId,
+        maps,
+        requestItems: allRequests,
+      });
+
+      if (overlaps.has(pendingStay.requestId.toLowerCase())) {
+        return { ok: false, message: HOUSING_REQUEST_OVERLAP_APPROVE_MESSAGE };
+      }
+    }
   }
 
   let res = await updateRequestById(payload);

@@ -3,7 +3,7 @@ import {
   isUnitFreeFromInquiryStart,
   maxYmd,
 } from "@/lib/availability-dates";
-import { toYmd } from "@/lib/housing-request-list";
+import { normalizeHousingRequestStatus, toYmd } from "@/lib/housing-request-list";
 
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {
@@ -34,12 +34,15 @@ function getLookupArray(response: unknown): unknown[] {
   return [];
 }
 
-/** Status values that still hold a unit until `endDate`. */
 function requestStatusBlocksUnit(status: unknown): boolean {
   if (status == null) return true;
+  const normalized = normalizeHousingRequestStatus(status);
+  if (normalized === "rejected" || normalized === "canceled") return false;
+  if (normalized === "approved" || normalized === "pending") return true;
+
   const n = typeof status === "number" ? status : Number(String(status).trim());
   if (Number.isFinite(n)) {
-    if (n === 2 || n === 4) return false;
+    if (n === 3 || n === 4) return false;
     return true;
   }
   const t = String(status).trim().toLowerCase();

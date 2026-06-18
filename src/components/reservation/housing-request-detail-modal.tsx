@@ -129,7 +129,7 @@ import {
 } from "@/lib/housing-request-list";
 import { HOUSING_REQUEST_CATAGORY_EXTENSION } from "@/lib/housing-request-map";
 
-type ModalMode = "view" | "edit";
+type ModalMode = "view" | "edit" | "leader-unit-edit";
 
 type HousingRequestDetailModalProps = {
   open: boolean;
@@ -271,10 +271,18 @@ export function HousingRequestDetailModal({
   const [requestOwnerUserId, setRequestOwnerUserId] = useState("");
 
   const isEdit = mode === "edit";
+  const isLeaderUnitEdit = mode === "leader-unit-edit";
   const isExtensionRequest =
     detail?.requestCatagory === HOUSING_REQUEST_CATAGORY_EXTENSION;
-  const editLocked = !canEditHousingRequest(detail?.statusLabel ?? statusLabel);
-  const canSaveEdits = isEdit && canEditHousingRequest(detail?.statusLabel ?? statusLabel);
+  const canEditScalars = isEdit && !isLeaderUnitEdit;
+  const canEditUnits =
+    (isEdit || isLeaderUnitEdit) && !isExtensionRequest;
+  const editLocked =
+    !canEditHousingRequest(detail?.statusLabel ?? statusLabel) &&
+    !isLeaderUnitEdit;
+  const canSaveEdits =
+    (isEdit && canEditHousingRequest(detail?.statusLabel ?? statusLabel)) ||
+    isLeaderUnitEdit;
   const currentYear = new Date().getFullYear();
   const maxSelectableDate = new Date(currentYear + 5, 11, 31);
   const minSelectableDate = useMemo(() => {
@@ -310,7 +318,7 @@ export function HousingRequestDetailModal({
   );
 
   const loadAvailableUnitCards = useCallback(async () => {
-    if (!isEdit || !detail || isExtensionRequest) {
+    if (!canEditUnits || !detail) {
       setUnitCards([]);
       return;
     }
@@ -340,7 +348,7 @@ export function HousingRequestDetailModal({
     } finally {
       setUnitCardsLoading(false);
     }
-  }, [isEdit, detail, isExtensionRequest, nightsInput, availabilityFilterGenders]);
+  }, [canEditUnits, detail, nightsInput, availabilityFilterGenders]);
 
   const loadDetail = useCallback(async () => {
     if (!requestId) return;
@@ -379,7 +387,7 @@ export function HousingRequestDetailModal({
             ? getRequestParticipantsAll(ownerUserId)
             : getRequestParticipantsAll(),
           companionsListPromise,
-          isEdit ? getRequestTypes() : Promise.resolve(null),
+          isEdit || isLeaderUnitEdit ? getRequestTypes() : Promise.resolve(null),
           isEdit ? getAllocationTypes() : Promise.resolve(null),
         ]);
 
@@ -564,6 +572,7 @@ export function HousingRequestDetailModal({
     }
   }, [
     isEdit,
+    isLeaderUnitEdit,
     linkedContentRequestIdProp,
     mode,
     requestId,
@@ -596,9 +605,9 @@ export function HousingRequestDetailModal({
   }, [open, requestId, mode]);
 
   useEffect(() => {
-    if (!isEdit || loading || !detail) return;
+    if (!canEditUnits || loading || !detail) return;
     void loadAvailableUnitCards();
-  }, [isEdit, loading, detail, loadAvailableUnitCards]);
+  }, [canEditUnits, loading, detail, loadAvailableUnitCards]);
 
   const availableUnitOptions = useMemo(() => {
     const selectedKeys = new Set(
@@ -746,7 +755,7 @@ export function HousingRequestDetailModal({
       });
       return;
     }
-    const validatedDetail = isEdit ? validateEditFields() : detail;
+    const validatedDetail = canEditScalars ? validateEditFields() : detail;
     if (!validatedDetail) return;
     if (unitSnapshots.length === 0) {
       toast({
@@ -780,7 +789,7 @@ export function HousingRequestDetailModal({
     try {
       let unitsForSubmit = unitSnapshots;
 
-      if (isEdit && !isExtensionRequest) {
+      if (canEditUnits) {
         const inquiry = buildAvailabilityInquiryFromForm({
           startDate: validatedDetail.startDate,
           nights: validatedDetail.nights,
@@ -795,7 +804,7 @@ export function HousingRequestDetailModal({
           const availabilityCheck = await validateSelectedUnitsForInquiry({
             units: unitSnapshots,
             inquiry,
-            excludeRequestId: requestId,
+            excludeRequestId: requestId ?? undefined,
           });
           if (!availabilityCheck.ok) {
             toast({
@@ -929,7 +938,7 @@ export function HousingRequestDetailModal({
 
       setAttachmentFiles([]);
       setRemovedAttachmentIds(new Set());
-      toast({ title: "تم التحديث", description: "تم حفظ تعديلات الطلب." });
+      toast({ title: "تم التحديث", description: isLeaderUnitEdit ? "تم حفظ وحدات الطلب." : "تم حفظ تعديلات الطلب." });
       onChanged?.();
       onClose();
     } finally {
@@ -938,7 +947,11 @@ export function HousingRequestDetailModal({
   };
 
   const title =
-    mode === "view" ? "تفاصيل طلب الإقامة" : "تعديل طلب الإقامة";
+    mode === "view"
+      ? "تفاصيل طلب الإقامة"
+      : mode === "leader-unit-edit"
+        ? "تعديل وحدات الطلب"
+        : "تعديل طلب الإقامة";
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -959,6 +972,12 @@ export function HousingRequestDetailModal({
           </div>
         ) : detail ? (
           <div className="space-y-6">
+            {isLeaderUnitEdit ? (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                يوجد تداخل بين وحدات هذا الطلب المرن وطلب موافق عليه في نفس
+                الفترة. عدّل الوحدات ثم احفظ قبل الموافقة على الطلب.
+              </div>
+            ) : null}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
               <div>
                 <span className="text-muted-foreground">رقم الطلب: </span>
@@ -972,7 +991,7 @@ export function HousingRequestDetailModal({
                   {detail.requestClassificationLabel}
                 </span>
               </div>
-              {isEdit && !isExtensionRequest ? (
+              {canEditScalars && !isExtensionRequest ? (
                 <>
                   <div className="sm:col-span-2 space-y-1.5">
                     <Label className="text-gray-700 text-base flex items-center gap-1">
@@ -1012,7 +1031,7 @@ export function HousingRequestDetailModal({
                     ) : null}
                   </div>
                 </>
-              ) : !isEdit ? (
+              ) : !canEditScalars ? (
                 <>
                   <div>
                     <span className="text-muted-foreground">نوع الطلب: </span>
@@ -1043,7 +1062,7 @@ export function HousingRequestDetailModal({
                   <span className="font-medium">{detail.requestTypeLabel}</span>
                 </div>
               )}
-              {isEdit ? (
+              {canEditScalars ? (
                 <>
                   <div className="sm:col-span-2 space-y-1.5">
                     <Label className="text-gray-700 text-base flex items-center gap-1">
@@ -1215,7 +1234,7 @@ export function HousingRequestDetailModal({
                       className="flex items-center justify-between gap-2 text-sm"
                     >
                       <span>{formatStoredUnitHierarchyLabel(unit)}</span>
-                      {isEdit && !isExtensionRequest && (unitCardsLoading || availableUnitOptions.length > 0) ? (
+                      {canEditUnits && (unitCardsLoading || availableUnitOptions.length > 0) ? (
                         <Button
                           type="button"
                           variant="ghost"
@@ -1235,7 +1254,7 @@ export function HousingRequestDetailModal({
                   ))
                 )}
               </ul>
-              {isEdit && !isExtensionRequest && availableUnitOptions.length > 0 ? (
+              {canEditUnits && availableUnitOptions.length > 0 ? (
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="min-w-[200px] flex-1">
                     <Select
@@ -1290,7 +1309,7 @@ export function HousingRequestDetailModal({
                     إضافة
                   </Button>
                 </div>
-              ) : isEdit && !isExtensionRequest && !unitCardsLoading ? (
+              ) : canEditUnits && !unitCardsLoading ? (
                 <p className="text-sm text-muted-foreground">
                   {buildAvailabilityInquiryFromForm({
                     startDate: detail?.startDate,
@@ -1319,7 +1338,7 @@ export function HousingRequestDetailModal({
                       <span>
                         {lookupCompanionName(companionNames, id) || "—"}
                       </span>
-                      {isEdit && !isExtensionRequest ? (
+                      {canEditScalars && !isExtensionRequest ? (
                         <Button
                           type="button"
                           variant="ghost"
@@ -1339,7 +1358,7 @@ export function HousingRequestDetailModal({
                   ))
                 )}
               </ul>
-              {isEdit && !isExtensionRequest && availableCompanions.length > 0 ? (
+              {canEditScalars && availableCompanions.length > 0 ? (
                 <div className="flex flex-wrap items-end gap-2">
                   <div className="min-w-[200px] flex-1">
                     <Select
@@ -1403,18 +1422,17 @@ export function HousingRequestDetailModal({
               ) : null}
             </div>
 
-            {(visibleExistingAttachments.length > 0 ||
-              (isEdit && !isExtensionRequest)) ? (
+            {(visibleExistingAttachments.length > 0 || canEditScalars) ? (
               <RequestSavedAttachmentsList
                 attachments={visibleExistingAttachments}
-                showUploadHint={isEdit && !isExtensionRequest}
-                editable={isEdit && !isExtensionRequest}
+                showUploadHint={canEditScalars}
+                editable={canEditScalars}
                 disabled={saving || loading}
                 onRemove={handleRemoveSavedAttachment}
               />
             ) : null}
 
-            {isEdit && !isExtensionRequest ? (
+            {canEditScalars ? (
               <RequestAttachmentsInput
                 files={attachmentFiles}
                 onChange={setAttachmentFiles}
@@ -1434,7 +1452,7 @@ export function HousingRequestDetailModal({
               {saving ? (
                 <Loader2 className="ml-2 h-4 w-4 animate-spin" />
               ) : null}
-              حفظ التعديلات
+              {isLeaderUnitEdit ? "حفظ الوحدات" : "حفظ التعديلات"}
             </Button>
           ) : null}
           <Button type="button" variant="outline" onClick={onClose}>

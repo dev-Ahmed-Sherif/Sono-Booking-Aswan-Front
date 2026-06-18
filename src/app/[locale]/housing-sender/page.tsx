@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { getRequestTypes } from "@/actions/settings/requestTypeService";
 import { decideHousingRequest } from "@/actions/decideHousingRequest";
-import { getAllRequests } from "@/actions/requestService";
+import { getAllRequests, getRequestUnitsAll } from "@/actions/requestService";
+import { getAllExtensions } from "@/actions/settings/extensionService";
+import { getAllReservations } from "@/actions/reservationService";
+import { getBeds } from "@/actions/settings/bedService";
+import { getRooms } from "@/actions/settings/roomService";
 import { canAccessHousingSenderFromCandidates } from "@/lib/role-utils";
 import { useEffectiveRole } from "@/hooks/use-effective-role";
 import { useRequireRole } from "@/hooks/use-require-role";
@@ -15,13 +19,26 @@ import {
   parseRequestCatagoryApiValue,
   parseRequestsListFromApi,
   toYmd,
+  canLeaderEditHousingRequestUnits,
+  isRequestStatusApproved,
+  isRequestStatusPending,
   type HousingRequestTableRow,
 } from "@/lib/housing-request-list";
 import {
   extractRequestUserId,
+  parseRequestUnitFromApi,
   resolveRequestLinkedContentRequestId,
   type LeaderRequestDecision,
 } from "@/lib/housing-request-detail";
+import {
+  buildApprovedStayWindowsForOverlap,
+  buildOverlapUnitsByRequestId,
+  buildUnitHierarchyMaps,
+  extractRequestStayWindow,
+  findPendingUnitOverlaps,
+  HOUSING_REQUEST_OVERLAP_APPROVE_MESSAGE,
+  isFlexibleAllocationLabel,
+} from "@/lib/housing-request-overlap";
 import {
   getLookupArray,
   mapGenericOptions,
@@ -95,6 +112,8 @@ type SenderTableRow = {
   status: string;
   /** Arabic «تصنيف الطلب» from `RequestCatagory` (إقامة جديدة / تمديد). */
   requestCategory: string;
+  /** True when units/dates overlap an approved request (flexible pending only). */
+  hasApprovedUnitOverlap: boolean;
 };
 
 function formatEndDateFromRaw(raw: Record<string, unknown>): string {
@@ -104,6 +123,7 @@ function formatEndDateFromRaw(raw: Record<string, unknown>): string {
 function mapToSenderTableRow(
   raw: Record<string, unknown>,
   tableRow: HousingRequestTableRow,
+  hasApprovedUnitOverlap = false,
 ): SenderTableRow {
   return {
     requestId: tableRow.id,
@@ -123,6 +143,7 @@ function mapToSenderTableRow(
     nights: tableRow.nights,
     status: tableRow.status,
     requestCategory: tableRow.requestClassification,
+    hasApprovedUnitOverlap,
   };
 }
 
@@ -241,6 +262,87 @@ function getLoggedInUserId(): string {
   }
 }
 
+function senderRowNeedsUnitOverlapEdit(row: SenderTableRow): boolean {
+  return (
+    row.hasApprovedUnitOverlap &&
+    canLeaderEditHousingRequestUnits({
+      statusLabel: row.status,
+      allocationLabel: row.requestAllocationType,
+      hasApprovedUnitOverlap: true,
+    })
+  );
+}
+
+function senderRowHasApprovedOverlap(row: SenderTableRow): boolean {
+  return row.hasApprovedUnitOverlap;
+}
+
+function renderPendingRequestActions(
+  request: SenderTableRow,
+  options: {
+    decisionSubmitting: boolean;
+    onApprove: () => void;
+    onReject: () => void;
+    onDetails: () => void;
+    onEditUnits: () => void;
+  },
+) {
+  const overlapEdit = senderRowNeedsUnitOverlapEdit(request);
+  const hasOverlap = senderRowHasApprovedOverlap(request);
+  return (
+    <div className="flex flex-wrap justify-center gap-2">
+      <Button
+        type="button"
+        className={cn(
+          senderTableButtonClassName,
+          "bg-brand text-brand-foreground hover:bg-brand-hover",
+        )}
+        disabled={options.decisionSubmitting || !request.requestId || hasOverlap}
+        title={
+          hasOverlap ? HOUSING_REQUEST_OVERLAP_APPROVE_MESSAGE : undefined
+        }
+        onClick={options.onApprove}
+      >
+        موافقة
+      </Button>
+      <Button
+        type="button"
+        className={cn(
+          senderTableButtonClassName,
+          "bg-red-600 text-white hover:bg-red-700",
+        )}
+        disabled={options.decisionSubmitting || !request.requestId}
+        onClick={options.onReject}
+      >
+        رفض
+      </Button>
+      {overlapEdit ? (
+        <Button
+          type="button"
+          variant="outline"
+          className={cn(
+            senderTableButtonClassName,
+            "border-amber-500 text-amber-800 hover:bg-amber-50",
+          )}
+          disabled={!request.requestId}
+          onClick={options.onEditUnits}
+        >
+          تعديل الوحدات
+        </Button>
+      ) : null}
+      <Button
+        type="button"
+        variant="outline"
+        className={senderTableButtonClassName}
+        disabled={!request.requestId}
+        onClick={options.onDetails}
+      >
+        تفاصيل
+      </Button>
+    </div>
+  );
+}
+
 const HousingSenderPage = () => {
   const { roleCandidates, isRoleReady } = useEffectiveRole();
   const allowed = canAccessHousingSenderFromCandidates(roleCandidates);
@@ -262,6 +364,9 @@ const HousingSenderPage = () => {
   );
   const [dataLoading, setDataLoading] = useState(false);
   const [dataLoadError, setDataLoadError] = useState<string | null>(null);
+  const [detailModalMode, setDetailModalMode] = useState<
+    "view" | "leader-unit-edit"
+  >("view");
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [detailModalRequestId, setDetailModalRequestId] = useState<
     string | null
@@ -290,15 +395,19 @@ const HousingSenderPage = () => {
     return map;
   }, [requestTypeOptions]);
 
-  const openRequestDetails = useCallback((row: SenderTableRow) => {
-    if (!row.requestId.trim()) return;
-    setDetailModalRequestId(row.requestId);
-    setDetailModalOwnerUserId(row.requestOwnerUserId);
-    setDetailLinkedContentRequestId(row.linkedContentRequestId);
-    setDetailModalRow(row.housingTableRow);
-    setDetailModalStatus(row.status);
-    setDetailModalOpen(true);
-  }, []);
+  const openRequestDetails = useCallback(
+    (row: SenderTableRow, mode: "view" | "leader-unit-edit" = "view") => {
+      if (!row.requestId.trim()) return;
+      setDetailModalRequestId(row.requestId);
+      setDetailModalOwnerUserId(row.requestOwnerUserId);
+      setDetailLinkedContentRequestId(row.linkedContentRequestId);
+      setDetailModalRow(row.housingTableRow);
+      setDetailModalStatus(row.status);
+      setDetailModalMode(mode);
+      setDetailModalOpen(true);
+    },
+    [],
+  );
 
   const closeRequestDetails = useCallback(() => {
     setDetailModalOpen(false);
@@ -307,17 +416,26 @@ const HousingSenderPage = () => {
     setDetailLinkedContentRequestId("");
     setDetailModalRow(null);
     setDetailModalStatus("");
+    setDetailModalMode("view");
   }, []);
 
   const openDecisionModal = useCallback(
     (row: SenderTableRow, kind: LeaderRequestDecision) => {
       if (!row.requestId.trim()) return;
+      if (kind === "approve" && row.hasApprovedUnitOverlap) {
+        toast({
+          variant: "destructive",
+          title: "تداخل في الوحدات",
+          description: HOUSING_REQUEST_OVERLAP_APPROVE_MESSAGE,
+        });
+        return;
+      }
       setDecisionTarget(row);
       setDecisionKind(kind);
       setDecisionNote("");
       setDecisionOpen(true);
     },
-    [],
+    [toast],
   );
 
   const closeDecisionModal = useCallback(() => {
@@ -335,7 +453,15 @@ const HousingSenderPage = () => {
     setDataLoadError(null);
 
     try {
-      const requestsRes = await getAllRequests();
+      const [requestsRes, unitsRes, bedsRes, roomsRes, extensionsRes, reservationsRes] =
+        await Promise.all([
+        getAllRequests(),
+        getRequestUnitsAll(),
+        getBeds(undefined, { allStatuses: true }),
+        getRooms(undefined, { allStatuses: true }),
+        getAllExtensions(),
+        getAllReservations(),
+      ]);
       if (ticket !== fetchTicketRef.current) return;
 
       if (
@@ -353,27 +479,82 @@ const HousingSenderPage = () => {
         return;
       }
 
+      const requestItems = parseRequestsListFromApi(requestsRes);
+      const bedsRaw = getLookupArray(bedsRes);
+      const roomsRaw = getLookupArray(roomsRes);
+      const hierarchyMaps = buildUnitHierarchyMaps(bedsRaw, roomsRaw);
+      const unitsByRequestId = buildOverlapUnitsByRequestId(
+        requestItems,
+        getLookupArray(unitsRes),
+        bedsRaw,
+        roomsRaw,
+        parseRequestUnitFromApi,
+      );
+
+      const pendingStays = [];
+      const approvedStays = buildApprovedStayWindowsForOverlap(requestItems, {
+        extensionsRaw: getLookupArray(extensionsRes),
+        reservationsRaw: getLookupArray(reservationsRes),
+      });
+
+      for (const item of requestItems) {
+        if (!item || typeof item !== "object") continue;
+        const raw = item as Record<string, unknown>;
+        const stay = extractRequestStayWindow(raw);
+        if (!stay) continue;
+
+        if (isRequestStatusPending(raw.status ?? raw.Status)) {
+          pendingStays.push(stay);
+        }
+      }
+
+      const overlapConflicts = findPendingUnitOverlaps({
+        pending: pendingStays,
+        approved: approvedStays,
+        unitsByRequestId,
+        maps: hierarchyMaps,
+        requestItems,
+      });
+      const overlapIds = new Set(overlapConflicts.keys());
+      const overlapIdsByRequestNumber = new Map<string, string>();
+      for (const item of requestItems) {
+        if (!item || typeof item !== "object") continue;
+        const raw = item as Record<string, unknown>;
+        const id = String(raw.id ?? raw.Id ?? "").trim().toLowerCase();
+        const requestNo = String(
+          raw.requestNumber ?? raw.RequestNumber ?? "",
+        )
+          .trim()
+          .toLowerCase();
+        if (id && requestNo && overlapIds.has(id)) {
+          overlapIdsByRequestNumber.set(requestNo, id);
+        }
+      }
+
       const pending: SenderTableRow[] = [];
       const approved: SenderTableRow[] = [];
       const extensions: SenderTableRow[] = [];
 
-      for (const item of parseRequestsListFromApi(requestsRes)) {
+      for (const item of requestItems) {
         if (!item || typeof item !== "object") continue;
         const raw = item as Record<string, unknown>;
         const tableRow = mapApiRequestToTableRow(raw, {
           requestTypeLabelsById: typeLabels,
         });
         if (!tableRow) continue;
-        const row = mapToSenderTableRow(raw, tableRow);
+        const hasApprovedUnitOverlap =
+          overlapIds.has(tableRow.id.toLowerCase()) ||
+          overlapIdsByRequestNumber.has(tableRow.requestNo.toLowerCase());
+        const row = mapToSenderTableRow(raw, tableRow, hasApprovedUnitOverlap);
         const category = parseRequestCatagoryApiValue(raw);
 
-        if (tableRow.status === "قيد المراجعة") {
+        if (isRequestStatusPending(raw.status ?? raw.Status)) {
           if (category === "Extension") {
             extensions.push(row);
           } else if (category === "NewStay") {
             pending.push(row);
           }
-        } else if (tableRow.status === "تمت الموافقة") {
+        } else if (isRequestStatusApproved(raw.status ?? raw.Status)) {
           approved.push(row);
         }
       }
@@ -822,7 +1003,14 @@ const HousingSenderPage = () => {
                                     <TableCell
                                       className={senderTableCellClassName}
                                     >
-                                      {request.requestAllocationType}
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span>{request.requestAllocationType}</span>
+                                        {request.hasApprovedUnitOverlap ? (
+                                          <span className="text-xs font-medium text-amber-700">
+                                            تداخل وحدات
+                                          </span>
+                                        ) : null}
+                                      </div>
                                     </TableCell>
                                     <TableCell
                                       className={senderTableCellClassName}
@@ -837,54 +1025,20 @@ const HousingSenderPage = () => {
                                     <TableCell
                                       className={senderTableCellClassName}
                                     >
-                                      <div className="flex flex-wrap justify-center gap-2">
-                                        <Button
-                                          type="button"
-                                          className={cn(
-                                            senderTableButtonClassName,
-                                            "bg-brand text-brand-foreground hover:bg-brand-hover",
-                                          )}
-                                          disabled={
-                                            decisionSubmitting ||
-                                            !request.requestId
-                                          }
-                                          onClick={() =>
-                                            openDecisionModal(
-                                              request,
-                                              "approve",
-                                            )
-                                          }
-                                        >
-                                          موافقة
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          className={cn(
-                                            senderTableButtonClassName,
-                                            "bg-red-600 text-white hover:bg-red-700",
-                                          )}
-                                          disabled={
-                                            decisionSubmitting ||
-                                            !request.requestId
-                                          }
-                                          onClick={() =>
-                                            openDecisionModal(request, "reject")
-                                          }
-                                        >
-                                          رفض
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          className={senderTableButtonClassName}
-                                          disabled={!request.requestId}
-                                          onClick={() =>
-                                            openRequestDetails(request)
-                                          }
-                                        >
-                                          تفاصيل
-                                        </Button>
-                                      </div>
+                                      {renderPendingRequestActions(request, {
+                                        decisionSubmitting,
+                                        onApprove: () =>
+                                          openDecisionModal(request, "approve"),
+                                        onReject: () =>
+                                          openDecisionModal(request, "reject"),
+                                        onDetails: () =>
+                                          openRequestDetails(request, "view"),
+                                        onEditUnits: () =>
+                                          openRequestDetails(
+                                            request,
+                                            "leader-unit-edit",
+                                          ),
+                                      })}
                                     </TableCell>
                                   </TableRow>
                                 ))}
@@ -978,7 +1132,14 @@ const HousingSenderPage = () => {
                                     <TableCell
                                       className={senderTableCellClassName}
                                     >
-                                      {request.requestAllocationType}
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span>{request.requestAllocationType}</span>
+                                        {request.hasApprovedUnitOverlap ? (
+                                          <span className="text-xs font-medium text-amber-700">
+                                            تداخل وحدات
+                                          </span>
+                                        ) : null}
+                                      </div>
                                     </TableCell>
                                     <TableCell
                                       className={senderTableCellClassName}
@@ -1097,7 +1258,14 @@ const HousingSenderPage = () => {
                                     <TableCell
                                       className={senderTableCellClassName}
                                     >
-                                      {request.requestAllocationType}
+                                      <div className="flex flex-col items-center gap-1">
+                                        <span>{request.requestAllocationType}</span>
+                                        {request.hasApprovedUnitOverlap ? (
+                                          <span className="text-xs font-medium text-amber-700">
+                                            تداخل وحدات
+                                          </span>
+                                        ) : null}
+                                      </div>
                                     </TableCell>
                                     <TableCell
                                       className={senderTableCellClassName}
@@ -1112,54 +1280,20 @@ const HousingSenderPage = () => {
                                     <TableCell
                                       className={senderTableCellClassName}
                                     >
-                                      <div className="flex flex-wrap justify-center gap-2">
-                                        <Button
-                                          type="button"
-                                          className={cn(
-                                            senderTableButtonClassName,
-                                            "bg-brand text-brand-foreground hover:bg-brand-hover",
-                                          )}
-                                          disabled={
-                                            decisionSubmitting ||
-                                            !request.requestId
-                                          }
-                                          onClick={() =>
-                                            openDecisionModal(
-                                              request,
-                                              "approve",
-                                            )
-                                          }
-                                        >
-                                          موافقة
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          className={cn(
-                                            senderTableButtonClassName,
-                                            "bg-red-600 text-white hover:bg-red-700",
-                                          )}
-                                          disabled={
-                                            decisionSubmitting ||
-                                            !request.requestId
-                                          }
-                                          onClick={() =>
-                                            openDecisionModal(request, "reject")
-                                          }
-                                        >
-                                          رفض
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          className={senderTableButtonClassName}
-                                          disabled={!request.requestId}
-                                          onClick={() =>
-                                            openRequestDetails(request)
-                                          }
-                                        >
-                                          تفاصيل
-                                        </Button>
-                                      </div>
+                                      {renderPendingRequestActions(request, {
+                                        decisionSubmitting,
+                                        onApprove: () =>
+                                          openDecisionModal(request, "approve"),
+                                        onReject: () =>
+                                          openDecisionModal(request, "reject"),
+                                        onDetails: () =>
+                                          openRequestDetails(request, "view"),
+                                        onEditUnits: () =>
+                                          openRequestDetails(
+                                            request,
+                                            "leader-unit-edit",
+                                          ),
+                                      })}
                                     </TableCell>
                                   </TableRow>
                                 ))}
@@ -1199,13 +1333,14 @@ const HousingSenderPage = () => {
       {detailModalOpen && detailModalRequestId ? (
         <HousingRequestDetailModal
           open={detailModalOpen}
-          mode="view"
+          mode={detailModalMode}
           requestId={detailModalRequestId}
           requestOwnerUserId={detailModalOwnerUserId}
           linkedContentRequestId={detailLinkedContentRequestId}
           statusLabel={detailModalStatus}
           tableRow={detailModalRow}
           onClose={closeRequestDetails}
+          onChanged={() => void loadSenderData()}
         />
       ) : null}
 
