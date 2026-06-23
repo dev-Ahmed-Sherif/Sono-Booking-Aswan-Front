@@ -40,10 +40,16 @@ import {
 import { VisuallyHidden } from "@/components/ui/visually-hidden";
 
 import ModeToggle from "@/components/layout/mode-toggle";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import ListComponent from "@/components/Shared/list-component";
 
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { Logout, getUserData } from "@/actions/auth";
+import {
+  clearStoredNavRoute,
+  getStoredNavRoute,
+  setStoredNavRoute,
+} from "@/lib/nav-storage";
 import { setLink } from "@/redux/navSiteReducer";
 import { setUserId, setOrganizationId, setRole } from "@/redux/userReducer";
 import {
@@ -81,7 +87,11 @@ function isPublicUnauthenticatedPath(pathname: string): boolean {
   );
 }
 
-type StoredUserBrief = RoleCandidates & { name?: string };
+type StoredUserBrief = RoleCandidates & {
+  id?: string;
+  name?: string;
+  organizationId?: string;
+};
 
 type NavbarProps = {
   cookie: string | null;
@@ -105,7 +115,6 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
   const isClearingCookiesRef = React.useRef<boolean>(false);
   const lastClearTimeRef = React.useRef<number>(0);
   const clearAllClientCookiesRef = React.useRef<(() => void) | null>(null);
-  const nav = useLocalStorage("Nav");
   const user = useLocalStorage("user");
 
   /** `pending` until after mount so server HTML matches first client render (no LS on server). */
@@ -119,9 +128,38 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     setStoredUserBrief(raw ?? null);
   }, [user]);
 
+  const getCurrentUserId = React.useCallback((): string => {
+    const raw = user.getItem() as StoredUserBrief | undefined;
+    return String(raw?.id ?? "").trim();
+  }, [user]);
+
+  const persistNavRoute = React.useCallback(
+    (href: string) => {
+      const userId = getCurrentUserId();
+      if (!userId) return;
+      setStoredNavRoute(userId, href);
+    },
+    [getCurrentUserId],
+  );
+
+  const readStoredNavRoute = React.useCallback((): string | undefined => {
+    const userId = getCurrentUserId();
+    if (!userId) return undefined;
+    return getStoredNavRoute(userId);
+  }, [getCurrentUserId]);
+
+  const syncReduxFromStoredUser = React.useCallback(() => {
+    const raw = user.getItem() as StoredUserBrief | undefined;
+    if (!raw?.id) return;
+    dispatch(setUserId(String(raw.id)));
+    dispatch(setOrganizationId(String(raw.organizationId ?? "")));
+    dispatch(setRole(String(raw.role ?? "")));
+  }, [dispatch, user]);
+
   useIsomorphicLayoutEffect(() => {
     syncStoredUserBrief();
-  }, [syncStoredUserBrief]);
+    syncReduxFromStoredUser();
+  }, [syncStoredUserBrief, syncReduxFromStoredUser]);
 
   React.useEffect(() => {
     syncStoredUserBrief();
@@ -322,7 +360,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
       if (clearAllClientCookiesRef.current) {
         clearAllClientCookiesRef.current();
       }
-      nav.removeItem();
+      clearStoredNavRoute();
       user.removeItem();
     }
 
@@ -332,7 +370,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     if (cookieValue !== cookie) {
       setCookieValue(cookie);
     }
-  }, [cookie, cookieValue, nav.removeItem, nav.getItem, user.removeItem, pathname]);
+  }, [cookie, cookieValue, user.removeItem, pathname]);
 
   React.useEffect(() => {
     if (isPublicUnauthenticatedPath(pathname) && !cookie) {
@@ -344,27 +382,27 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     }
   }, [pathname, cookie]);
 
-  // Read activeTab from localStorage on mount and whenever nav/cookieValue allows
+  // Read active tab from localStorage for the current user only
   React.useEffect(() => {
     if (typeof window === "undefined") return;
-    const stored = nav.getItem();
+    const stored = readStoredNavRoute();
     if (stored != null && stored !== "") {
       setActiveTab(stored);
       dispatch(setLink(stored));
     }
-  }, [dispatch, nav.getItem]);
+  }, [dispatch, readStoredNavRoute, storedUserBrief]);
 
   // Keep Redux and activeTab in sync when cookie is present
   React.useEffect(() => {
     if (cookieValue === null) return;
-    const activeNav = nav.getItem();
+    const activeNav = readStoredNavRoute();
     if (activeNav != null && activeNav !== "") {
       dispatch(setLink(activeNav));
       setActiveTab(activeNav);
     } else if (activeTab !== active) {
       setActiveTab(active);
     }
-  }, [dispatch, active, cookieValue, activeTab, nav.getItem]);
+  }, [dispatch, active, cookieValue, activeTab, readStoredNavRoute]);
 
   // Get user role from Redux state or localStorage (client-side only)
   React.useEffect(() => {
@@ -426,10 +464,11 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     ) {
       clearAllClientCookiesRef.current();
     }
-    nav.removeItem();
+    clearStoredNavRoute();
     user.removeItem();
+    dispatch(setLink(`/${locale}`));
     router.push(`/${locale}`);
-  }, [locale, nav, router, user]);
+  }, [dispatch, locale, router, user]);
 
   // Periodic check: refill local user when server session exists; never wipe cookies on false client-only check.
   React.useEffect(() => {
@@ -437,7 +476,11 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     if (isPublicUnauthenticatedPath(pathname)) return;
 
     const checkUserData = async () => {
-      if (user.getItem()) return;
+      const stored = user.getItem() as StoredUserBrief | undefined;
+      if (stored?.id) {
+        syncReduxFromStoredUser();
+        return;
+      }
 
       const serverSession = Boolean(cookie);
       const clientSession = checkAccTokCookie();
@@ -465,6 +508,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     hydrateUserFromServer,
     pathname,
     redirectToLoginClearingAuth,
+    syncReduxFromStoredUser,
     user,
   ]);
 
@@ -531,6 +575,14 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
           pathname === `/${locale}/reports` ||
           pathname.startsWith(`/${locale}/reports/`),
       },
+      {
+        id: 7,
+        href: `/${locale}/permissions`,
+        label: tNav("permissions"),
+        active:
+          pathname === `/${locale}/permissions` ||
+          pathname.startsWith(`/${locale}/permissions/`),
+      },
     ];
 
     const normalizedRole = effectiveRole;
@@ -548,6 +600,8 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     const canAccessReports =
       isSuperAdminRoleCandidates(roleCandidates) ||
       canAccessHousingSenderFromCandidates(roleCandidates);
+
+    const canAccessPermissions = isSuperAdminRoleCandidates(roleCandidates);
 
     if (normalizedRole === "user") {
       return allRoutes.filter(
@@ -578,6 +632,9 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
       if (route.href === `/${locale}/reports`) {
         return canAccessReports;
       }
+      if (route.href === `/${locale}/permissions`) {
+        return canAccessPermissions;
+      }
       return true;
     });
   }, [areNavRoutesReady, locale, pathname, effectiveRole, storedUserBrief, tNav]);
@@ -602,17 +659,19 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     return `/${locale}/dashboard`;
   }, [effectiveRole, storedUserBrief, locale]);
 
-  // Keep active tab in sync with current pathname (e.g. when landing on /ar/settings)
+  // Keep active tab in sync with current pathname and persist per user
   React.useEffect(() => {
     if (pathname && pathname.startsWith(`/${locale}/`)) {
       setActiveTab(pathname);
+      dispatch(setLink(pathname));
+      persistNavRoute(pathname);
     }
-  }, [pathname, locale]);
+  }, [pathname, locale, dispatch, persistNavRoute]);
 
   const navClicks = (href: string) => {
     setActiveTab(href);
     dispatch(setLink(href));
-    nav.setItem(href);
+    persistNavRoute(href);
   };
 
   // Helper function to clear all cookies on client side
@@ -621,80 +680,53 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     const User = user.getItem();
     console.log("User", User);
 
+    clearStoredNavRoute();
+    user.removeItem();
+    dispatch(setLink(`/${locale}`));
+
     // Clear all client-side cookies immediately (only if not already clearing)
     if (!isClearingCookiesRef.current && clearAllClientCookiesRef.current) {
       clearAllClientCookiesRef.current();
     }
+
+    const redirectToLogin = () => {
+      router.push(`/${locale}`);
+      setTimeout(() => {
+        window.location.reload();
+      }, 35);
+    };
 
     // Check if user data exists and has an id
     if (User && User.id) {
       Logout(User.id)
         .then((data) => {
           console.log("data", data);
-          // Clear cookies again after server-side logout (only if not already clearing)
           if (
             !isClearingCookiesRef.current &&
             clearAllClientCookiesRef.current
           ) {
             clearAllClientCookiesRef.current();
           }
-          if (locale === "ar") {
-            setTimeout(() => {
-              nav.removeItem();
-              user.removeItem();
-              router.push("/ar");
-              setTimeout(() => {
-                window.location.reload();
-              }, 35);
-            }, 700);
-          } else {
-            setTimeout(() => {
-              nav.removeItem();
-              user.removeItem();
-              router.push("/en");
-              setTimeout(() => {
-                window.location.reload();
-              }, 35);
-            }, 700);
-          }
+          setTimeout(redirectToLogin, 700);
         })
         .catch((err) => {
           console.log(err);
-          // Clear cookies even if logout API call fails (only if not already clearing)
           if (
             !isClearingCookiesRef.current &&
             clearAllClientCookiesRef.current
           ) {
             clearAllClientCookiesRef.current();
           }
-          // Even if logout API call fails, clear local storage and redirect
-          if (locale === "ar") {
-            router.push("/ar");
-          } else {
-            router.push("/en");
-          }
-          setTimeout(() => {
-            nav.removeItem();
-            user.removeItem();
-          }, 700);
+          redirectToLogin();
         });
     } else {
-      // If user data is missing, just clear local storage and redirect
       console.warn(
         "User data not found, clearing local storage and redirecting",
       );
       if (!isClearingCookiesRef.current && clearAllClientCookiesRef.current) {
         clearAllClientCookiesRef.current();
       }
-      if (locale === "ar") {
-        router.push("/ar");
-      } else {
-        router.push("/en");
-      }
-      setTimeout(() => {
-        nav.removeItem();
-        user.removeItem();
-      }, 700);
+      redirectToLogin();
     }
   };
 
@@ -835,6 +867,7 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
         </SheetContent>
       </Sheet>
       <div className="flex w-full items-center justify-end gap-2 sm:gap-4 md:ml-auto md:gap-4 flex-wrap min-w-0">
+        <NotificationBell locale={locale} />
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 justify-end flex-wrap">
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 max-w-[min(100%,22rem)]">
             <span className="text-base font-medium text-muted-foreground shrink-0 sm:text-lg">

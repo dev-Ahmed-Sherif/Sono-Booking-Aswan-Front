@@ -10,10 +10,19 @@ export type ApprovedRequestItem = {
   date: string;
 };
 
+export type DashboardDailyStat = {
+  date: string;
+  totalRequests: number;
+  approvedRequests: number;
+  rejectedRequests: number;
+  totalRevenue: number;
+};
+
 export type GovernorDashboardData = {
   kpiItems: Array<{ label: string; value: string }>;
   occupancyData: ApartmentOccupancyItem[];
   approvedRequests: ApprovedRequestItem[];
+  dailyStats: DashboardDailyStat[];
 };
 
 function pickNum(raw: Record<string, unknown>, keys: string[]): number {
@@ -96,6 +105,20 @@ export function parseGovernorDashboardResponse(
       })
     : [];
 
+  const dailyRaw = payload.dailyStats ?? payload.DailyStats;
+  const dailyStats: DashboardDailyStat[] = Array.isArray(dailyRaw)
+    ? dailyRaw.map((item) => {
+        const row = (item ?? {}) as Record<string, unknown>;
+        return {
+          date: pickStr(row, ["date", "Date"]),
+          totalRequests: pickNum(row, ["totalRequests", "TotalRequests"]),
+          approvedRequests: pickNum(row, ["approvedRequests", "ApprovedRequests"]),
+          rejectedRequests: pickNum(row, ["rejectedRequests", "RejectedRequests"]),
+          totalRevenue: pickNum(row, ["totalRevenue", "TotalRevenue"]),
+        };
+      })
+    : [];
+
   return {
     kpiItems: [
       { label: "إجمالي طلبات اليوم", value: String(todayTotal) },
@@ -106,5 +129,6 @@ export function parseGovernorDashboardResponse(
     ],
     occupancyData,
     approvedRequests,
+    dailyStats,
   };
 }

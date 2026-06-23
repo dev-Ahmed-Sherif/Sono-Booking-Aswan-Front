@@ -60,6 +60,12 @@ import { getGenders } from "@/actions/settings/genderService";
 import { getAllocationTypes } from "@/actions/settings/allocationTypeService";
 import { getRequestTypes } from "@/actions/settings/requestTypeService";
 import {
+  fetchAllowedDaysBeforeReservationOffset,
+  formatMinReservationStartMessage,
+  isReservationStartDateAllowed,
+  minReservationStartDateFromOffset,
+} from "@/lib/allowed-day-before-reservation";
+import {
   getRequestById,
   getRequestParticipantsAll,
   getRequests,
@@ -277,9 +283,12 @@ const ReservationPage = () => {
   const newInquirySnapshotRef = useRef(emptyReservationInquirySnapshot());
   const extendInquirySnapshotRef = useRef(emptyReservationInquirySnapshot());
   const currentYear = new Date().getFullYear();
+  const [allowedDaysOffset, setAllowedDaysOffset] = useState(0);
+  const minReservationStartDate = useMemo(
+    () => minReservationStartDateFromOffset(allowedDaysOffset),
+    [allowedDaysOffset],
+  );
   const maxSelectableDate = new Date(currentYear + 5, 11, 31);
-  const minSelectableDate = new Date();
-  minSelectableDate.setHours(0, 0, 0, 0);
 
   const inquiryResetSkipRef = useRef(true);
 
@@ -865,11 +874,23 @@ const ReservationPage = () => {
     });
   }, []);
 
+  useEffect(() => {
+    const loadAllowedDaysOffset = async () => {
+      const offset = await fetchAllowedDaysBeforeReservationOffset();
+      setAllowedDaysOffset(offset);
+    };
+
+    void loadAllowedDaysOffset();
+  }, []);
+
   const handleCheckAvailability = async () => {
     const nextErrors: AvailabilityErrors = {};
     const nightsNumber = Number(nights);
 
     if (!startDate) nextErrors.startDate = "يرجى اختيار تاريخ البدء";
+    else if (!isReservationStartDateAllowed(startDate, minReservationStartDate)) {
+      nextErrors.startDate = formatMinReservationStartMessage(minReservationStartDate);
+    }
     if (!nights) nextErrors.nights = "يرجى إدخال عدد الليالي";
     else if (!Number.isFinite(nightsNumber) || nightsNumber < 1) {
       nextErrors.nights = "عدد الليالي يجب أن يكون 1 على الأقل";
@@ -1141,18 +1162,18 @@ const ReservationPage = () => {
 
   const extendMinStartDate = useMemo(() => {
     if (!extendInquiryFieldsLocked || !extendLastCompleted?.endDate) {
-      return minSelectableDate;
+      return minReservationStartDate;
     }
     const endYmd = extendLastCompleted.endDate.trim().slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(endYmd)) return minSelectableDate;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(endYmd)) return minReservationStartDate;
     const [y, m, d] = endYmd.split("-").map(Number);
     const end = new Date(y, m - 1, d);
     end.setHours(0, 0, 0, 0);
-    return end > minSelectableDate ? end : minSelectableDate;
+    return end > minReservationStartDate ? end : minReservationStartDate;
   }, [
     extendInquiryFieldsLocked,
     extendLastCompleted?.endDate,
-    minSelectableDate,
+    minReservationStartDate,
   ]);
 
   const applicantDisplayName = (() => {

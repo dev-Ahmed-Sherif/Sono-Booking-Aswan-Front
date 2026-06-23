@@ -3,7 +3,7 @@
 import { ColumnDef } from "@tanstack/react-table";
 
 import CellAction from "@/components/inspections/inspection/cell-action";
-import { formatUtcToCairo, parseUtcDate } from "@/lib/date-timeOptions";
+import { formatUtcToCairo, formatUtcToCairoDate } from "@/lib/date-timeOptions";
 
 export type InspectionColumn = {
   id: string;
@@ -30,16 +30,7 @@ export function createColumns(
     {
       accessorKey: "inspectionDate",
       header: "تاريخ التفتيش",
-      cell: ({ row }) => {
-        const date = parseUtcDate(row.original.inspectionDate);
-        if (!date) return "-";
-        return date.toLocaleDateString("ar-EG", {
-          year: "numeric",
-          month: "numeric",
-          day: "2-digit",
-          timeZone: "Africa/Cairo",
-        });
-      },
+      cell: ({ row }) => formatUtcToCairoDate(row.original.inspectionDate),
     },
     {
       accessorKey: "floatingUnit",

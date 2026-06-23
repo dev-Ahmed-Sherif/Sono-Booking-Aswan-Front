@@ -1,5 +1,5 @@
 import { getUserById } from "@/actions/permissions/userService";
-import UserForm from "@/components/permissions/user/user-form";
+import { PermissionsUserDetailClient } from "@/components/permissions/permissions-user-detail-client";
 
 type UserProps = {
   params: {
@@ -8,24 +8,20 @@ type UserProps = {
 };
 
 const UserPage = async ({ params }: UserProps) => {
-  const user = await getUserById(params.userId);
-  console.log("user:", user);
-  // console.log("organization:", organization);
+  const isNewUser = params.userId === "new";
+  const user = isNewUser ? null : await getUserById(params.userId);
 
-  // Check if there's an error in the response
-  if (user && "error" in user) {
-    // If it's a 404, treat it as new organization
+  if (!isNewUser && user && "error" in user) {
     if (user.error === "Not Found") {
       return (
         <main className="flex min-h-screen w-full flex-col">
           <div className="flex-1 space-y-4 p-8 pt-6">
-            <UserForm initialData={null} name="المستخدم" />
+            <PermissionsUserDetailClient initialData={null} />
           </div>
         </main>
       );
     }
 
-    // For other errors, show error message or redirect
     return (
       <main className="flex min-h-screen w-full flex-col">
         <div className="flex-1 space-y-4 p-8 pt-6">
@@ -34,7 +30,7 @@ const UserPage = async ({ params }: UserProps) => {
               خطأ في تحميل البيانات
             </h2>
             <p className="mt-2 text-muted-foreground">
-              {user.message || "حدث خطأ أثناء تحميل بيانات الجهة"}
+              {user.message || "حدث خطأ أثناء تحميل بيانات المستخدم"}
             </p>
           </div>
         </div>
@@ -45,7 +41,7 @@ const UserPage = async ({ params }: UserProps) => {
   return (
     <main className="flex min-h-screen w-full flex-col">
       <div className="flex-1 space-y-4 p-8 pt-6">
-        <UserForm initialData={user || null} name="المستخدم" />
+        <PermissionsUserDetailClient initialData={user || null} />
       </div>
     </main>
   );

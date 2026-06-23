@@ -27,7 +27,7 @@ const Client = memo(({ data, path }: ClientProps) => {
             title={`عدد البيانات (${
               data && data.length !== 0 ? data.length : 0
             })`}
-            description="Manage Users for your store"
+            description="إدارة مستخدمي sonobooking.com فقط"
           />
         </div>
         <Button

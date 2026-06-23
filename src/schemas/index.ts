@@ -548,6 +548,15 @@ export const lookupSchema = z.object({
   // }),
 });
 
+export const allowedDayBeforeReservationSchema = lookupSchema.extend({
+  numofDays: z.coerce
+    .number({
+      invalid_type_error: "يجب إدخال عدد صحيح",
+    })
+    .int({ message: "يجب أن يكون عدد الأيام رقماً صحيحاً" })
+    .min(0, { message: "يجب أن يكون عدد الأيام صفراً أو أكثر" }),
+});
+
 export const floatingUnitTypeSchema = z.object({
   nameAr: z
     .string()
@@ -757,6 +766,20 @@ export const organizationSchema = z.object({
   }),
 });
 
+const sonoBookingStaffEmailRefine = (
+  data: { email?: string },
+  ctx: z.RefinementCtx,
+) => {
+  const normalized = String(data.email ?? "").trim().toLowerCase();
+  if (!normalized.endsWith("@sonobooking.com")) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "يجب أن ينتهي البريد الإلكتروني بـ @sonobooking.com",
+      path: ["email"],
+    });
+  }
+};
+
 export const userSchema = z
   .object({
     name: z.string().min(1, {
@@ -788,6 +811,11 @@ export const userSchema = z
     // This validation will be handled in the form component
     // The schema allows these fields to be optional/empty
   });
+
+/** Super-admin staff user management: email must be @sonobooking.com */
+export const sonoBookingStaffUserSchema = userSchema.superRefine(
+  sonoBookingStaffEmailRefine,
+);
 
 export const roleSchema = z.object({
   nameAr: z

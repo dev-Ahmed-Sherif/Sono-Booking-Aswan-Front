@@ -6,10 +6,12 @@ import {
   parseGovernorDashboardResponse,
   type ApprovedRequestItem,
   type ApartmentOccupancyItem,
+  type DashboardDailyStat,
 } from "@/lib/dashboard-map";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
+import { GovernorDashboardChartsSection } from "@/components/dashboard/governor-dashboard-charts-section";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TablePagination } from "@/components/ui/table-pagination";
 import {
@@ -40,6 +42,7 @@ const DashboardPage = () => {
   const [approvedRequests, setApprovedRequests] = useState<
     ApprovedRequestItem[]
   >([]);
+  const [dailyStats, setDailyStats] = useState<DashboardDailyStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -55,6 +58,7 @@ const DashboardPage = () => {
         setKpiItems(emptyKpiItems);
         setOccupancyData([]);
         setApprovedRequests([]);
+        setDailyStats([]);
         setLoadError(parsed.message);
         return;
       }
@@ -62,10 +66,12 @@ const DashboardPage = () => {
       setKpiItems(parsed.kpiItems);
       setOccupancyData(parsed.occupancyData);
       setApprovedRequests(parsed.approvedRequests);
+      setDailyStats(parsed.dailyStats);
     } catch {
       setKpiItems(emptyKpiItems);
       setOccupancyData([]);
       setApprovedRequests([]);
+      setDailyStats([]);
       setLoadError("تعذر تحميل بيانات لوحة التحكم.");
     } finally {
       setLoading(false);
@@ -138,6 +144,14 @@ const DashboardPage = () => {
                 ))}
               </div>
             </motion.section>
+
+            <motion.div
+              initial={{ y: 24, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: 0.55, duration: 0.5 }}
+            >
+              <GovernorDashboardChartsSection data={dailyStats} />
+            </motion.div>
 
             <motion.div
               initial={{ y: 24, opacity: 0 }}

@@ -32,6 +32,14 @@ const navigationItems = [
     hoverColor: "hover:from-red-600 hover:to-red-700",
   },
   {
+    title: "أيام الحجز المسبق",
+    description: "إدارة عدد الأيام المسموح بها قبل تاريخ الحجز",
+    href: "/settings/allowed-day-before-reservations",
+    icon: "ClipboardCheck",
+    color: "from-amber-500 to-amber-600",
+    hoverColor: "hover:from-amber-600 hover:to-amber-700",
+  },
+  {
     title: "بيانات الوحدات",
     description: "إدارة بيانات الوحدات",
     href: "/settings/unit-data",

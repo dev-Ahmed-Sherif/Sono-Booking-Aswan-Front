@@ -1,14 +1,27 @@
 "use server";
 
-import * as z from "zod";
 import axios from "@/lib/axios-auth";
+import {
+  errorMessageFromAxios,
+  getApiBaseUrl,
+  unwrapApiList,
+} from "@/lib/api-response";
+import { toPlainSerializable } from "@/lib/to-plain-serializable";
 import { getAccessToken } from "@/lib/token-helper";
+
+function authHeaders(accessToken: string) {
+  return {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    withCredentials: true as const,
+  };
+}
 
 const addRole = async (data: any) => {
   try {
-    console.log("addRole:", data);
     const { nameAr, nameEn } = data;
-
     const accessToken = await getAccessToken();
 
     if (!accessToken) {
@@ -18,56 +31,60 @@ const addRole = async (data: any) => {
       };
     }
 
+    const apiBase = getApiBaseUrl();
+    if (!apiBase) {
+      return {
+        error: "Configuration",
+        message: "عنوان الخادم غير مهيأ (BACK_END).",
+      };
+    }
+
     const res = await axios.post(
-      `${process.env.BACK_END_DEV}/roles/add`,
-      {
-        nameAr: nameAr,
-        nameEn: nameEn,
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-          withCredentials: true,
-        },
-      }
+      `${apiBase}/roles/add`,
+      { nameAr, nameEn },
+      authHeaders(accessToken),
     );
 
-    return res.data;
+    return toPlainSerializable(res.data);
   } catch (error: any) {
     console.error("Error adding role:", error);
 
     if (error.response?.status === 401) {
       return {
         error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Authentication failed. Please login again.",
+        ),
       };
     }
 
     if (error.response?.status === 409) {
       return {
         error: "Conflict",
-        message: error.response?.data?.message || "This role already exists.",
+        message: errorMessageFromAxios(
+          error.response?.data,
+          "This role already exists.",
+        ),
       };
     }
 
     if (error.response?.status === 500) {
       return {
         error: "Server Error",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Server error occurred. Please try again later.",
+        ),
       };
     }
 
     return {
       error: "Failed to add role",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      message: errorMessageFromAxios(
+        error.response?.data,
+        error?.message || "An unexpected error occurred",
+      ),
     };
   }
 };
@@ -83,34 +100,42 @@ const getRoles = async () => {
       };
     }
 
-    const res = await axios.get(`${process.env.BACK_END_DEV}/roles/getall`, {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-        withCredentials: true,
-      },
-    });
+    const apiBase = getApiBaseUrl();
+    if (!apiBase) {
+      return {
+        error: "Configuration",
+        message: "عنوان الخادم غير مهيأ (BACK_END).",
+      };
+    }
 
-    console.log("res.data:", res.data);
-    return res.data;
+    const res = await axios.get(
+      `${apiBase}/roles/getall`,
+      authHeaders(accessToken),
+    );
+
+    const payload = toPlainSerializable(res.data);
+    const list = unwrapApiList(payload);
+
+    return { data: list };
   } catch (error: any) {
     console.error("Error getting roles:", error);
 
     if (error.response?.status === 401) {
       return {
         error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Authentication failed. Please login again.",
+        ),
       };
     }
 
     return {
       error: "Failed to get roles",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      message: errorMessageFromAxios(
+        error.response?.data,
+        error?.message || "An unexpected error occurred",
+      ),
     };
   }
 };
@@ -130,49 +155,56 @@ const getRoleById = async (id: string) => {
       };
     }
 
-    const res = await axios.get(`${process.env.BACK_END_DEV}/roles/get/${id}`, {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-        withCredentials: true,
-      },
-    });
+    const apiBase = getApiBaseUrl();
+    if (!apiBase) {
+      return {
+        error: "Configuration",
+        message: "عنوان الخادم غير مهيأ (BACK_END).",
+      };
+    }
 
-    return res.data;
+    const res = await axios.get(
+      `${apiBase}/roles/get/${id}`,
+      authHeaders(accessToken),
+    );
+
+    return toPlainSerializable(res.data);
   } catch (error: any) {
     console.error("Error getting role by id:", error);
 
     if (error.response?.status === 401) {
       return {
         error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Authentication failed. Please login again.",
+        ),
       };
     }
 
     if (error.response?.status === 404) {
       return {
         error: "Not Found",
-        message: error.response?.data?.message || "Role not found.",
+        message: errorMessageFromAxios(error.response?.data, "Role not found."),
       };
     }
 
     if (error.response?.status === 500) {
       return {
         error: "Server Error",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Server error occurred. Please try again later.",
+        ),
       };
     }
 
     return {
       error: "Failed to get role",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      message: errorMessageFromAxios(
+        error.response?.data,
+        error?.message || "An unexpected error occurred",
+      ),
     };
   }
 };
@@ -180,7 +212,6 @@ const getRoleById = async (id: string) => {
 const updateRoleById = async (data: any) => {
   try {
     const { nameEn, nameAr, id } = data;
-
     const accessToken = await getAccessToken();
 
     if (!accessToken) {
@@ -190,57 +221,60 @@ const updateRoleById = async (data: any) => {
       };
     }
 
+    const apiBase = getApiBaseUrl();
+    if (!apiBase) {
+      return {
+        error: "Configuration",
+        message: "عنوان الخادم غير مهيأ (BACK_END).",
+      };
+    }
+
     const res = await axios.put(
-      `${process.env.BACK_END_DEV}/roles/update`,
-      {
-        id: id,
-        nameAr: nameAr,
-        nameEn: nameEn,
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-          withCredentials: true,
-        },
-      }
+      `${apiBase}/roles/update`,
+      { id, nameAr, nameEn },
+      authHeaders(accessToken),
     );
 
-    return res.data;
+    return toPlainSerializable(res.data);
   } catch (error: any) {
     console.error("Error updating role:", error);
 
     if (error.response?.status === 401) {
       return {
         error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Authentication failed. Please login again.",
+        ),
       };
     }
 
     if (error.response?.status === 409) {
       return {
         error: "Conflict",
-        message: error.response?.data?.message || "This role already exists.",
+        message: errorMessageFromAxios(
+          error.response?.data,
+          "This role already exists.",
+        ),
       };
     }
 
     if (error.response?.status === 500) {
       return {
         error: "Server Error",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Server error occurred. Please try again later.",
+        ),
       };
     }
 
     return {
       error: "Failed to update role",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      message: errorMessageFromAxios(
+        error.response?.data,
+        error?.message || "An unexpected error occurred",
+      ),
     };
   }
 };
@@ -256,52 +290,56 @@ const deleteRoleById = async (id: string) => {
       };
     }
 
+    const apiBase = getApiBaseUrl();
+    if (!apiBase) {
+      return {
+        error: "Configuration",
+        message: "عنوان الخادم غير مهيأ (BACK_END).",
+      };
+    }
+
     const res = await axios.delete(
-      `${process.env.BACK_END_DEV}/roles/delete/${id}`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-          withCredentials: true,
-        },
-      }
+      `${apiBase}/roles/delete/${id}`,
+      authHeaders(accessToken),
     );
 
-    return res.data;
+    return toPlainSerializable(res.data);
   } catch (error: any) {
     console.error("Error deleting role:", error);
 
     if (error.response?.status === 401) {
       return {
         error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Authentication failed. Please login again.",
+        ),
       };
     }
 
     if (error.response?.status === 404) {
       return {
         error: "Not Found",
-        message: error.response?.data?.message || "Role not found.",
+        message: errorMessageFromAxios(error.response?.data, "Role not found."),
       };
     }
 
     if (error.response?.status === 500) {
       return {
         error: "Server Error",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Server error occurred. Please try again later.",
+        ),
       };
     }
 
     return {
       error: "Failed to delete role",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      message: errorMessageFromAxios(
+        error.response?.data,
+        error?.message || "An unexpected error occurred",
+      ),
     };
   }
 };
@@ -317,54 +355,65 @@ const softDeleteRoleById = async (id: string) => {
       };
     }
 
+    const apiBase = getApiBaseUrl();
+    if (!apiBase) {
+      return {
+        error: "Configuration",
+        message: "عنوان الخادم غير مهيأ (BACK_END).",
+      };
+    }
+
     const res = await axios.delete(
-      `${process.env.BACK_END_DEV}/roles/softdelete/${id}`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-          withCredentials: true,
-        },
-      }
+      `${apiBase}/roles/softdelete/${id}`,
+      authHeaders(accessToken),
     );
 
-    return res.data;
+    return toPlainSerializable(res.data);
   } catch (error: any) {
     console.error("Error soft deleting role:", error);
 
     if (error.response?.status === 401) {
       return {
         error: "Unauthorized",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Authentication failed. Please login again.",
+        ),
       };
     }
 
     if (error.response?.status === 404) {
       return {
         error: "Not Found",
-        message: error.response?.data?.message || "Role not found.",
+        message: errorMessageFromAxios(error.response?.data, "Role not found."),
       };
     }
 
     if (error.response?.status === 500) {
       return {
         error: "Server Error",
-        message:
-          error.response?.data?.message ||
+        message: errorMessageFromAxios(
+          error.response?.data,
           "Server error occurred. Please try again later.",
+        ),
       };
     }
 
     return {
       error: "Failed to soft delete role",
-      message:
-        error.response?.data?.message ||
-        error.message ||
-        "An unexpected error occurred",
+      message: errorMessageFromAxios(
+        error.response?.data,
+        error?.message || "An unexpected error occurred",
+      ),
     };
   }
 };
 
-export { addRole, getRoles, getRoleById, updateRoleById, deleteRoleById, softDeleteRoleById };
+export {
+  addRole,
+  getRoles,
+  getRoleById,
+  updateRoleById,
+  deleteRoleById,
+  softDeleteRoleById,
+};

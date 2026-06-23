@@ -3,6 +3,11 @@ import {
   getLookupArray,
 } from "@/lib/availability-inquiry";
 import { parseBirthDateValue } from "@/lib/companion-registration";
+import {
+  formatUtcToCairo,
+  formatUtcToCairoDate,
+  todayYmdCairo,
+} from "@/lib/date-timeOptions";
 import { extractApplicantDisplayNameFromRequest } from "@/lib/housing-request-list";
 import {
   buildCompanionNameMapFromParticipants,
@@ -132,26 +137,19 @@ export function parseCompanionMetaFromApi(
 }
 
 export function todayYmdLocal(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return todayYmdCairo();
 }
 
 export function formatReceiverDisplayDate(ymd: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd || "—";
-  const d = new Date(`${ymd}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return ymd;
-  return d.toLocaleDateString("ar-EG");
+  return formatUtcToCairoDate(`${ymd}T12:00:00Z`);
 }
 
 export function formatReceiverDisplayDateTime(value?: string | null): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "—";
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return raw;
-  return date.toLocaleString("ar-EG");
+  const formatted = formatUtcToCairo(raw);
+  return formatted === "-" ? raw : formatted;
 }
 
 function indexRequestsById(

@@ -37,7 +37,7 @@ import { useToast } from "@/hooks/use-toast";
 
 import useToggleState from "@/hooks/use-toggle-state";
 
-import { userSchema } from "@/schemas";
+import { sonoBookingStaffUserSchema } from "@/schemas";
 import {
   addUser,
   deleteUserById,
@@ -56,7 +56,7 @@ type UserFormProps = {
   name: string;
 };
 
-type UserFormValues = z.infer<typeof userSchema>;
+type UserFormValues = z.infer<typeof sonoBookingStaffUserSchema>;
 
 const UserForm = ({ initialData, name }: UserFormProps) => {
   console.log("initialData", initialData);
@@ -81,7 +81,13 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
   useEffect(() => {
     const fetchData = async () => {
       const rolesDataResult = await getRoles();
-      if (rolesDataResult?.data) {
+      if (rolesDataResult && "error" in rolesDataResult) {
+        console.error("Failed to load roles:", rolesDataResult.message);
+      } else if (
+        rolesDataResult &&
+        "data" in rolesDataResult &&
+        Array.isArray(rolesDataResult.data)
+      ) {
         setRolesData(rolesDataResult.data);
       }
 
@@ -90,17 +96,18 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
       //   setOrganizationsData(organizationsDataResult.data);
       // }
 
-      const technicalJobCategoriesResult = await getUnitCategories();
+      const technicalJobCategoriesResult = initialData
+        ? null
+        : await getUnitCategories();
       if (technicalJobCategoriesResult?.data) {
         setTechnicalJobCategoriesData(technicalJobCategoriesResult.data);
-        console.log(technicalJobCategoriesResult);
       }
     };
     fetchData();
   }, []);
 
   const form = useForm<UserFormValues>({
-    resolver: zodResolver(userSchema),
+    resolver: zodResolver(sonoBookingStaffUserSchema),
     mode: "onSubmit",
     defaultValues: {
       name: initialData?.data?.userName || "",
@@ -160,43 +167,14 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
 
   // Clear validation errors and values for organizationId and technicalJobCategory when role is Super Admin or Admin
   useEffect(() => {
-    if (isSuperAdminOrAdminRole) {
+    if (initialData || !isSuperAdminOrAdminRole) return;
       // Clear errors for these fields when role is Super Admin or Admin
       form.clearErrors("organizationId");
       form.clearErrors("technicalJobCategory");
       // Clear the values (set to empty string/null) when role changes to Super Admin or Admin
       form.setValue("organizationId", "");
       form.setValue("technicalJobCategory", "");
-    }
-  }, [isSuperAdminOrAdminRole, form]);
-
-  // Normalize technical job category value (API may return name instead of id)
-  useEffect(() => {
-    if (!initialData || !technicalJobCategoriesData.length) return;
-
-    const current = form.getValues("technicalJobCategory");
-    // If already set (e.g., id from API), skip
-    if (current) return;
-
-    const apiValue =
-      initialData?.data?.technicalJobCategoryId ??
-      initialData?.data?.technicalJobCategory ??
-      initialData?.technicalJobCategoryId;
-
-    if (!apiValue) return;
-
-    const match = technicalJobCategoriesData.find(
-      (cat: any) =>
-        String(cat.id) === String(apiValue) ||
-        cat.nameAr === apiValue ||
-        cat.nameEn === apiValue ||
-        cat.name === apiValue,
-    );
-
-    if (match) {
-      form.setValue("technicalJobCategory", String(match.id));
-    }
-  }, [initialData, technicalJobCategoriesData, form]);
+  }, [initialData, isSuperAdminOrAdminRole, form]);
 
   const onSubmit = async (data: UserFormValues) => {
     console.log(data);
@@ -232,8 +210,8 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
         isSuperAdminOrAdmin,
       });
 
-      // Validate organizationId and technicalJobCategory if role is not Super Admin or Admin
-      if (!isSuperAdminOrAdmin) {
+      // Validate organizationId and technicalJobCategory when creating a non-admin user
+      if (!initialData && !isSuperAdminOrAdmin) {
         if (!data.organizationId || data.organizationId.trim() === "") {
           form.setError("organizationId", {
             type: "required",
@@ -265,15 +243,8 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
           email: data.email,
           oldPassword: "",
           newPassword: data.password === "" ? "123456" : data.password,
-          // newPassword: data.password,
-          // confirmPassword: data.password,
           confirmPassword: data.password === "" ? "123456" : data.password,
           roleId: data.roleId,
-          // Only include organizationId and technicalJobCategory if they are provided
-          ...(data.organizationId && { organizationId: data.organizationId }),
-          ...(data.technicalJobCategory && {
-            technicalJobCategory: data.technicalJobCategory,
-          }),
         };
 
         // Only include password if it's provided
@@ -312,7 +283,7 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
 
       router.refresh();
       setTimeout(() => {
-        router.push(`/${params.locale}/permissions`);
+        router.push(`/${params.locale}/permissions/users`);
       }, 1000);
 
       toast({
@@ -393,7 +364,7 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
       toggleLoading();
 
       setTimeout(() => {
-        router.push(`/${params.locale}/permissions`);
+        router.push(`/${params.locale}/permissions/users`);
         setTimeout(() => {
           router.refresh();
           setTimeout(() => {
@@ -473,7 +444,7 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
                       {...field}
                       disabled={loading}
                       type="email"
-                      placeholder="example@email.com"
+                      placeholder="user@sonobooking.com"
                     />
                   </FormControl>
                   <FormMessage />
@@ -569,6 +540,8 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
                 </FormItem>
               )}
             />
+            {!initialData && (
+              <>
             <FormField
               control={form.control}
               name="organizationId"
@@ -681,6 +654,8 @@ const UserForm = ({ initialData, name }: UserFormProps) => {
                 </FormItem>
               )}
             />
+              </>
+            )}
           </div>
           <div className="flex justify-center">
             <Button

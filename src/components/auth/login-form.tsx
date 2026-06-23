@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -90,11 +90,22 @@ import {
   toReservationStoredUnits,
 } from "@/lib/availability-inquiry";
 import { getPostLoginPath } from "@/lib/role-utils";
+import {
+  clearStoredNavRoute,
+  getStoredNavRoute,
+  setStoredNavRoute,
+} from "@/lib/nav-storage";
 import { FlexibleAllocationNotice } from "@/components/reservation/allocation-type-notices";
 import { AvailabilityUnitCardParents } from "@/components/reservation/availability-unit-card-parents";
 import { AvailabilityUnitCardPhotos } from "@/components/reservation/availability-unit-card-photos";
 import { AvailabilityUnitCardPrice } from "@/components/reservation/availability-unit-card-price";
 import { AvailabilityUnitCardBedsCount } from "@/components/reservation/availability-unit-card-beds-count";
+import {
+  fetchAllowedDaysBeforeReservationOffset,
+  formatMinReservationStartMessage,
+  isReservationStartDateAllowed,
+  minReservationStartDateFromOffset,
+} from "@/lib/allowed-day-before-reservation";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -284,6 +295,48 @@ type AllocationTypeOption = { value: string; label: string };
 
 const LOADER_DURATION_MS = 1500;
 
+function hasAccessCookieValue(cookie: LoginFormProps["Cookie"]): boolean {
+  return cookie != null && Boolean((cookie as { value?: string })?.value);
+}
+
+function resolvePostAuthRedirectPath(
+  locale: string,
+  user: ReturnType<typeof useLocalStorage>,
+): string {
+  const storedUser = user.getItem() as { id?: string; role?: unknown } | undefined;
+  const userId = String(storedUser?.id ?? "").trim();
+  const role = storedUser?.role;
+
+  if (userId) {
+    const savedPath = getStoredNavRoute(userId);
+    if (savedPath) return savedPath;
+  }
+
+  return getPostLoginPath(locale, role);
+}
+
+function LoginBlockingOverlay({
+  title = "جارٍ تحميل لوحة التحكم...",
+  subtitle = "يرجى الانتظار",
+}: {
+  title?: string;
+  subtitle?: string;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background/95 backdrop-blur-sm"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label={title}
+    >
+      <Loader2 className="h-12 w-12 animate-spin text-brand" />
+      <p className="mt-5 text-lg font-semibold text-foreground">{title}</p>
+      <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+    </div>
+  );
+}
+
 /** Set a cookie in the browser (client-only). Uses 30 days if env is missing or invalid. */
 function setClientCookie(
   name: string,
@@ -317,13 +370,15 @@ export function LoginForm({ Cookie }: LoginFormProps) {
   const locale = (params?.locale as string) || "ar";
   const { toast } = useToast();
   const dispatch = useDispatch();
-  const nav = useLocalStorage("Nav");
   const user = useLocalStorage("user");
   const reservation = useLocalStorage("reservation");
 
+  const hasAccessCookie = hasAccessCookieValue(Cookie);
+
   const [isPending, startTransition] = useTransition();
   const [isForgotPasswordPending, startForgotPasswordTransition] = useTransition();
-  const [isLoading, setIsLoading] = useState(true);
+  const [isBootstrapping, setIsBootstrapping] = useState(!hasAccessCookie);
+  const [isRedirecting, setIsRedirecting] = useState(hasAccessCookie);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
 
@@ -359,6 +414,12 @@ export function LoginForm({ Cookie }: LoginFormProps) {
   const [allocationTypeOptions, setAllocationTypeOptions] = useState<
     AllocationTypeOption[]
   >([]);
+  const [allowedDaysOffset, setAllowedDaysOffset] = useState(0);
+
+  const minReservationStartDate = useMemo(
+    () => minReservationStartDateFromOffset(allowedDaysOffset),
+    [allowedDaysOffset],
+  );
 
   const form = useForm<z.infer<typeof LoginSchema>>({
     resolver: zodResolver(LoginSchema),
@@ -370,10 +431,9 @@ export function LoginForm({ Cookie }: LoginFormProps) {
     defaultValues: { email: "" },
   });
 
-  // Redirect if already logged in
+  // Redirect immediately if already logged in — keep overlay, never show login form
   useEffect(() => {
-    const hasAccess = Cookie != null && (Cookie as { value?: string })?.value;
-    if (!hasAccess || typeof window === "undefined") return;
+    if (!hasAccessCookie || typeof window === "undefined") return;
 
     const currentPath = window.location.pathname;
     const isLoginPage =
@@ -383,70 +443,28 @@ export function LoginForm({ Cookie }: LoginFormProps) {
       currentPath === "/en";
     if (!isLoginPage) return;
 
-    const timeoutId = setTimeout(() => {
-      const savedNav = nav.getItem();
-      const lastRoute =
-        typeof savedNav === "string" && savedNav.trim().length > 0
-          ? savedNav.trim()
-          : null;
-      const isLoginRoot =
-        lastRoute === "/ar" ||
-        lastRoute === "/en" ||
-        lastRoute === "/ar/" ||
-        lastRoute === "/en/";
-      if (
-        lastRoute &&
-        !isLoginRoot &&
-        (lastRoute.startsWith("/ar/") || lastRoute.startsWith("/en/"))
-      ) {
-        router.replace(lastRoute);
-        return;
-      }
-
-      const storedRole = user.getItem()?.role;
-      const referrer = document.referrer || "";
-      let redirectPath = getPostLoginPath(locale, storedRole);
-      if (referrer) {
-        try {
-          const refUrl = new URL(referrer);
-          const sameOrigin = refUrl.origin === window.location.origin;
-          const refPath = refUrl.pathname;
-          const isReferrerLoginRoot =
-            refPath === "/ar" ||
-            refPath === "/en" ||
-            refPath === "/ar/" ||
-            refPath === "/en/";
-          const isAppRoute =
-            refPath.startsWith("/ar/") || refPath.startsWith("/en/");
-          if (sameOrigin && !isReferrerLoginRoot && isAppRoute) {
-            redirectPath = `${refPath}${refUrl.search}`;
-          }
-        } catch {
-          // keep default redirectPath
-        }
-      }
-      router.replace(redirectPath);
-    }, 3000);
-
-    return () => clearTimeout(timeoutId);
-  }, [Cookie, locale, nav, router, user]);
+    setIsRedirecting(true);
+    const redirectPath = resolvePostAuthRedirectPath(locale, user);
+    window.location.replace(redirectPath);
+  }, [hasAccessCookie, locale, user]);
 
   // Clear user state on mount when not authenticated
   useEffect(() => {
-    const hasAccess = Cookie != null && (Cookie as { value?: string })?.value;
-    if (hasAccess || typeof window === "undefined") return;
+    if (hasAccessCookie || typeof window === "undefined") return;
+    clearStoredNavRoute();
     user.removeItem();
     dispatch(setUserId(""));
     dispatch(setOrganizationId(""));
     dispatch(setRole(""));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [Cookie]);
+  }, [hasAccessCookie]);
 
-  // Loader hide after delay
+  // Initial splash only for guests — authenticated users redirect without showing login UI
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), LOADER_DURATION_MS);
+    if (hasAccessCookie) return;
+    const timer = setTimeout(() => setIsBootstrapping(false), LOADER_DURATION_MS);
     return () => clearTimeout(timer);
-  }, []);
+  }, [hasAccessCookie]);
 
   // Reset availability result when any field changes
   useEffect(() => {
@@ -547,11 +565,23 @@ export function LoginForm({ Cookie }: LoginFormProps) {
     void loadAllocationTypeOptions();
   }, []);
 
+  useEffect(() => {
+    const loadAllowedDaysOffset = async () => {
+      const offset = await fetchAllowedDaysBeforeReservationOffset();
+      setAllowedDaysOffset(offset);
+    };
+
+    void loadAllowedDaysOffset();
+  }, []);
+
   const handleCheckAvailability = async () => {
     const nextErrors: AvailabilityErrors = {};
     const nightsNumber = Number(nights);
 
     if (!startDate) nextErrors.startDate = "يرجى اختيار تاريخ البدء";
+    else if (!isReservationStartDateAllowed(startDate, minReservationStartDate)) {
+      nextErrors.startDate = formatMinReservationStartMessage(minReservationStartDate);
+    }
     if (!nights) nextErrors.nights = "يرجى إدخال عدد الليالي";
     else if (!Number.isFinite(nightsNumber) || nightsNumber < 1) {
       nextErrors.nights = "عدد الليالي يجب أن يكون 1 على الأقل";
@@ -840,8 +870,9 @@ export function LoginForm({ Cookie }: LoginFormProps) {
             dispatch(setRole(role));
             dispatch(setGovernorateId(governorateId ?? ""));
             const targetRoute = getPostLoginPath(locale, role);
-            nav.setItem(targetRoute);
-            router.replace(targetRoute);
+            clearStoredNavRoute();
+            setStoredNavRoute(String(id), targetRoute);
+            window.location.replace(targetRoute);
           } catch (err) {
             setIsLoggingIn(false);
             console.error("Error getting user data:", err);
@@ -878,7 +909,17 @@ export function LoginForm({ Cookie }: LoginFormProps) {
     });
   };
 
-  if (isLoading) return null;
+  if (isBootstrapping || isRedirecting || isLoggingIn) {
+    return (
+      <LoginBlockingOverlay
+        title={
+          isLoggingIn || isRedirecting
+            ? "جارٍ تحميل لوحة التحكم..."
+            : "جارٍ التحميل..."
+        }
+      />
+    );
+  }
 
   return (
     <motion.div
@@ -893,11 +934,12 @@ export function LoginForm({ Cookie }: LoginFormProps) {
 
       {/* ── Main Content ── */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-start px-4 py-8">
-        <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="w-full max-w-5xl flex flex-col gap-6 md:grid md:grid-cols-2">
           {/* ═══════════════════════════════════════════
               Right Panel  —  استعلام عن الوحدات
           ═══════════════════════════════════════════ */}
           <motion.div
+            className="order-1"
             initial={{ opacity: 0, x: 40 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{
@@ -957,9 +999,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                         selected={startDate}
                         onSelect={setStartDate}
                         locale={ar}
-                        disabled={(date) =>
-                          date < new Date(new Date().setHours(0, 0, 0, 0))
-                        }
+                        disabled={(date) => date < minReservationStartDate}
                         initialFocus
                         captionLayout="dropdown"
                         toYear={new Date().getFullYear() + 2}
@@ -1206,6 +1246,151 @@ export function LoginForm({ Cookie }: LoginFormProps) {
             </Card>
           </motion.div>
 
+          {availabilitySearchStatus === "success" && availabilityCards.length > 0 && (
+            <Card className="order-2 md:order-3 md:col-span-2 border-2 border-border rounded-3xl shadow-lg bg-card text-card-foreground">
+              <CardHeader className="pb-3">
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.4 }}
+                  className="flex items-center gap-3 p-4 rounded-2xl border-2 font-semibold text-base bg-emerald-50 border-emerald-200 text-emerald-950"
+                >
+                  <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
+                  يوجد {availabilityCards.length.toLocaleString("ar-EG")}{" "}
+                  {availabilityCards.length === 1 ? "وحدة متاحة" : "وحدات متاحة"}
+                </motion.div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2 max-h-[min(520px,65vh)] overflow-y-auto pr-1">
+                  {availabilityCards.map((card, cardIdx) => {
+                    const cKey = availabilityCardKey(card);
+                    const isSelected = selectedAvailabilityKeys.includes(cKey);
+                    const checkboxId =
+                      `avail-${cardIdx}-${card.unitKind}-${card.id}`.replace(
+                        /[^a-zA-Z0-9_-]/g,
+                        "_",
+                      );
+                    return (
+                      <motion.div
+                        key={cKey}
+                        layout
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={cn(
+                          "rounded-2xl border-2 p-4 text-right shadow-sm transition-shadow hover:shadow-md",
+                          card.unitKind === "bed" &&
+                            "bg-gradient-to-br from-sky-50 via-white to-slate-50/80 border-sky-200",
+                          card.unitKind === "room" &&
+                            "bg-gradient-to-br from-teal-50 via-white to-slate-50/80 border-teal-200",
+                          card.unitKind === "apartment" &&
+                            "bg-gradient-to-br from-violet-50 via-white to-slate-50/80 border-violet-200",
+                          isSelected && "ring-2 ring-offset-1 ring-brand border-brand/50",
+                        )}
+                      >
+                        <label
+                          htmlFor={checkboxId}
+                          className="flex cursor-pointer items-center justify-between gap-2 border-b border-slate-200/70 pb-2 mb-3"
+                        >
+                          <span className="text-xs font-medium text-slate-600">
+                            إضافة للاختيار
+                          </span>
+                          <input
+                            id={checkboxId}
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleAvailabilityCard(cKey)}
+                            className="h-4 w-4 shrink-0 rounded border-slate-400 text-brand focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
+                          />
+                        </label>
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={cn(
+                              "shrink-0 rounded-xl p-2.5",
+                              card.unitKind === "bed" &&
+                                "bg-sky-100 text-sky-800 border border-sky-200/80",
+                              card.unitKind === "room" &&
+                                "bg-teal-100 text-teal-800 border border-teal-200/80",
+                              card.unitKind === "apartment" &&
+                                "bg-violet-100 text-violet-800 border border-violet-200/80",
+                            )}
+                          >
+                            {card.unitKind === "bed" ? (
+                              <Bed className="h-5 w-5" />
+                            ) : card.unitKind === "room" ? (
+                              <Home className="h-5 w-5" />
+                            ) : (
+                              <Building2 className="h-5 w-5" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                                    <div
+                                      dir="rtl"
+                                      className="flex items-center justify-between gap-2"
+                                    >
+                                      <p className="font-bold text-base leading-tight text-slate-900">
+                                        {card.title}
+                                      </p>
+                                      <AvailabilityUnitCardPrice card={card} />
+                            </div>
+                            <AvailabilityUnitCardParents card={card} />
+                            <AvailabilityUnitCardBedsCount card={card} />
+                            <AvailabilityUnitCardPhotos card={card} />
+                            {card.genderType ? (
+                              <p className="text-base font-bold leading-snug text-slate-800">
+                                <span className="font-semibold text-slate-600">
+                                  نوع الجنس:{" "}
+                                </span>
+                                {card.genderType}
+                              </p>
+                            ) : null}
+                            {card.buildingNumberAr || card.city ? (
+                              <div className="space-y-0.5 text-sm font-semibold leading-snug text-slate-800">
+                                {card.buildingNumberAr ? (
+                                  <p>
+                                    <span className="text-slate-600">
+                                      رقم المبنى:{" "}
+                                    </span>
+                                    <span className="font-bold tabular-nums text-slate-900">
+                                      {card.buildingNumberAr}
+                                    </span>
+                                  </p>
+                                ) : null}
+                                {card.city ? (
+                                  <p>
+                                    <span className="text-slate-600">المدينة: </span>
+                                    <span className="font-bold text-slate-900">
+                                      {card.city}
+                                    </span>
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            <p className="text-sm leading-relaxed text-slate-600 line-clamp-3">
+                              {card.subtitle}
+                            </p>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+                {selectedAvailabilityKeys.length > 0 ? (
+                  <Button
+                    type="button"
+                    onClick={handleSaveReservationSelection}
+                    className="w-full py-4 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-md transition-all duration-300 hover:bg-brand-hover hover:opacity-95"
+                  >
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <Bookmark className="h-4 w-4 shrink-0" />
+                      حفظ المحدد والبيانات (
+                      {selectedAvailabilityKeys.length.toLocaleString("ar-EG")})
+                    </span>
+                  </Button>
+                ) : null}
+              </CardContent>
+            </Card>
+          )}
+
           {/* ═══════════════════════════════════════════
               Left Panel  —  دخول المستخدمين
           ═══════════════════════════════════════════ */}
@@ -1218,7 +1403,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
               type: "spring",
               stiffness: 90,
             }}
-            className="h-[32rem] md:h-[36rem]"
+            className="order-3 md:order-2 md:h-[36rem]"
           >
             <Card className="h-full w-full border-2 border-border rounded-3xl shadow-lg bg-card text-card-foreground flex flex-col">
               <CardHeader className="pb-3">
@@ -1354,170 +1539,9 @@ export function LoginForm({ Cookie }: LoginFormProps) {
             </Card>
           </motion.div>
         </div>
-
-        {availabilitySearchStatus === "success" && availabilityCards.length > 0 && (
-          <Card className="mt-6 w-full max-w-5xl border-2 border-border rounded-3xl shadow-lg bg-card text-card-foreground">
-            <CardHeader className="pb-3">
-              <motion.div
-                initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ duration: 0.4 }}
-                className="flex items-center gap-3 p-4 rounded-2xl border-2 font-semibold text-base bg-emerald-50 border-emerald-200 text-emerald-950"
-              >
-                <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-600" />
-                يوجد {availabilityCards.length.toLocaleString("ar-EG")}{" "}
-                {availabilityCards.length === 1 ? "وحدة متاحة" : "وحدات متاحة"}
-              </motion.div>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2 max-h-[min(520px,65vh)] overflow-y-auto pr-1">
-                {availabilityCards.map((card, cardIdx) => {
-                  const cKey = availabilityCardKey(card);
-                  const isSelected = selectedAvailabilityKeys.includes(cKey);
-                  const checkboxId =
-                    `avail-${cardIdx}-${card.unitKind}-${card.id}`.replace(
-                      /[^a-zA-Z0-9_-]/g,
-                      "_",
-                    );
-                  return (
-                    <motion.div
-                      key={cKey}
-                      layout
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className={cn(
-                        "rounded-2xl border-2 p-4 text-right shadow-sm transition-shadow hover:shadow-md",
-                        card.unitKind === "bed" &&
-                          "bg-gradient-to-br from-sky-50 via-white to-slate-50/80 border-sky-200",
-                        card.unitKind === "room" &&
-                          "bg-gradient-to-br from-teal-50 via-white to-slate-50/80 border-teal-200",
-                        card.unitKind === "apartment" &&
-                          "bg-gradient-to-br from-violet-50 via-white to-slate-50/80 border-violet-200",
-                        isSelected && "ring-2 ring-offset-1 ring-brand border-brand/50",
-                      )}
-                    >
-                      <label
-                        htmlFor={checkboxId}
-                        className="flex cursor-pointer items-center justify-between gap-2 border-b border-slate-200/70 pb-2 mb-3"
-                      >
-                        <span className="text-xs font-medium text-slate-600">
-                          إضافة للاختيار
-                        </span>
-                        <input
-                          id={checkboxId}
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleAvailabilityCard(cKey)}
-                          className="h-4 w-4 shrink-0 rounded border-slate-400 text-brand focus:ring-2 focus:ring-blue-500 focus:ring-offset-0"
-                        />
-                      </label>
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            "shrink-0 rounded-xl p-2.5",
-                            card.unitKind === "bed" &&
-                              "bg-sky-100 text-sky-800 border border-sky-200/80",
-                            card.unitKind === "room" &&
-                              "bg-teal-100 text-teal-800 border border-teal-200/80",
-                            card.unitKind === "apartment" &&
-                              "bg-violet-100 text-violet-800 border border-violet-200/80",
-                          )}
-                        >
-                          {card.unitKind === "bed" ? (
-                            <Bed className="h-5 w-5" />
-                          ) : card.unitKind === "room" ? (
-                            <Home className="h-5 w-5" />
-                          ) : (
-                            <Building2 className="h-5 w-5" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1 space-y-1.5">
-                                  <div
-                                    dir="rtl"
-                                    className="flex items-center justify-between gap-2"
-                                  >
-                                    <p className="font-bold text-base leading-tight text-slate-900">
-                                      {card.title}
-                                    </p>
-                                    <AvailabilityUnitCardPrice card={card} />
-                          </div>
-                          <AvailabilityUnitCardParents card={card} />
-                          <AvailabilityUnitCardBedsCount card={card} />
-                          <AvailabilityUnitCardPhotos card={card} />
-                          {card.genderType ? (
-                            <p className="text-base font-bold leading-snug text-slate-800">
-                              <span className="font-semibold text-slate-600">
-                                نوع الجنس:{" "}
-                              </span>
-                              {card.genderType}
-                            </p>
-                          ) : null}
-                          {card.buildingNumberAr || card.city ? (
-                            <div className="space-y-0.5 text-sm font-semibold leading-snug text-slate-800">
-                              {card.buildingNumberAr ? (
-                                <p>
-                                  <span className="text-slate-600">
-                                    رقم المبنى:{" "}
-                                  </span>
-                                  <span className="font-bold tabular-nums text-slate-900">
-                                    {card.buildingNumberAr}
-                                  </span>
-                                </p>
-                              ) : null}
-                              {card.city ? (
-                                <p>
-                                  <span className="text-slate-600">المدينة: </span>
-                                  <span className="font-bold text-slate-900">
-                                    {card.city}
-                                  </span>
-                                </p>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          <p className="text-sm leading-relaxed text-slate-600 line-clamp-3">
-                            {card.subtitle}
-                          </p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-              {selectedAvailabilityKeys.length > 0 ? (
-                <Button
-                  type="button"
-                  onClick={handleSaveReservationSelection}
-                  className="w-full py-4 rounded-2xl font-semibold text-base bg-brand text-brand-foreground shadow-md transition-all duration-300 hover:bg-brand-hover hover:opacity-95"
-                >
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <Bookmark className="h-4 w-4 shrink-0" />
-                    حفظ المحدد والبيانات (
-                    {selectedAvailabilityKeys.length.toLocaleString("ar-EG")})
-                  </span>
-                </Button>
-              ) : null}
-            </CardContent>
-          </Card>
-        )}
       </main>
 
       <div className="mb-20 text-transparent">t</div>
-
-      {isLoggingIn && (
-        <div
-          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background/95 backdrop-blur-sm"
-          role="status"
-          aria-live="polite"
-          aria-busy="true"
-          aria-label="جارٍ تحميل الصفحة بعد تسجيل الدخول"
-        >
-          <Loader2 className="h-12 w-12 animate-spin text-brand" />
-          <p className="mt-5 text-lg font-semibold text-foreground">
-            جارٍ تحميل لوحة التحكم...
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">يرجى الانتظار</p>
-        </div>
-      )}
 
       <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
         <DialogContent className="sm:max-w-md">

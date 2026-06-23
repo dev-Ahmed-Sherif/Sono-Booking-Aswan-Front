@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "next/navigation";
 import { format } from "date-fns";
 import { ar } from "date-fns/locale";
 import {
@@ -128,6 +129,7 @@ import {
   type HousingRequestTableRow,
 } from "@/lib/housing-request-list";
 import { HOUSING_REQUEST_CATAGORY_EXTENSION } from "@/lib/housing-request-map";
+import { RequestChatLinks } from "@/components/chat/request-chat-links";
 
 type ModalMode = "view" | "edit" | "leader-unit-edit";
 
@@ -230,6 +232,8 @@ export function HousingRequestDetailModal({
   onClose,
   onChanged,
 }: HousingRequestDetailModalProps) {
+  const params = useParams();
+  const locale = typeof params?.locale === "string" ? params.locale : "ar";
   const { toast } = useToast();
   const userStorage = useLocalStorage("user");
   const [loading, setLoading] = useState(false);
@@ -1438,6 +1442,10 @@ export function HousingRequestDetailModal({
                 onChange={setAttachmentFiles}
                 disabled={saving || loading}
               />
+            ) : null}
+
+            {mode === "view" && requestId ? (
+              <RequestChatLinks requestId={requestId} locale={locale} />
             ) : null}
           </div>
         ) : null}

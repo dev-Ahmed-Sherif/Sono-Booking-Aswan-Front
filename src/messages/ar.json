@@ -11,10 +11,24 @@
     "housingReceiver": "لوحة تحكم مسؤول القاهرة",
     "housingSender": "لوحة تحكم مسؤول أسوان",
     "settings": "الاعدادات",
+    "permissions": "الصلاحيات",
     "reports": "التقارير",
     "welcome": "مرحباً،",
     "accountFallback": "حسابى",
     "logout": "تسجيل الخروج"
+  },
+  "Notifications": {
+    "title": "الإشعارات",
+    "empty": "لا توجد إشعارات",
+    "markAllRead": "تعليم الكل كمقروء",
+    "viewChat": "فتح المحادثات",
+    "types": {
+      "chat": "رسالة جديدة",
+      "request": "طلب إسكان",
+      "reservation": "تحديث حجز",
+      "system": "النظام"
+    },
+    "fromSender": "من {name}"
   },
   "Chat": {
     "title": "المحادثات",
@@ -22,10 +36,14 @@
     "hubMissing": "عيّن NEXT_PUBLIC_SIGNALR_HUB_URL لتفعيل الاتصال المباشر (راجع chatApi.contract.ts). يمكن الإرسال عبر REST إن وفرها الـ API.",
     "realtimeOn": "الاتصال المباشر: متصل",
     "realtimeOff": "الاتصال المباشر: غير متصل — قد يعمل الإرسال عبر REST.",
+    "realtimeError": "فشل الاتصال المباشر: {error}",
     "conversations": "المحادثات",
-    "participantPlaceholder": "معرّف المستخدم (المشارك)",
+    "availableContacts": "أشخاص يمكنك مراسلتهم",
+    "startChat": "بدء محادثة",
+    "noContacts": "لا جهات اتصال متاحة لدورك.",
+    "loadContactsError": "تعذر تحميل جهات الاتصال",
     "newChat": "جديد",
-    "emptyConversations": "لا محادثات بعد. أدخل معرّف مشارك للبدء.",
+    "emptyConversations": "لا محادثات بعد. اختر شخصاً من القائمة أو اضغط «جديد» للبدء.",
     "unnamedConversation": "محادثة",
     "selectConversation": "الرسائل",
     "selectConversationHint": "اختر محادثة من القائمة أو ابدأ محادثة جديدة.",
@@ -37,7 +55,62 @@
     "sendError": "تعذر الإرسال",
     "participantRequired": "أدخل معرّف مستخدم مشارك واحد على الأقل.",
     "createConversationError": "تعذر بدء المحادثة",
-    "conversationCreated": "تم فتح المحادثة"
+    "conversationCreated": "تم فتح المحادثة",
+    "backToList": "العودة للمحادثات",
+    "online": "متصل",
+    "offline": "غير متصل",
+    "partnerOnline": "جهة الاتصال متصلة",
+    "partnerOffline": "جهة الاتصال غير متصلة",
+    "typing": "اكتب رسالة",
+    "you": "أنت",
+    "read": "مقروءة",
+    "delivered": "تم الإرسال",
+    "searchConversations": "بحث في المحادثات",
+    "newConversation": "بدء محادثة",
+    "requestGroupsTitle": "محادثات الطلب",
+    "openRequestChat": "فتح المحادثة",
+    "requestGroupTypes": {
+      "owner-leader": "صاحب الطلب ↔ القائد",
+      "leader-reception": "القائد ↔ موظف الحجز",
+      "owner-reception": "صاحب الطلب ↔ موظف الحجز"
+    },
+    "roles": {
+      "User": "مستخدم",
+      "Leader": "قائد",
+      "ReceptionStaff": "موظف استقبال",
+      "Admin": "مدير",
+      "SuperAdmin": "مدير عام"
+    },
+    "videoCall": {
+      "title": "مكالمة فيديو",
+      "subtitle": "فيديو مباشر مع المشارك الآخر",
+      "startVideoCall": "بدء مكالمة فيديو",
+      "startCall": "بدء المكالمة",
+      "accept": "قبول",
+      "decline": "رفض",
+      "endCall": "إنهاء المكالمة",
+      "incoming": "مكالمة واردة من {name}",
+      "calling": "جاري الاتصال بـ {name}…",
+      "inCall": "في مكالمة مع {name}",
+      "unknownCaller": "مشارك",
+      "localVideo": "الكاميرا الخاصة بك",
+      "remoteVideo": "كاميرا الطرف الآخر",
+      "hubMissing": "عيّن NEXT_PUBLIC_SIGNALR_HUB_URL (أو NEXT_PUBLIC_VIDEO_HUB_URL) لتفعيل مكالمات الفيديو.",
+      "hubDisconnected": "اتصال الفيديو غير متصل",
+      "hubConnecting": "جاري الاتصال بخادم الفيديو…",
+      "noCallee": "تعذر تحديد المشارك الآخر في هذه المحادثة.",
+      "startError": "تعذر بدء مكالمة الفيديو",
+      "errors": {
+        "hubNotConnected": "تعذر الاتصال بخادم الفيديو. تحقق من تشغيل الـ API وحاول مرة أخرى.",
+        "hubNotConfigured": "رابط خادم الفيديو غير مُعدّ (NEXT_PUBLIC_VIDEO_HUB_URL).",
+        "missingRecipient": "تعذر تحديد المشارك الآخر في هذه المحادثة.",
+        "permissionDenied": "تم رفض إذن الكاميرا أو الميكروفون. اسمح بالوصول من إعدادات المتصفح ثم أعد المحاولة.",
+        "noDevice": "لم يتم العثور على كاميرا أو ميكروفون.",
+        "insecureContext": "الكاميرا والميكروفون يتطلبان HTTPS أو localhost.",
+        "cameraTimeout": "استغرقت الكاميرا وقتاً طويلاً للتشغيل. أغلق التطبيقات الأخرى التي تستخدم الكاميرا ثم أعد المحاولة.",
+        "cameraBusy": "قد تكون الكاميرا قيد الاستخدام من تطبيق أو تبويب آخر. أغلقه ثم أعد المحاولة."
+      }
+    }
   },
   "BasicData": {
     "page": {

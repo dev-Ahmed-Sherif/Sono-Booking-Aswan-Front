@@ -16,6 +16,7 @@ export type RoleColumn = {
 
 export function createColumns(
   showAuditColumns: boolean = false,
+  viewOnly: boolean = false,
 ): ColumnDef<RoleColumn>[] {
   const base: ColumnDef<RoleColumn>[] = [
     {
@@ -45,13 +46,15 @@ export function createColumns(
     },
   ];
 
+  const actionCol: ColumnDef<RoleColumn> = {
+    id: "actions",
+    cell: ({ row }) => <CellAction data={row.original} />,
+  };
+
   return [
     ...base,
     ...(showAuditColumns ? auditCols : []),
-    {
-      id: "actions",
-      cell: ({ row }) => <CellAction data={row.original} />,
-    },
+    ...(viewOnly ? [] : [actionCol]),
   ];
 }
 

@@ -10,9 +10,18 @@ export const chatConversationSchema = z
     lastMessagePreview: z.string().optional().nullable(),
     updatedAt: z.string().optional().nullable(),
     participantNames: z.array(z.string()).optional(),
+    participantUserIds: z.array(z.string()).optional(),
     unreadCount: z.number().optional(),
+    groupType: z.string().optional().nullable(),
+    requestId: z.string().optional().nullable(),
   })
   .passthrough();
+
+export const chatContactSchema = z.object({
+  userId: idString,
+  fullName: z.string(),
+  role: z.string(),
+});
 
 export const chatMessageSchema = z
   .object({
@@ -36,3 +45,4 @@ export const sendChatMessageSchema = z.object({
 
 export type ChatConversation = z.infer<typeof chatConversationSchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
+export type ChatContact = z.infer<typeof chatContactSchema>;

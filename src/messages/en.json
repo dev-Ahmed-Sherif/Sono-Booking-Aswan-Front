@@ -11,10 +11,24 @@
     "housingReceiver": "Housing Receiver",
     "housingSender": "Housing Sender",
     "settings": "Settings",
+    "permissions": "Permissions",
     "reports": "Reports",
     "welcome": "Welcome,",
     "accountFallback": "My account",
     "logout": "Log out"
+  },
+  "Notifications": {
+    "title": "Notifications",
+    "empty": "No notifications yet",
+    "markAllRead": "Mark all read",
+    "viewChat": "Open chat",
+    "types": {
+      "chat": "New message",
+      "request": "Housing request",
+      "reservation": "Reservation update",
+      "system": "System"
+    },
+    "fromSender": "From {name}"
   },
   "Chat": {
     "title": "Chat",
@@ -22,10 +36,14 @@
     "hubMissing": "Set NEXT_PUBLIC_SIGNALR_HUB_URL to enable the live connection (see chatApi.contract.ts). You can still use REST to send messages if the API supports it.",
     "realtimeOn": "Live connection: connected",
     "realtimeOff": "Live connection: disconnected — messages may still send via REST.",
+    "realtimeError": "Live connection failed: {error}",
     "conversations": "Conversations",
-    "participantPlaceholder": "Participant user ID(s)",
+    "availableContacts": "People you can message",
+    "startChat": "Start chat",
+    "noContacts": "No contacts available for your role.",
+    "loadContactsError": "Could not load contacts",
     "newChat": "New",
-    "emptyConversations": "No conversations yet. Add a participant ID to start.",
+    "emptyConversations": "No conversations yet. Choose someone below or tap New to start chatting.",
     "unnamedConversation": "Conversation",
     "selectConversation": "Messages",
     "selectConversationHint": "Choose a conversation from the list or start a new one.",
@@ -37,7 +55,62 @@
     "sendError": "Could not send",
     "participantRequired": "Enter at least one participant user ID.",
     "createConversationError": "Could not start conversation",
-    "conversationCreated": "Conversation opened"
+    "conversationCreated": "Conversation opened",
+    "backToList": "Back to conversations",
+    "online": "Online",
+    "offline": "Offline",
+    "partnerOnline": "Contact is online",
+    "partnerOffline": "Contact is offline",
+    "typing": "Type a message",
+    "you": "You",
+    "read": "Read",
+    "delivered": "Delivered",
+    "searchConversations": "Search conversations",
+    "newConversation": "Start conversation",
+    "requestGroupsTitle": "Request conversations",
+    "openRequestChat": "Open chat",
+    "requestGroupTypes": {
+      "owner-leader": "Request owner ↔ Leader",
+      "leader-reception": "Leader ↔ Reservation employee",
+      "owner-reception": "Request owner ↔ Reservation employee"
+    },
+    "roles": {
+      "User": "User",
+      "Leader": "Leader",
+      "ReceptionStaff": "Reception staff",
+      "Admin": "Admin",
+      "SuperAdmin": "Super admin"
+    },
+    "videoCall": {
+      "title": "Video call",
+      "subtitle": "1:1 video with the other participant",
+      "startVideoCall": "Start video call",
+      "startCall": "Start call",
+      "accept": "Accept",
+      "decline": "Decline",
+      "endCall": "End call",
+      "incoming": "Incoming call from {name}",
+      "calling": "Calling {name}…",
+      "inCall": "In call with {name}",
+      "unknownCaller": "participant",
+      "localVideo": "Your camera",
+      "remoteVideo": "Remote camera",
+      "hubMissing": "Set NEXT_PUBLIC_SIGNALR_HUB_URL (or NEXT_PUBLIC_VIDEO_HUB_URL) to enable video calls.",
+      "hubDisconnected": "Video hub disconnected",
+      "hubConnecting": "Connecting to video hub…",
+      "noCallee": "Could not determine the other participant for this conversation.",
+      "startError": "Could not start video call",
+      "errors": {
+        "hubNotConnected": "Could not connect to the video hub. Ensure the API is running and try again.",
+        "hubNotConfigured": "Video hub URL is not configured (NEXT_PUBLIC_VIDEO_HUB_URL).",
+        "missingRecipient": "Could not determine the other participant for this conversation.",
+        "permissionDenied": "Camera or microphone permission was denied. Allow access in browser settings and try again.",
+        "noDevice": "No camera or microphone was found.",
+        "insecureContext": "Camera and microphone require HTTPS or localhost.",
+        "cameraTimeout": "The camera took too long to start. Close other apps using the camera and try again.",
+        "cameraBusy": "The camera may be in use by another app or browser tab. Close it and try again."
+      }
+    }
   },
   "BasicData": {
     "page": {

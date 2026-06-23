@@ -1,9 +1,18 @@
-import { ChatView } from "@/components/chat/chat-view";
+import { ChatPageClient } from "@/components/chat/chat-page-client";
+
+
 
 type PageProps = {
+
   params: { locale: string };
+
 };
 
+
+
 export default function ChatPage({ params }: PageProps) {
-  return <ChatView locale={params.locale} />;
+
+  return <ChatPageClient locale={params.locale} />;
+
 }
+
