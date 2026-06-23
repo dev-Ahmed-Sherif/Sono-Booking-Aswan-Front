@@ -57,7 +57,7 @@ const Client = memo(({ data, path, viewOnly = false }: ClientProps) => {
       }
 
       if ("data" in result && Array.isArray(result.data)) {
-        setRows(result.data);
+        setRows(result.data as RoleColumn[]);
       } else {
         setRows([]);
       }

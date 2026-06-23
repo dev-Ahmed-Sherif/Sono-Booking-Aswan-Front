@@ -6,47 +6,95 @@
   - Environments: .env
 
    Creating an optimized production build ...
-node.exe : Browserslist: caniuse-lite is outdated. Please run:
-At line:1 char:1
-+ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (Browserslist: c...ed. Please run::String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-  npx update-browserslist-db@latest
-  Why you should do it regularly: https://github.com/browserslist/update-db#readme
  Γ£ô Compiled successfully
    Linting and checking validity of types ...
 
 ./src/components/basic-data/floating-unit-staff/floating-unit-staff-form.tsx
 415:6  Warning: React Hook useEffect has a missing dependency: 'setDelegateAttachment'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
 
+./src/components/bed/bed-form.tsx
+564:6  Warning: React Hook useEffect has a missing dependency: 'loadBedRecords'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
 ./src/components/inspections/inspection-clause/inspection-clause-form.tsx
 165:6  Warning: React Hook useMemo has an unnecessary dependency: 'isEdit'. Either exclude it or remove the dependency array.  react-hooks/exhaustive-deps
 
 ./src/components/layout/navbar.tsx
-327:6  Warning: React Hook React.useEffect has missing dependencies: 'nav' and 'user'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
-347:6  Warning: React Hook React.useEffect has a missing dependency: 'nav'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
-359:6  Warning: React Hook React.useEffect has a missing dependency: 'nav'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
-372:6  Warning: React Hook React.useEffect has a missing dependency: 'user'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+373:6  Warning: React Hook React.useEffect has a missing dependency: 'user'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+418:6  Warning: React Hook React.useEffect has a missing dependency: 'user'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/permissions/user/user-form.tsx
+107:6  Warning: React Hook useEffect has a missing dependency: 'initialData'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
 
 ./src/components/reservation/housing-request-detail-modal.tsx
-425:6  Warning: React Hook useCallback has a missing dependency: 'toast'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+577:6  Warning: React Hook useCallback has a missing dependency: 'toast'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
 
 ./src/components/room/room-form.tsx
 560:6  Warning: React Hook useEffect has a missing dependency: 'loadRoomRecords'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
 
 info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/basic-features/eslint#disabling-rules
-Failed to compile.
+   Collecting page data ...
+   Generating static pages (0/12) ...
+   Generating static pages (3/12) 
+   Generating static pages (6/12) 
+   Generating static pages (9/12) 
+ Γ£ô Generating static pages (12/12)
+   Finalizing page optimization ...
+   Collecting build traces ...
 
-./src/lib/availability-dates.ts:189:7
-Type error: Argument of type 'unknown' is not assignable to parameter of type 'string | undefined'.
+Route (app)                                                  Size     First Load JS
+Γöî Γùï /_not-found                                              879 B          88.2 kB
+Γö£ ╞Æ /[locale]                                                15.8 kB         264 kB
+Γö£ ╞Æ /[locale]/account                                        6.44 kB         266 kB
+Γö£ ╞Æ /[locale]/chat                                           1.51 kB        88.9 kB
+Γö£ ╞Æ /[locale]/dashboard                                      104 kB          272 kB
+Γö£ ╞Æ /[locale]/housing-receiver                               15.7 kB         203 kB
+Γö£ ╞Æ /[locale]/housing-sender                                 12.7 kB         263 kB
+Γö£ ╞Æ /[locale]/permissions                                    2.31 kB         145 kB
+Γö£ ╞Æ /[locale]/permissions/modules                            2.31 kB        91.5 kB
+Γö£ ╞Æ /[locale]/permissions/pages                              2.31 kB        91.5 kB
+Γö£ ╞Æ /[locale]/permissions/roles                              3.34 kB         134 kB
+Γö£ ╞Æ /[locale]/permissions/roles/[roleId]                     2.49 kB        91.6 kB
+Γö£ ╞Æ /[locale]/permissions/users                              3.03 kB         134 kB
+Γö£ ╞Æ /[locale]/permissions/users/[userId]                     10.8 kB         178 kB
+Γö£ ╞Æ /[locale]/register                                       2.93 kB         261 kB
+Γö£ ╞Æ /[locale]/reports                                        9.93 kB         197 kB
+Γö£ ╞Æ /[locale]/reservation                                    27.4 kB         308 kB
+Γö£ ╞Æ /[locale]/settings                                       187 B           141 kB
+Γö£ ╞Æ /[locale]/settings/allocation-types                      2.32 kB         138 kB
+Γö£ ╞Æ /[locale]/settings/allocation-types/[id]                 5.84 kB         151 kB
+Γö£ ╞Æ /[locale]/settings/allowed-day-before-reservations       2.06 kB         138 kB
+Γö£ ╞Æ /[locale]/settings/allowed-day-before-reservations/[id]  6.26 kB         151 kB
+Γö£ ╞Æ /[locale]/settings/apartment-types                       2.56 kB         138 kB
+Γö£ ╞Æ /[locale]/settings/apartment-types/[id]                  6.2 kB          151 kB
+Γö£ ╞Æ /[locale]/settings/governorates                          5.14 kB         141 kB
+Γö£ ╞Æ /[locale]/settings/governorates/[id]                     11.9 kB         186 kB
+Γö£ ╞Æ /[locale]/settings/payment-methods                       1.73 kB         138 kB
+Γö£ ╞Æ /[locale]/settings/payment-methods/[id]                  5.84 kB         151 kB
+Γö£ ╞Æ /[locale]/settings/relationships                         2.01 kB         138 kB
+Γö£ ╞Æ /[locale]/settings/relationships/[id]                    6.13 kB         151 kB
+Γö£ ╞Æ /[locale]/settings/request-types                         2.01 kB         138 kB
+Γö£ ╞Æ /[locale]/settings/request-types/[id]                    6.14 kB         151 kB
+Γö£ ╞Æ /[locale]/settings/room-types                            2.01 kB         138 kB
+Γö£ ╞Æ /[locale]/settings/room-types/[id]                       6.13 kB         151 kB
+Γö£ ╞Æ /[locale]/settings/unit-data                             2.82 kB         139 kB
+Γö£ ╞Æ /[locale]/settings/unit-data/[id]                        17.7 kB         243 kB
+Γö£ ╞Æ /api/accounts/update                                     0 B                0 B
+Γö£ ╞Æ /api/auth/check-session                                  0 B                0 B
+Γö£ ╞Æ /api/auth/refresh                                        0 B                0 B
+Γö£ ╞Æ /api/auth/set-session                                    0 B                0 B
+Γö£ ╞Æ /api/beds/update                                         0 B                0 B
+Γö£ ╞Æ /api/requests/add                                        0 B                0 B
+Γö£ ╞Æ /api/requests/update                                     0 B                0 B
+Γö£ ╞Æ /api/signalr/access-token                                0 B                0 B
+Γöö Γùï /manifest.webmanifest                                    0 B                0 B
++ First Load JS shared by all                                87.4 kB
+  Γö£ chunks/7023-7ff8a5f216ae8774.js                          31.7 kB
+  Γö£ chunks/fd9d1056-674f3da938aa6482.js                      53.6 kB
+  Γöö other shared chunks (total)                              2.01 kB
 
-[0m [90m 187 |[39m       rowEnd[33m,[39m[0m
-[0m [90m 188 |[39m       extraEnd[33m,[39m[0m
-[0m[31m[1m>[22m[39m[90m 189 |[39m       row[33m.[39mstatus [33m?[39m[33m?[39m 
-row[33m.[39m[33mStatus[39m[33m,[39m[0m
-[0m [90m     |[39m       [31m[1m^[22m[39m[0m
-[0m [90m 190 |[39m     )[33m;[39m[0m
-[0m [90m 191 |[39m   })[33m;[39m[0m
-[0m [90m 192 |[39m }[0m
+
+╞Æ Middleware                                                 40 kB
+
+Γùï  (Static)   prerendered as static content
+╞Æ  (Dynamic)  server-rendered on demand
+
