@@ -1,3 +1,4 @@
+
 export type RoleCandidates = {
   role?: unknown;
   roleName?: unknown;
@@ -104,23 +105,6 @@ export const canAccessHousingReceiverFromCandidates = (
   ].some(canAccessHousingReceiver);
 };
 
-/** Default route after login (or when revisiting the login page while authenticated). */
-export const getPostLoginPath = (locale: string, role: unknown): string => {
-  const base = `/${locale}`;
-  if (normalizeRole(role) === "user") {
-    return `${base}/reservation`;
-  }
-  if (canAccessHousingReceiver(role)) {
-    return `${base}/housing-receiver`;
-  }
-  if (
-    isSuperAdminRoleCandidates({ role }) ||
-    canAccessHousingSender(role)
-  ) {
-    return `${base}/dashboard`;
-  }
-  return `${base}/dashboard`;
-};
 
 /** Account page: hide basic profile + companions for staff / admin roles. */
 export const isAccountProfileAndCompanionsHidden = (
@@ -133,4 +117,3 @@ export const isAccountProfileAndCompanionsHidden = (
     canAccessHousingReceiverFromCandidates(candidates)
   );
 };
-

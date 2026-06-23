@@ -50,6 +50,14 @@ import {
   getStoredNavRoute,
   setStoredNavRoute,
 } from "@/lib/nav-storage";
+import {
+  buildStoredUserFromAuthDto,
+  unwrapAuthUserDto,
+} from "@/lib/auth-user";
+import {
+  getAllowedNavRoutes,
+  getFirstAllowedNavRoute,
+} from "@/lib/nav-routes";
 import { setLink } from "@/redux/navSiteReducer";
 import { setUserId, setOrganizationId, setRole } from "@/redux/userReducer";
 import {
@@ -57,13 +65,7 @@ import {
   guideCookieName,
   refreshTokenCookieName,
 } from "@/lib/auth-cookies";
-import {
-  canAccessHousingReceiverFromCandidates,
-  canAccessHousingSenderFromCandidates,
-  HOUSING_SENDER_ROLE,
-  isSuperAdminRoleCandidates,
-  type RoleCandidates,
-} from "@/lib/role-utils";
+import { type RoleCandidates } from "@/lib/role-utils";
 
 /** Avoids SSR + first client paint reading `localStorage` (hydration mismatch). */
 const useIsomorphicLayoutEffect =
@@ -432,19 +434,11 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
         console.error("Error getting user data:", result.message);
         return false;
       }
-      if (!result.data?.data) return false;
+      if (!result.data?.data && !unwrapAuthUserDto(result.data)) return false;
 
-      const d = result.data.data;
+      const d = unwrapAuthUserDto(result.data) ?? (result.data.data as Record<string, unknown>);
       const resolvedEmployeeId = d.employeeId ?? d.EmployeeId;
-      const stored = {
-        id: d.id,
-        name: d.name,
-        role: d.role,
-        organizationId: d.organizationId,
-        ...(resolvedEmployeeId != null && resolvedEmployeeId !== ""
-          ? { employeeId: resolvedEmployeeId }
-          : {}),
-      };
+      const stored = buildStoredUserFromAuthDto(d);
       user.setItem(stored);
       setStoredUserBrief(stored);
       dispatch(setUserId(d.id));
@@ -512,6 +506,20 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
     user,
   ]);
 
+  const navbarRoleCandidates = React.useMemo((): RoleCandidates => {
+    const fromRedux = String(role ?? "").trim();
+    const stored =
+      storedUserBrief !== "pending" && storedUserBrief ? storedUserBrief : null;
+    const fromStorage = stored ? String(stored.role ?? "").trim() : "";
+
+    return {
+      role: fromRedux || fromStorage || undefined,
+      roleName: stored?.roleName,
+      roleEn: stored?.roleEn,
+      roleAr: stored?.roleAr,
+    };
+  }, [role, storedUserBrief]);
+
   const areNavRoutesReady = React.useMemo(() => {
     if (storedUserBrief === "pending") return false;
 
@@ -532,132 +540,29 @@ const Navbar = ({ cookie, locale }: NavbarProps) => {
   const routes = React.useMemo(() => {
     if (!areNavRoutesReady) return [];
 
-    const allRoutes = [
-      {
-        id: 1,
-        href: `/${locale}/dashboard`,
-        label: tNav("dashboard"),
-        active: pathname === `/${locale}/dashboard`,
-      },
-      {
-        id: 2,
-        href: `/${locale}/reservation`,
-        label: tNav("reservation"),
-        active:
-          pathname === `/${locale}/reservation` ||
-          pathname.startsWith(`/${locale}/reservation/`),
-      },
-      {
-        id: 3,
-        href: `/${locale}/housing-receiver`,
-        label: tNav("housingReceiver"),
-        active: pathname === `/${locale}/housing-receiver`,
-      },
-      {
-        id: 4,
-        href: `/${locale}/housing-sender`,
-        label: tNav("housingSender"),
-        active: pathname === `/${locale}/housing-sender`,
-      },
-      {
-        id: 5,
-        href: `/${locale}/settings`,
-        label: tNav("settings"),
-        active:
-          pathname === `/${locale}/settings` ||
-          pathname.startsWith(`/${locale}/settings/`),
-      },
-      {
-        id: 6,
-        href: `/${locale}/reports`,
-        label: tNav("reports"),
-        active:
-          pathname === `/${locale}/reports` ||
-          pathname.startsWith(`/${locale}/reports/`),
-      },
-      {
-        id: 7,
-        href: `/${locale}/permissions`,
-        label: tNav("permissions"),
-        active:
-          pathname === `/${locale}/permissions` ||
-          pathname.startsWith(`/${locale}/permissions/`),
-      },
-    ];
-
-    const normalizedRole = effectiveRole;
-    const roleCandidates: RoleCandidates = {
-      role: normalizedRole || undefined,
-      ...(storedUserBrief !== "pending" && storedUserBrief
-        ? {
-            roleName: storedUserBrief.roleName,
-            roleEn: storedUserBrief.roleEn,
-            roleAr: storedUserBrief.roleAr,
-          }
-        : {}),
+    const labelByHref: Record<string, string> = {
+      [`/${locale}/dashboard`]: tNav("dashboard"),
+      [`/${locale}/reservation`]: tNav("reservation"),
+      [`/${locale}/housing-receiver`]: tNav("housingReceiver"),
+      [`/${locale}/housing-sender`]: tNav("housingSender"),
+      [`/${locale}/settings`]: tNav("settings"),
+      [`/${locale}/reports`]: tNav("reports"),
+      [`/${locale}/permissions`]: tNav("permissions"),
     };
 
-    const canAccessReports =
-      isSuperAdminRoleCandidates(roleCandidates) ||
-      canAccessHousingSenderFromCandidates(roleCandidates);
+    return getAllowedNavRoutes(locale, navbarRoleCandidates).map((route) => ({
+      id: route.id,
+      href: route.href,
+      label: labelByHref[route.href] ?? route.href,
+      active:
+        pathname === route.href || pathname.startsWith(`${route.href}/`),
+    }));
+  }, [areNavRoutesReady, locale, navbarRoleCandidates, pathname, tNav]);
 
-    const canAccessPermissions = isSuperAdminRoleCandidates(roleCandidates);
-
-    if (normalizedRole === "user") {
-      return allRoutes.filter(
-        (route) => route.href === `/${locale}/reservation`,
-      );
-    }
-    if (normalizedRole === HOUSING_SENDER_ROLE) {
-      return allRoutes.filter(
-        (route) =>
-          route.href === `/${locale}/dashboard` ||
-          route.href === `/${locale}/housing-sender` ||
-          route.href === `/${locale}/reports`,
-      );
-    }
-    if (canAccessHousingReceiverFromCandidates(roleCandidates)) {
-      return allRoutes.filter(
-        (route) => route.href === `/${locale}/housing-receiver`,
-      );
-    }
-
-    return allRoutes.filter((route) => {
-      if (route.href === `/${locale}/housing-sender`) {
-        return canAccessHousingSenderFromCandidates(roleCandidates);
-      }
-      if (route.href === `/${locale}/housing-receiver`) {
-        return canAccessHousingReceiverFromCandidates(roleCandidates);
-      }
-      if (route.href === `/${locale}/reports`) {
-        return canAccessReports;
-      }
-      if (route.href === `/${locale}/permissions`) {
-        return canAccessPermissions;
-      }
-      return true;
-    });
-  }, [areNavRoutesReady, locale, pathname, effectiveRole, storedUserBrief, tNav]);
-
-  const navHomeHref = React.useMemo(() => {
-    if (effectiveRole === "user") {
-      return `/${locale}/reservation`;
-    }
-    const roleCandidates: RoleCandidates = {
-      role: effectiveRole || undefined,
-      ...(storedUserBrief !== "pending" && storedUserBrief
-        ? {
-            roleName: storedUserBrief.roleName,
-            roleEn: storedUserBrief.roleEn,
-            roleAr: storedUserBrief.roleAr,
-          }
-        : {}),
-    };
-    if (canAccessHousingReceiverFromCandidates(roleCandidates)) {
-      return `/${locale}/housing-receiver`;
-    }
-    return `/${locale}/dashboard`;
-  }, [effectiveRole, storedUserBrief, locale]);
+  const navHomeHref = React.useMemo(
+    () => getFirstAllowedNavRoute(locale, navbarRoleCandidates),
+    [locale, navbarRoleCandidates],
+  );
 
   // Keep active tab in sync with current pathname and persist per user
   React.useEffect(() => {

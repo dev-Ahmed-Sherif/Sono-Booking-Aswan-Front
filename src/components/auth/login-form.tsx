@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -89,7 +89,15 @@ import {
   orderedUnitKindsFromSelection,
   toReservationStoredUnits,
 } from "@/lib/availability-inquiry";
-import { getPostLoginPath } from "@/lib/role-utils";
+import {
+  getFirstAllowedNavRoute,
+  isAllowedNavRoute,
+} from "@/lib/nav-routes";
+import {
+  buildStoredUserFromAuthDto,
+  roleCandidatesFromAuthUser,
+  unwrapAuthUserDto,
+} from "@/lib/auth-user";
 import {
   clearStoredNavRoute,
   getStoredNavRoute,
@@ -301,18 +309,19 @@ function hasAccessCookieValue(cookie: LoginFormProps["Cookie"]): boolean {
 
 function resolvePostAuthRedirectPath(
   locale: string,
-  user: ReturnType<typeof useLocalStorage>,
+  authUser: Record<string, unknown> | null | undefined,
 ): string {
-  const storedUser = user.getItem() as { id?: string; role?: unknown } | undefined;
-  const userId = String(storedUser?.id ?? "").trim();
-  const role = storedUser?.role;
+  const roleCandidates = roleCandidatesFromAuthUser(authUser);
+  const userId = String(authUser?.id ?? authUser?.Id ?? "").trim();
 
   if (userId) {
     const savedPath = getStoredNavRoute(userId);
-    if (savedPath) return savedPath;
+    if (savedPath && isAllowedNavRoute(locale, roleCandidates, savedPath)) {
+      return savedPath;
+    }
   }
 
-  return getPostLoginPath(locale, role);
+  return getFirstAllowedNavRoute(locale, roleCandidates);
 }
 
 function LoginBlockingOverlay({
@@ -381,6 +390,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
   const [isRedirecting, setIsRedirecting] = useState(hasAccessCookie);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const loginRedirectInProgressRef = useRef(false);
 
   // Availability check state
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
@@ -431,9 +441,10 @@ export function LoginForm({ Cookie }: LoginFormProps) {
     defaultValues: { email: "" },
   });
 
-  // Redirect immediately if already logged in — keep overlay, never show login form
+  // Redirect immediately if already logged in — hydrate user first, then route
   useEffect(() => {
     if (!hasAccessCookie || typeof window === "undefined") return;
+    if (loginRedirectInProgressRef.current) return;
 
     const currentPath = window.location.pathname;
     const isLoginPage =
@@ -443,10 +454,60 @@ export function LoginForm({ Cookie }: LoginFormProps) {
       currentPath === "/en";
     if (!isLoginPage) return;
 
+    let cancelled = false;
     setIsRedirecting(true);
-    const redirectPath = resolvePostAuthRedirectPath(locale, user);
-    window.location.replace(redirectPath);
-  }, [hasAccessCookie, locale, user]);
+
+    void (async () => {
+      try {
+        let authUser = user.getItem() as Record<string, unknown> | undefined;
+        const hasRole = Boolean(
+          authUser?.role ??
+            authUser?.Role ??
+            authUser?.roleName ??
+            authUser?.RoleName,
+        );
+
+        if (!authUser?.id || !hasRole) {
+          const result = await getUserData();
+          if (result?.error) {
+            throw new Error(result.message || "Failed to load user profile");
+          }
+          const userData = unwrapAuthUserDto(result?.data ?? result);
+          if (userData) {
+            authUser = buildStoredUserFromAuthDto(userData);
+            user.setItem(authUser);
+            const id = String(authUser.id ?? "").trim();
+            const role = authUser.role;
+            if (id) {
+              dispatch(setUserId(id));
+              dispatch(setOrganizationId(String(authUser.organizationId ?? "")));
+              dispatch(setRole(String(role ?? "")));
+              dispatch(setGovernorateId(String(authUser.governorateId ?? "")));
+            }
+          }
+        }
+
+        if (cancelled) return;
+
+        const redirectPath = resolvePostAuthRedirectPath(locale, authUser);
+        const userId = String(authUser?.id ?? authUser?.Id ?? "").trim();
+        if (userId) {
+          setStoredNavRoute(userId, redirectPath);
+        }
+        loginRedirectInProgressRef.current = true;
+        window.location.replace(redirectPath);
+      } catch (error) {
+        console.error("Post-auth redirect failed:", error);
+        if (!cancelled) {
+          setIsRedirecting(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatch, hasAccessCookie, locale, user]);
 
   // Clear user state on mount when not authenticated
   useEffect(() => {
@@ -812,7 +873,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
 
           try {
             const result = await getUserData();
-            if (result.error) {
+            if (result?.error) {
               setIsLoggingIn(false);
               toast({
                 variant: "destructive",
@@ -821,31 +882,36 @@ export function LoginForm({ Cookie }: LoginFormProps) {
               });
               return;
             }
-            if (!result.data?.data) {
+
+            const userData = unwrapAuthUserDto(result?.data ?? result);
+            if (!userData) {
               setIsLoggingIn(false);
+              toast({
+                variant: "destructive",
+                title: "خطأ",
+                description: "تعذر قراءة بيانات المستخدم بعد تسجيل الدخول",
+              });
               return;
             }
 
-            const {
-              id,
-              role,
-              name,
-              organizationId,
-              governorateId,
-              employeeId,
-              EmployeeId,
-            } = result.data.data;
-            const resolvedEmployeeId = employeeId ?? EmployeeId;
+            const id = userData.id ?? userData.Id;
+            const role = userData.role ?? userData.Role;
+            const organizationId =
+              userData.organizationId ?? userData.OrganizationId;
+            const governorateId =
+              userData.governorateId ?? userData.GovernorateId;
+            const roleCandidates = roleCandidatesFromAuthUser(userData);
+            const storedUser = buildStoredUserFromAuthDto(userData);
+            const userId = String(id ?? "").trim();
 
-            if (id != null && String(id).trim()) {
-              const guideId = String(id).trim();
+            if (userId) {
               setClientCookie(
                 guideCookieName(),
-                guideId,
+                userId,
                 process.env.NEXT_PUBLIC_REFRESH_GUDIE_LIFE ?? "",
               );
               const guideReady = await waitForClientCookieValues([
-                { name: guideCookieName(), value: guideId },
+                { name: guideCookieName(), value: userId },
               ]);
               if (!guideReady) {
                 console.warn(
@@ -855,23 +921,18 @@ export function LoginForm({ Cookie }: LoginFormProps) {
               }
             }
 
-            user.setItem({
-              id,
-              role,
-              name,
-              organizationId: organizationId ?? "",
-              governorateId: governorateId ?? "",
-              ...(resolvedEmployeeId != null && resolvedEmployeeId !== ""
-                ? { employeeId: resolvedEmployeeId }
-                : {}),
-            });
-            dispatch(setUserId(id));
-            dispatch(setOrganizationId(organizationId));
-            dispatch(setRole(role));
-            dispatch(setGovernorateId(governorateId ?? ""));
-            const targetRoute = getPostLoginPath(locale, role);
+            user.setItem(storedUser);
+            dispatch(setUserId(userId));
+            dispatch(setOrganizationId(String(organizationId ?? "")));
+            dispatch(setRole(String(role ?? "")));
+            dispatch(setGovernorateId(String(governorateId ?? "")));
+
+            const targetRoute = getFirstAllowedNavRoute(locale, roleCandidates);
             clearStoredNavRoute();
-            setStoredNavRoute(String(id), targetRoute);
+            if (userId) {
+              setStoredNavRoute(userId, targetRoute);
+            }
+            loginRedirectInProgressRef.current = true;
             window.location.replace(targetRoute);
           } catch (err) {
             setIsLoggingIn(false);

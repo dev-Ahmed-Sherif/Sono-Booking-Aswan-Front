@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { useEffectiveRole } from "@/hooks/use-effective-role";
-import { getPostLoginPath } from "@/lib/role-utils";
+import { getPostLoginPath } from "@/lib/nav-routes";
 
 type UseRequireRoleOptions = {
   /** When true, redirects unauthorized users away from the page. */
@@ -19,13 +19,13 @@ export function useRequireRole({ allowed }: UseRequireRoleOptions) {
   const router = useRouter();
   const params = useParams();
   const locale = (params?.locale as string) || "ar";
-  const { effectiveRole, isRoleReady } = useEffectiveRole();
+  const { effectiveRole, roleCandidates, isRoleReady } = useEffectiveRole();
 
   useEffect(() => {
     if (!isRoleReady || allowed) return;
 
-    router.replace(getPostLoginPath(locale, effectiveRole));
-  }, [allowed, effectiveRole, isRoleReady, locale, router]);
+    router.replace(getPostLoginPath(locale, roleCandidates));
+  }, [allowed, isRoleReady, locale, roleCandidates, router]);
 
   return { effectiveRole, isRoleReady, allowed: !isRoleReady || allowed };
 }

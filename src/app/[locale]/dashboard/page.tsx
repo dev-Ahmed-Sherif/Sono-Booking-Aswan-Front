@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { getGovernorDashboardSummary } from "@/actions/dashboardService";
 import {
   parseGovernorDashboardResponse,
@@ -23,6 +24,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useTablePagination } from "@/hooks/use-table-pagination";
+import { useEffectiveRole } from "@/hooks/use-effective-role";
+import {
+  getAllowedNavRoutes,
+  getFirstAllowedNavRoute,
+} from "@/lib/nav-routes";
 
 type KpiItem = { label: string; value: string };
 
@@ -35,6 +41,11 @@ const emptyKpiItems: KpiItem[] = [
 ];
 
 const DashboardPage = () => {
+  const router = useRouter();
+  const params = useParams();
+  const locale = (params?.locale as string) || "ar";
+  const { roleCandidates, isRoleReady } = useEffectiveRole();
+
   const [kpiItems, setKpiItems] = useState<KpiItem[]>(emptyKpiItems);
   const [occupancyData, setOccupancyData] = useState<ApartmentOccupancyItem[]>(
     [],
@@ -77,6 +88,15 @@ const DashboardPage = () => {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!isRoleReady) return;
+    const dashboardHref = `/${locale}/dashboard`;
+    const allowedRoutes = getAllowedNavRoutes(locale, roleCandidates);
+    if (!allowedRoutes.some((route) => route.href === dashboardHref)) {
+      router.replace(getFirstAllowedNavRoute(locale, roleCandidates));
+    }
+  }, [isRoleReady, locale, roleCandidates, router]);
 
   useEffect(() => {
     void loadDashboard();
