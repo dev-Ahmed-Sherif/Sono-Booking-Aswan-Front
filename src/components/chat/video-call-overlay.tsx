@@ -136,7 +136,9 @@ export function VideoCallOverlay({
             )}
 
             {mediaError && (
-              <p className="mb-3 text-center text-xs text-red-300">{mediaError}</p>
+              <p className="mb-3 text-center text-xs text-red-300">
+                {mediaError}
+              </p>
             )}
 
             {connectionError && (
