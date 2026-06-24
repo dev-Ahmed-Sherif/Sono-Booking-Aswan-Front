@@ -44,6 +44,7 @@ import {
 } from "@/actions/settings/bedService";
 import { submitUpdateBedFormData } from "@/lib/bed-multipart-client";
 import { getRooms } from "@/actions/settings/roomService";
+import { getApartmentById } from "@/actions/settings/apartmentService";
 import { DataTable } from "@/components/ui/data-table";
 import { getFullFileUrl } from "@/lib/file-viewer";
 import {
@@ -57,7 +58,9 @@ import {
 } from "@/lib/unit-image-constraints";
 import { localizeUnitStatus, toArabicDigits } from "@/lib/unit-format";
 import { mapApiBedToFormDefaults } from "@/lib/bed-form-map";
+import { mapApiApartmentSummary } from "@/lib/apartment-summary";
 import CellAction from "@/components/bed/cell-action";
+import UnitRecordsApartmentHeader from "@/components/unit-data/unit-records-apartment-header";
 
 function basename(path: string): string {
   const p = path.replace(/\\/g, "/");
@@ -84,6 +87,7 @@ type BedFormProps = {
 type BedRecordRow = {
   id: string;
   bedNumber: string;
+  roomNumber: string;
   dimensions: string;
   status: string;
   roomId: string;
@@ -99,6 +103,14 @@ function buildBedRecordColumns(
       accessorKey: "bedNumber",
       header: "رقم السرير",
       cell: ({ row }) => toArabicDigits(row.original.bedNumber),
+    },
+    {
+      accessorKey: "roomNumber",
+      header: "رقم الغرفة",
+      cell: ({ row }) => {
+        const roomNumber = row.original.roomNumber?.trim();
+        return roomNumber ? toArabicDigits(roomNumber) : "-";
+      },
     },
     {
       accessorKey: "dimensions",
@@ -169,6 +181,10 @@ export default function BedForm({
   const [roomOptions, setRoomOptions] = useState<
     Array<{ id: string; roomNumber: string; apartmentId: string }>
   >([]);
+  const [apartmentSummary, setApartmentSummary] = useState({
+    apartmentNumber: "",
+    genderLabel: "",
+  });
   const currentId =
     typeof (defaultValues as Record<string, unknown> | undefined)?.id ===
     "string"
@@ -313,6 +329,7 @@ export default function BedForm({
   const loadBedRecords = async () => {
     try {
       setRecordsLoading(true);
+      const roomNumberById: Record<string, string> = {};
       let apartmentRoomIds = new Set<string>();
       if (routeApartmentId) {
         const roomsResult = await getRooms(routeApartmentId, {
@@ -322,15 +339,18 @@ export default function BedForm({
           const roomsRaw =
             (roomsResult as { data?: unknown }).data ?? roomsResult;
           const roomsList = Array.isArray(roomsRaw) ? roomsRaw : [];
-          apartmentRoomIds = new Set(
-            roomsList
-              .filter(
-                (item): item is Record<string, unknown> =>
-                  item != null && typeof item === "object",
-              )
-              .map((item) => String(item.id ?? item.Id ?? "").trim())
-              .filter(Boolean),
-          );
+          for (const item of roomsList) {
+            if (item == null || typeof item !== "object") continue;
+            const row = item as Record<string, unknown>;
+            const id = String(row.id ?? row.Id ?? "").trim();
+            const roomNumber = String(
+              row.roomNumber ?? row.RoomNumber ?? "",
+            ).trim();
+            if (id) {
+              apartmentRoomIds.add(id);
+              if (roomNumber) roomNumberById[id] = roomNumber;
+            }
+          }
         }
       }
 
@@ -343,13 +363,17 @@ export default function BedForm({
           (item): item is Record<string, unknown> =>
             item != null && typeof item === "object",
         )
-        .map((item) => ({
-          id: String(item.id ?? item.Id ?? "").trim(),
-          bedNumber: String(item.bedNumber ?? item.BedNumber ?? "").trim(),
-          dimensions: String(item.dimensions ?? item.Dimensions ?? "").trim(),
-          status: String(item.status ?? item.Status ?? "").trim(),
-          roomId: String(item.roomId ?? item.RoomId ?? "").trim(),
-        }))
+        .map((item) => {
+          const roomId = String(item.roomId ?? item.RoomId ?? "").trim();
+          return {
+            id: String(item.id ?? item.Id ?? "").trim(),
+            bedNumber: String(item.bedNumber ?? item.BedNumber ?? "").trim(),
+            roomNumber: roomNumberById[roomId] ?? "",
+            dimensions: String(item.dimensions ?? item.Dimensions ?? "").trim(),
+            status: String(item.status ?? item.Status ?? "").trim(),
+            roomId,
+          };
+        })
         .filter((item) => item.id && item.bedNumber)
         .filter((item) =>
           routeApartmentId ? apartmentRoomIds.has(item.roomId) : true,
@@ -562,6 +586,26 @@ export default function BedForm({
   useEffect(() => {
     void loadBedRecords();
   }, []);
+
+  useEffect(() => {
+    if (!routeApartmentId) return;
+
+    let cancelled = false;
+    const loadApartmentSummary = async () => {
+      const result = await getApartmentById(routeApartmentId);
+      if (cancelled || (result as { error?: string })?.error) return;
+
+      const raw = (result as { data?: unknown }).data ?? result;
+      if (!raw || typeof raw !== "object") return;
+
+      setApartmentSummary(mapApiApartmentSummary(raw as Record<string, unknown>));
+    };
+
+    void loadApartmentSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [routeApartmentId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1154,6 +1198,10 @@ export default function BedForm({
             <h3 className="mb-2 text-base font-semibold text-center">
               قائمة الأسرة
             </h3>
+            <UnitRecordsApartmentHeader
+              apartmentNumber={apartmentSummary.apartmentNumber}
+              genderLabel={apartmentSummary.genderLabel}
+            />
             {recordsLoading || editLoading ? (
               <p className="text-center text-sm text-muted-foreground py-4">
                 جاري تحميل البيانات...

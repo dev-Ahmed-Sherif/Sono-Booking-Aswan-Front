@@ -7,6 +7,7 @@ export type ApartmentColumn = {
   id: string;
   apartmentNumber: string;
   roomsCount: number;
+  bedsCount: number;
   status: string;
   allocation: string;
   allocationType: string;
@@ -15,6 +16,7 @@ export type ApartmentColumn = {
 export const columns: ColumnDef<ApartmentColumn>[] = [
   { accessorKey: "apartmentNumber", header: "رقم الشقة" },
   { accessorKey: "roomsCount", header: "عدد الغرف" },
+  { accessorKey: "bedsCount", header: "عدد الأسرة" },
   { accessorKey: "status", header: "الحالة" },
   { accessorKey: "allocation", header: "التخصيص" },
   { accessorKey: "allocationType", header: "نوع التخصيص" },

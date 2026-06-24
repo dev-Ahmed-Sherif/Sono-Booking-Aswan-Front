@@ -4,6 +4,7 @@ import { ColumnDef } from "@tanstack/react-table";
 
 import CellAction from "@/components/settings/unit-data/cell-action";
 import { formatUtcToCairo } from "@/lib/date-timeOptions";
+import { toArabicDigits } from "@/lib/unit-format";
 
 /** Mirrors `ApartmentDto` for table rows (camelCase JSON + optional PascalCase from API). Address fields (Street–DetailedAddress) are not shown in columns per product rule. */
 export type ApartmentColumn = {
@@ -42,6 +43,10 @@ export type ApartmentColumn = {
   ModifiedAt?: string | null;
   modifiedBy?: string;
   ModifiedBy?: string;
+  roomsCount?: number;
+  RoomsCount?: number;
+  bedsCount?: number;
+  BedsCount?: number;
 };
 
 function rowRecord(row: ApartmentColumn): Record<string, unknown> {
@@ -166,6 +171,12 @@ function truncateText(text: string, maxLen: number): string {
   return `${t.slice(0, maxLen)}…`;
 }
 
+function formatCount(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "-";
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? toArabicDigits(n) : "-";
+}
+
 /** Audit columns are included here; `DataTable` hides them for users who are not Super Admin. */
 export function createColumns(): ColumnDef<ApartmentColumn>[] {
   const base: ColumnDef<ApartmentColumn>[] = [
@@ -179,6 +190,21 @@ export function createColumns(): ColumnDef<ApartmentColumn>[] {
           pick<string>(row.original, ["apartmentNumber", "ApartmentNumber"]) ??
             "",
         ),
+    },
+    {
+      id: "roomsCount",
+      accessorFn: (row) =>
+        pick<number>(row, ["roomsCount", "RoomsCount"]) ?? 0,
+      header: "عدد الغرف",
+      cell: ({ row }) =>
+        formatCount(pick(row.original, ["roomsCount", "RoomsCount"])),
+    },
+    {
+      id: "bedsCount",
+      accessorFn: (row) => pick<number>(row, ["bedsCount", "BedsCount"]) ?? 0,
+      header: "عدد الأسرة",
+      cell: ({ row }) =>
+        formatCount(pick(row.original, ["bedsCount", "BedsCount"])),
     },
     {
       accessorKey: "description",

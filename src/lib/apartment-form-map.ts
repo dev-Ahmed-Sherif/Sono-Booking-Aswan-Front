@@ -26,12 +26,7 @@ function boolFromAttachmentLike(item: unknown): boolean {
 function idFromAttachmentLike(item: unknown): string {
   if (item && typeof item === "object" && !Array.isArray(item)) {
     const o = item as Record<string, unknown>;
-    for (const k of [
-      "id",
-      "Id",
-      "unitImageId",
-      "UnitImageId",
-    ] as const) {
+    for (const k of ["id", "Id", "unitImageId", "UnitImageId"] as const) {
       const v = o[k];
       if (typeof v === "string" && v.trim()) return v.trim();
       if (typeof v === "number" && Number.isFinite(v)) return String(v);
@@ -113,7 +108,8 @@ export function extractApartmentImagesFromApi(
 function pickStr(record: Record<string, unknown>, keys: string[]): string {
   for (const k of keys) {
     const v = record[k];
-    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+    if (v !== undefined && v !== null && String(v).trim() !== "")
+      return String(v).trim();
   }
   return "";
 }
@@ -124,7 +120,8 @@ function normalizeEnumToFormValue(
   kind: "unitStatus" | "gender" | "allocationType",
 ): string {
   if (value === null || value === undefined) return "";
-  if (typeof value === "number" && Number.isFinite(value)) return String(Math.trunc(value));
+  if (typeof value === "number" && Number.isFinite(value))
+    return String(Math.trunc(value));
   const s = String(value).trim();
   if (/^\d+$/.test(s)) return s;
 
@@ -145,8 +142,8 @@ function normalizeEnumToFormValue(
       Female: "2",
       MALE: "1",
       FEMALE: "2",
-      ذكر: "ذكر",
-      أنثى: "أنثى",
+      ذكر: "رجال",
+      أنثى: "سيدات",
       رجال: "رجال",
       سيدات: "سيدات",
     },
@@ -183,7 +180,10 @@ export function mapApiApartmentToFormDefaults(
         ? Number(priceRaw)
         : NaN;
 
-  const status = normalizeEnumToFormValue(api.status ?? api.Status, "unitStatus");
+  const status = normalizeEnumToFormValue(
+    api.status ?? api.Status,
+    "unitStatus",
+  );
   const gender = normalizeEnumToFormValue(api.gender ?? api.Gender, "gender");
   const allocationType = normalizeEnumToFormValue(
     api.allocationType ?? api.AllocationType,

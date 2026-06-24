@@ -3,7 +3,14 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { getApartments } from "@/actions/settings/apartmentService";
+import { getBeds } from "@/actions/settings/bedService";
+import { getRooms } from "@/actions/settings/roomService";
 import type { ApartmentColumn } from "@/components/settings/unit-data/columns";
+import {
+  buildApartmentUnitCounts,
+  resolveApartmentUnitCounts,
+  rowsFromServiceList,
+} from "@/lib/apartment-unit-counts";
 
 const UnitDataClient = dynamic(
   () => import("@/components/settings/unit-data/client"),
@@ -18,9 +25,19 @@ const UnitDataPage = async ({ params }: UnitDataPageProps) => {
   const { locale } = params;
 
   let data: ApartmentColumn[] | null = null;
-  const result = await getApartments();
-  if (result && !(result as { error?: string }).error) {
-    const raw = (result as { data?: unknown }).data ?? result;
+  const [apartmentsResult, roomsResult, bedsResult] = await Promise.all([
+    getApartments(),
+    getRooms(undefined, { allStatuses: true }),
+    getBeds(undefined, { allStatuses: true }),
+  ]);
+
+  const unitCounts = buildApartmentUnitCounts(
+    rowsFromServiceList(roomsResult),
+    rowsFromServiceList(bedsResult),
+  );
+
+  if (apartmentsResult && !(apartmentsResult as { error?: string }).error) {
+    const raw = (apartmentsResult as { data?: unknown }).data ?? apartmentsResult;
     if (Array.isArray(raw)) {
       data = raw
         .filter(
@@ -29,7 +46,11 @@ const UnitDataPage = async ({ params }: UnitDataPageProps) => {
         )
         .map((item) => {
           const id = String(item.id ?? item.Id ?? "").trim();
-          return { ...item, id } as ApartmentColumn;
+          const { roomsCount, bedsCount } = resolveApartmentUnitCounts(
+            item,
+            unitCounts,
+          );
+          return { ...item, id, roomsCount, bedsCount } as ApartmentColumn;
         })
         .filter((row) => row.id);
     }

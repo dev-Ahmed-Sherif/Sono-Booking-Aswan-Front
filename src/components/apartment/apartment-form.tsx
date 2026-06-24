@@ -55,6 +55,7 @@ import {
   MAX_NEW_IMAGES,
   filterUnitImageFiles,
 } from "@/lib/unit-image-constraints";
+import { formatHousingGenderLabel } from "@/lib/housing-gender-label";
 
 function basename(path: string): string {
   const p = path.replace(/\\/g, "/");
@@ -408,7 +409,10 @@ export default function ApartmentForm({
     const matchedById = genderOptions.some((item) => item.id === currentGender);
     if (matchedById) return;
     const matchedByName = genderOptions.find(
-      (item) => item.nameAr === currentGender,
+      (item) =>
+        item.nameAr === currentGender ||
+        item.nameEn === currentGender ||
+        formatHousingGenderLabel(item.nameAr, item.nameEn) === currentGender,
     );
     if (matchedByName) {
       form.setValue("gender", matchedByName.id, {
@@ -712,7 +716,7 @@ export default function ApartmentForm({
                         className="text-right"
                         value={option.id}
                       >
-                        {option.nameAr}
+                        {formatHousingGenderLabel(option.nameAr, option.nameEn)}
                       </SelectItem>
                     ))}
                   </SelectContent>

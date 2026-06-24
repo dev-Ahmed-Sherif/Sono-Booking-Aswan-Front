@@ -42,7 +42,10 @@ import {
   softDeleteRoomById,
   updateRoomById,
 } from "@/actions/settings/roomService";
+import { getBeds } from "@/actions/settings/bedService";
 import { getRoomTypes } from "@/actions/settings/roomTypeService";
+import { getApartmentTypes } from "@/actions/settings/apartmentTypeService";
+import { getApartmentById } from "@/actions/settings/apartmentService";
 import { DataTable } from "@/components/ui/data-table";
 import { getFullFileUrl } from "@/lib/file-viewer";
 import {
@@ -56,7 +59,19 @@ import {
 } from "@/lib/unit-image-constraints";
 import { localizeUnitStatus, toArabicDigits } from "@/lib/unit-format";
 import { mapApiRoomToFormDefaults } from "@/lib/room-form-map";
+import {
+  checkApartmentRoomAddLimit,
+  formatApartmentTypeRoomLimitMessage,
+  resolveApartmentRoomLimit,
+} from "@/lib/apartment-type-room-limit";
+import {
+  buildRoomBedCounts,
+  resolveRoomBedCount,
+  rowsFromServiceList,
+} from "@/lib/apartment-unit-counts";
 import CellAction from "@/components/room/cell-action";
+import UnitRecordsApartmentHeader from "@/components/unit-data/unit-records-apartment-header";
+import { mapApiApartmentSummary } from "@/lib/apartment-summary";
 
 function basename(path: string): string {
   const p = path.replace(/\\/g, "/");
@@ -76,6 +91,9 @@ type RoomTypeOption = LookupOption;
 type RoomFormProps = {
   defaultValues?: Partial<RoomFormValues>;
   statusOptions?: LookupOption[];
+  apartmentTypeOptions?: LookupOption[];
+  apartmentTypeId?: string;
+  apartmentRefreshKey?: number;
   onSubmit?: (values: RoomFormValues) => void | Promise<void>;
   /** When true, hides the records table at the bottom (used inside the edit modal). */
   hideRecordsTable?: boolean;
@@ -84,6 +102,7 @@ type RoomFormProps = {
 type RoomRecordRow = {
   id: string;
   roomNumber: string;
+  bedsCount: number;
   price: string;
   status: string;
   roomTypeId: string;
@@ -101,6 +120,11 @@ function buildRoomRecordColumns(
       accessorKey: "roomNumber",
       header: "رقم الغرفة",
       cell: ({ row }) => toArabicDigits(row.original.roomNumber),
+    },
+    {
+      accessorKey: "bedsCount",
+      header: "عدد الأسرة",
+      cell: ({ row }) => toArabicDigits(row.original.bedsCount),
     },
     {
       accessorKey: "roomType",
@@ -130,7 +154,7 @@ function buildRoomRecordColumns(
           data={{
             id: row.original.id,
             roomNumber: row.original.roomNumber,
-            bedsCount: 0,
+            bedsCount: row.original.bedsCount,
             status: row.original.status,
           }}
           onEdit={onEdit}
@@ -149,6 +173,9 @@ export default function RoomForm({
     { id: "2", nameAr: "محجوز", nameEn: "Reserved" },
     { id: "3", nameAr: "مشغول", nameEn: "Occupied" },
   ],
+  apartmentTypeOptions = [],
+  apartmentTypeId: apartmentTypeIdProp,
+  apartmentRefreshKey = 0,
   onSubmit,
   hideRecordsTable = false,
 }: RoomFormProps) {
@@ -174,6 +201,17 @@ export default function RoomForm({
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [roomRecords, setRoomRecords] = useState<RoomRecordRow[]>([]);
   const [roomTypeOptions, setRoomTypeOptions] = useState<RoomTypeOption[]>([]);
+  const [localApartmentTypeOptions, setLocalApartmentTypeOptions] = useState<
+    LookupOption[]
+  >([]);
+  const [apartmentRow, setApartmentRow] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [apartmentSummary, setApartmentSummary] = useState({
+    apartmentNumber: "",
+    genderLabel: "",
+  });
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [editDefaults, setEditDefaults] = useState<
@@ -318,13 +356,116 @@ export default function RoomForm({
     }
   }, [form, statusOptions]);
 
-  const loadRoomRecords = async (): Promise<RoomRecordRow[]> => {
-    try {
-      setRecordsLoading(true);
-      const result = await getRooms(routeUnitDataId, { allStatuses: true });
-      if ((result as { error?: string })?.error) return [];
+  const mergedApartmentTypeOptions = useMemo(() => {
+    const byId = new Map<string, LookupOption>();
+    for (const option of [...apartmentTypeOptions, ...localApartmentTypeOptions]) {
+      if (!option.id) continue;
+      const existing = byId.get(option.id);
+      byId.set(option.id, {
+        id: option.id,
+        nameAr: option.nameAr || existing?.nameAr || "",
+        nameEn: option.nameEn || existing?.nameEn,
+      });
+    }
+    return Array.from(byId.values());
+  }, [apartmentTypeOptions, localApartmentTypeOptions]);
+
+  const apartmentRoomLimit = useMemo(() => {
+    const fromApartment = resolveApartmentRoomLimit(
+      apartmentRow,
+      mergedApartmentTypeOptions,
+    );
+    if (fromApartment.maxRooms != null) return fromApartment;
+
+    const typeRef = String(apartmentTypeIdProp ?? "").trim();
+    if (!typeRef) return fromApartment;
+
+    return resolveApartmentRoomLimit(
+      { apartmentTypeId: typeRef },
+      mergedApartmentTypeOptions,
+    );
+  }, [apartmentRow, mergedApartmentTypeOptions, apartmentTypeIdProp]);
+
+  const maxRooms = apartmentRoomLimit.maxRooms;
+
+  const isAddRoomBlocked =
+    !currentId && maxRooms != null && roomRecords.length >= maxRooms;
+
+  const roomLimitMessage =
+    maxRooms != null
+      ? formatApartmentTypeRoomLimitMessage(maxRooms, roomRecords.length)
+      : null;
+
+  const loadApartmentContext = async (): Promise<Record<
+    string,
+    unknown
+  > | null> => {
+    if (!routeUnitDataId) return apartmentRow;
+
+    const result = await getApartmentById(routeUnitDataId);
+    if ((result as { error?: string })?.error) return apartmentRow;
+
+    const raw = (result as { data?: unknown }).data ?? result;
+    if (!raw || typeof raw !== "object") return apartmentRow;
+
+    const row = raw as Record<string, unknown>;
+    setApartmentRow(row);
+    setApartmentSummary(mapApiApartmentSummary(row));
+    return row;
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadApartmentTypes = async () => {
+      const result = await getApartmentTypes();
+      if (cancelled || (result as { error?: string })?.error) return;
+
       const raw = (result as { data?: unknown }).data ?? result;
       const list = Array.isArray(raw) ? raw : [];
+      const mapped = list
+        .filter(
+          (item): item is Record<string, unknown> =>
+            item != null && typeof item === "object",
+        )
+        .map((item) => ({
+          id: String(item.id ?? item.Id ?? "").trim(),
+          nameAr: String(item.nameAr ?? item.NameAr ?? item.name ?? "").trim(),
+          nameEn: String(item.nameEn ?? item.NameEn ?? "").trim() || undefined,
+        }))
+        .filter((item) => item.id && item.nameAr);
+
+      setLocalApartmentTypeOptions(mapped);
+    };
+
+    void loadApartmentTypes();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    void loadApartmentContext();
+  }, [routeUnitDataId, apartmentRefreshKey]);
+
+  const loadRoomRecords = async (): Promise<RoomRecordRow[]> => {
+    const trimmedApartmentId = routeUnitDataId.trim();
+    if (!trimmedApartmentId) {
+      setRoomRecords([]);
+      return [];
+    }
+
+    await loadApartmentContext();
+    try {
+      setRecordsLoading(true);
+      const [roomsResult, bedsResult] = await Promise.all([
+        getRooms(trimmedApartmentId, { allStatuses: true }),
+        getBeds(undefined, { allStatuses: true }),
+      ]);
+      if ((roomsResult as { error?: string })?.error) return [];
+      const raw = (roomsResult as { data?: unknown }).data ?? roomsResult;
+      const list = Array.isArray(raw) ? raw : [];
+      const bedsCountByRoomId = buildRoomBedCounts(rowsFromServiceList(bedsResult));
       const mapped = list
         .filter(
           (item): item is Record<string, unknown> =>
@@ -346,6 +487,7 @@ export default function RoomForm({
             roomNumber: String(
               item.roomNumber ?? item.RoomNumber ?? "",
             ).trim(),
+            bedsCount: resolveRoomBedCount(item, bedsCountByRoomId),
             price: String(item.price ?? item.Price ?? "").trim(),
             status: String(item.status ?? item.Status ?? "").trim(),
             roomTypeId: rawRoomTypeId,
@@ -361,8 +503,44 @@ export default function RoomForm({
   };
 
   const submitHandler = async (values: RoomFormValues) => {
-    console.log(values);
     try {
+      if (!currentId) {
+        const apartmentId = String(
+          values.apartmentId ?? routeUnitDataId ?? "",
+        ).trim();
+        if (!apartmentId) {
+          toast({
+            variant: "destructive",
+            title: "تعذر إضافة غرفة جديدة",
+            description: "لم يتم تحديد الشقة. احفظ بيانات الشقة أولاً ثم أعد المحاولة.",
+          });
+          return;
+        }
+
+        const apartmentData = await loadApartmentContext();
+        const freshRecords = await loadRoomRecords();
+        const limitCheck = await checkApartmentRoomAddLimit(
+          apartmentId,
+          apartmentData,
+          mergedApartmentTypeOptions,
+          getRooms,
+          apartmentTypeIdProp,
+          freshRecords.length,
+        );
+
+        if (limitCheck.maxRooms != null && !limitCheck.allowed) {
+          toast({
+            variant: "destructive",
+            title: "تعذر إضافة غرفة جديدة",
+            description: formatApartmentTypeRoomLimitMessage(
+              limitCheck.maxRooms,
+              limitCheck.currentCount,
+            ),
+          });
+          return;
+        }
+      }
+
       setLoading(true);
       const payload = new FormData();
       if (currentId) payload.append("id", currentId);
@@ -557,7 +735,7 @@ export default function RoomForm({
 
   useEffect(() => {
     void loadRoomRecords();
-  }, []);
+  }, [routeUnitDataId, apartmentRefreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -745,6 +923,19 @@ export default function RoomForm({
         onSubmit={form.handleSubmit(submitHandler, onInvalidSubmit)}
         className="space-y-6 rounded-lg border p-4 text-right"
       >
+        {!currentId && roomLimitMessage ? (
+          <div
+            className={`rounded-lg border px-4 py-3 text-center text-base font-semibold ${
+              isAddRoomBlocked
+                ? "border-destructive/40 bg-destructive/10 text-destructive"
+                : "border-amber-300/60 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100"
+            }`}
+          >
+            {roomLimitMessage}
+            {isAddRoomBlocked ? " — لا يمكن إضافة غرفة جديدة." : null}
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <FormField
             control={form.control}
@@ -1132,7 +1323,7 @@ export default function RoomForm({
           <Button
             className="bg-brand hover:bg-brand-hover text-brand-foreground"
             type="submit"
-            disabled={loading}
+            disabled={loading || recordsLoading || isAddRoomBlocked}
           >
             حفظ بيانات الغرفة
           </Button>
@@ -1142,6 +1333,10 @@ export default function RoomForm({
             <h3 className="mb-2 text-base font-semibold text-center">
               قائمة الغرف
             </h3>
+            <UnitRecordsApartmentHeader
+              apartmentNumber={apartmentSummary.apartmentNumber}
+              genderLabel={apartmentSummary.genderLabel}
+            />
             {recordsLoading || editLoading ? (
               <p className="text-center text-sm text-muted-foreground py-4">
                 جاري تحميل البيانات...
@@ -1175,6 +1370,9 @@ export default function RoomForm({
               <RoomForm
                 defaultValues={editDefaults}
                 statusOptions={statusOptions}
+                apartmentTypeOptions={mergedApartmentTypeOptions}
+                apartmentTypeId={apartmentTypeIdProp}
+                apartmentRefreshKey={apartmentRefreshKey}
                 hideRecordsTable
                 onSubmit={async () => {
                   setEditModalOpen(false);

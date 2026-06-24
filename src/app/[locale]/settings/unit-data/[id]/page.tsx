@@ -117,6 +117,7 @@ const UnitDataDetailsPage = async ({ params }: PageProps) => {
       .map((item) => ({
         id: String(item.id ?? item.Id ?? "").trim(),
         nameAr: String(item.nameAr ?? item.NameAr ?? item.name ?? "").trim(),
+        nameEn: String(item.nameEn ?? item.NameEn ?? "").trim() || undefined,
       }))
       .filter((item) => item.id && item.nameAr);
   }

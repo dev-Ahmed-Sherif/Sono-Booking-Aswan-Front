@@ -54,6 +54,7 @@ export default function UnitDataScreen({
   const [lastUnlockedTabIndex, setLastUnlockedTabIndex] = useState(
     isCreateMode ? 0 : tabsOrder.length - 1,
   );
+  const [apartmentRefreshKey, setApartmentRefreshKey] = useState(0);
 
   const isTabUnlocked = (tab: UnitDataTab) =>
     tabsOrder.indexOf(tab) <= lastUnlockedTabIndex;
@@ -89,6 +90,9 @@ export default function UnitDataScreen({
         value={activeTab}
         onValueChange={(value) => {
           const selectedTab = value as UnitDataTab;
+          if (selectedTab === "room") {
+            setApartmentRefreshKey((key) => key + 1);
+          }
           if (!isCreateMode || isTabUnlocked(selectedTab)) {
             setActiveTab(selectedTab);
           }
@@ -132,6 +136,7 @@ export default function UnitDataScreen({
               governorateOptions={governorateOptions}
               cityOptions={cityOptions}
               onSubmit={async () => {
+                setApartmentRefreshKey((key) => key + 1);
                 if (isCreateMode) goToNextTab("apartment");
               }}
             />
@@ -151,6 +156,9 @@ export default function UnitDataScreen({
           >
             <RoomClient
               statusOptions={statusOptions}
+              apartmentTypeOptions={apartmentTypeOptions}
+              apartmentTypeId={apartmentDefaultValues?.apartmentTypeId}
+              apartmentRefreshKey={apartmentRefreshKey}
               onSubmit={async () => {
                 if (isCreateMode) goToNextTab("room");
               }}
