@@ -1,5 +1,6 @@
 import {
   getAvailableUnits,
+  getCatalogUnits,
   loadUnitBlockingEndIndex,
   type AvailableUnitType,
 } from "@/actions/availabilityService";
@@ -1151,6 +1152,21 @@ export async function fetchMergedAvailabilityCards(
   let failures = 0;
   let lastMessage: string | undefined;
 
+  const [catalogBedsRes, catalogRoomsRes] = await Promise.all([
+    getCatalogUnits("bed"),
+    getCatalogUnits("room"),
+  ]);
+  const catalogBedsRaw =
+    !("error" in catalogBedsRes && catalogBedsRes.error) &&
+    Array.isArray(catalogBedsRes.data)
+      ? catalogBedsRes.data
+      : [];
+  const catalogRoomsRaw =
+    !("error" in catalogRoomsRes && catalogRoomsRes.error) &&
+    Array.isArray(catalogRoomsRes.data)
+      ? catalogRoomsRes.data
+      : [];
+
   await Promise.all(
     Array.from(kindsToFetch).map(async (unitKind: AvailableUnitType) => {
       // StartDate expands catalog to Reserved/Occupied and applies ActualCheckOutDate
@@ -1181,6 +1197,8 @@ export async function fetchMergedAvailabilityCards(
     apartments: apartmentsRaw,
     rooms: roomsRaw,
     beds: bedsRaw,
+    catalogBeds: catalogBedsRaw,
+    catalogRooms: catalogRoomsRaw,
     hierarchyRaw: { apartmentsRaw, roomsRaw },
     ...(inquiry?.startDateYmd
       ? { inquiry, occupancyIndex }
@@ -1200,7 +1218,7 @@ export async function fetchMergedAvailabilityCards(
         apartmentsRaw,
         roomsRaw,
         bedsRaw: filtered.beds,
-        allBedsRaw: bedsRaw,
+        allBedsRaw: catalogBedsRaw.length > 0 ? catalogBedsRaw : bedsRaw,
       })),
     );
   }
@@ -1227,6 +1245,21 @@ export async function hierarchyFilteredAvailabilityLists(input: {
   roomsRaw: unknown[];
   apartmentsRaw: unknown[];
 }> {
+  const [catalogBedsRes, catalogRoomsRes] = await Promise.all([
+    getCatalogUnits("bed"),
+    getCatalogUnits("room"),
+  ]);
+  const catalogBedsRaw =
+    !("error" in catalogBedsRes && catalogBedsRes.error) &&
+    Array.isArray(catalogBedsRes.data)
+      ? catalogBedsRes.data
+      : [];
+  const catalogRoomsRaw =
+    !("error" in catalogRoomsRes && catalogRoomsRes.error) &&
+    Array.isArray(catalogRoomsRes.data)
+      ? catalogRoomsRes.data
+      : [];
+
   const occupancyIndex = input.inquiry?.startDateYmd?.trim()
     ? await loadUnitBlockingEndIndex(input.bedsRaw, input.roomsRaw)
     : null;
@@ -1235,6 +1268,8 @@ export async function hierarchyFilteredAvailabilityLists(input: {
     apartments: input.apartmentsRaw,
     rooms: input.roomsRaw,
     beds: input.bedsRaw,
+    catalogBeds: catalogBedsRaw,
+    catalogRooms: catalogRoomsRaw,
     hierarchyRaw: {
       apartmentsRaw: input.apartmentsRaw,
       roomsRaw: input.roomsRaw,

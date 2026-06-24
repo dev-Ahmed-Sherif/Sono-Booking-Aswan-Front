@@ -97,7 +97,33 @@ const getAvailableList = async (
   return asList(res.data);
 };
 
+const getCatalogList = async (path: string) => {
+  const res = await axios.get(`${process.env.BACK_END}/${path}`, {
+    withCredentials: true,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+  return asList(res.data);
+};
+
 export type AvailableUnitType = "bed" | "room" | "apartment";
+
+export type CatalogUnitType = "bed" | "room";
+
+/** Beds/rooms catalog without `Status` filter (all statuses for hierarchy checks). */
+export async function getCatalogUnits(unitType: CatalogUnitType) {
+  const path = unitType === "bed" ? "Beds/getAll" : "Rooms/getAll";
+  try {
+    const list = await getCatalogList(path);
+    return { data: list };
+  } catch (error: unknown) {
+    return {
+      error: "Request Failed",
+      message: extractAxiosErrorMessage(error),
+    };
+  }
+}
 
 export async function getAvailableUnits(
   unitType: AvailableUnitType,
@@ -172,11 +198,15 @@ function hierarchyFilterInput(
   bedsRaw: unknown[],
   inquiry?: AvailabilityInquiryDates,
   occupancyIndex?: UnitBlockingEndIndex | null,
+  catalogBedsRaw?: unknown[],
+  catalogRoomsRaw?: unknown[],
 ): AvailabilityHierarchyFilterInput {
   return {
     apartments: apartmentsRaw,
     rooms: roomsRaw,
     beds: bedsRaw,
+    ...(catalogBedsRaw?.length ? { catalogBeds: catalogBedsRaw } : {}),
+    ...(catalogRoomsRaw?.length ? { catalogRooms: catalogRoomsRaw } : {}),
     ...(inquiry?.startDateYmd ? { inquiry } : {}),
     ...(occupancyIndex ? { occupancyIndex } : {}),
   };
@@ -184,13 +214,28 @@ function hierarchyFilterInput(
 
 const getAvailableUnitTypes = async () => {
   try {
-    const [bedsRaw, roomsRaw, apartmentsRaw] = await Promise.all([
+    const [bedsRaw, roomsRaw, apartmentsRaw, catalogBedsRes, catalogRoomsRes] =
+      await Promise.all([
       getAvailableList("Beds/getAll"),
       getAvailableList("Rooms/getAll"),
       getAvailableList("Apartments/getAll"),
+      getCatalogList("Beds/getAll"),
+      getCatalogList("Rooms/getAll"),
     ]);
+    const catalogBedsRaw = Array.isArray(catalogBedsRes) ? catalogBedsRes : [];
+    const catalogRoomsRaw = Array.isArray(catalogRoomsRes)
+      ? catalogRoomsRes
+      : [];
     const { beds, rooms, apartments } = applyAvailabilityHierarchyFilters(
-      hierarchyFilterInput(apartmentsRaw, roomsRaw, bedsRaw),
+      hierarchyFilterInput(
+        apartmentsRaw,
+        roomsRaw,
+        bedsRaw,
+        undefined,
+        undefined,
+        catalogBedsRaw,
+        catalogRoomsRaw,
+      ),
     );
 
     const options: Array<{ value: string; label: string }> = [];
