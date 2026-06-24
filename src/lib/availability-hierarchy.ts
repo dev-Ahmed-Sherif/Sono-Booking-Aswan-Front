@@ -205,8 +205,13 @@ export type AvailabilityHierarchyFilterInput = {
 };
 
 /**
- * Wires apartment → room → bed hierarchy and hides parents when any child is
- * reserved (unless that child is still bookable for the current inquiry).
+ * Wires apartment → room → bed hierarchy.
+ *
+ * - **Apartment search**: hides apartments with any reserved child room or bed.
+ * - **Room search**: hides rooms with any reserved child bed.
+ * - **Bed search**: keeps available beds even when a sibling bed in the same room
+ *   is reserved (parent room hiding does not cascade to beds).
+ *
  * When inquiry start is set, date occupancy is handled by the API (StartDate header).
  */
 export function applyAvailabilityHierarchyFilters(
@@ -221,26 +226,38 @@ export function applyAvailabilityHierarchyFilters(
   const hasCatalog =
     catalogBeds.length > 0 || catalogRooms.length > 0;
 
-  let apartments = input.apartments;
-  let rooms = input.rooms;
+  const apartmentsForSearch = hasCatalog
+    ? filterApartmentsWithoutReservedChildren(
+        input.apartments,
+        catalogRooms,
+        catalogBeds,
+        input.rooms,
+        input.beds,
+      )
+    : input.apartments;
 
-  if (hasCatalog) {
-    apartments = filterApartmentsWithoutReservedChildren(
-      apartments,
-      catalogRooms,
-      catalogBeds,
-      input.rooms,
-      input.beds,
-    );
-    rooms = filterRoomsWithoutReservedBeds(
-      rooms,
-      catalogBeds,
-      input.beds,
-    );
-  }
+  const roomsInAvailableApartments = filterRoomsWithAvailableApartment(
+    input.rooms,
+    apartmentsForSearch,
+  );
 
-  rooms = filterRoomsWithAvailableApartment(rooms, apartments);
-  const beds = filterBedsWithAvailableRoom(input.beds, rooms);
+  const roomsForSearch = hasCatalog
+    ? filterRoomsWithoutReservedBeds(
+        roomsInAvailableApartments,
+        catalogBeds,
+        input.beds,
+      )
+    : roomsInAvailableApartments;
 
-  return { apartments, rooms, beds };
+  const roomsForBeds = filterRoomsWithAvailableApartment(
+    input.rooms,
+    input.apartments,
+  );
+  const beds = filterBedsWithAvailableRoom(input.beds, roomsForBeds);
+
+  return {
+    apartments: apartmentsForSearch,
+    rooms: roomsForSearch,
+    beds,
+  };
 }
