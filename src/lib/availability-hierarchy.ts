@@ -208,9 +208,11 @@ export type AvailabilityHierarchyFilterInput = {
  * Wires apartment → room → bed hierarchy.
  *
  * - **Apartment search**: hides apartments with any reserved child room or bed.
- * - **Room search**: hides rooms with any reserved child bed.
+ * - **Room search**: hides a room only when it has a reserved child bed; other
+ *   available rooms in the same apartment stay visible even if a sibling room
+ *   is reserved (reserved-apartment hiding does not cascade to rooms).
  * - **Bed search**: keeps available beds even when a sibling bed in the same room
- *   is reserved (parent room hiding does not cascade to beds).
+ *   is reserved (reserved-bed room hiding does not cascade to beds).
  *
  * When inquiry start is set, date occupancy is handled by the API (StartDate header).
  */
@@ -238,7 +240,7 @@ export function applyAvailabilityHierarchyFilters(
 
   const roomsInAvailableApartments = filterRoomsWithAvailableApartment(
     input.rooms,
-    apartmentsForSearch,
+    input.apartments,
   );
 
   const roomsForSearch = hasCatalog
