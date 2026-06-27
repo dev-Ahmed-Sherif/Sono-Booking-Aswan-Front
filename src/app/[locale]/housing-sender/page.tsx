@@ -15,6 +15,7 @@ import { useRequireRole } from "@/hooks/use-require-role";
 import {
   extractApplicantDisplayNameFromRequest,
   extractRequestTypeId,
+  isHousingRequestRecordDeleted,
   mapApiRequestToTableRow,
   parseRequestCatagoryApiValue,
   parseRequestsListFromApi,
@@ -479,7 +480,12 @@ const HousingSenderPage = () => {
         return;
       }
 
-      const requestItems = parseRequestsListFromApi(requestsRes);
+      const requestItems = parseRequestsListFromApi(requestsRes).filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) &&
+          typeof item === "object" &&
+          !isHousingRequestRecordDeleted(item as Record<string, unknown>),
+      );
       const bedsRaw = getLookupArray(bedsRes);
       const roomsRaw = getLookupArray(roomsRes);
       const hierarchyMaps = buildUnitHierarchyMaps(bedsRaw, roomsRaw);

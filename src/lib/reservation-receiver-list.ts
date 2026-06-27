@@ -10,7 +10,7 @@ import {
   formatUtcToCairoDate,
   todayYmdCairo,
 } from "@/lib/date-timeOptions";
-import { extractApplicantDisplayNameFromRequest } from "@/lib/housing-request-list";
+import { extractApplicantDisplayNameFromRequest, isHousingRequestRecordDeleted } from "@/lib/housing-request-list";
 import {
   buildCompanionNameMapFromParticipants,
   extractCompanionIdsFromParticipantRows,
@@ -542,8 +542,17 @@ export function buildReceiverReservationRows(input: {
 
   for (const item of parseReservationsListFromApi(input.reservationsRes)) {
     if (!item || typeof item !== "object") continue;
-    const parsed = parseReservationFromApi(item as Record<string, unknown>);
-    if (!parsed || parsed.isDeleted) continue;
+    const raw = item as Record<string, unknown>;
+    if (isHousingRequestRecordDeleted(raw)) continue;
+
+    const parsed = parseReservationFromApi(raw);
+    if (!parsed) continue;
+
+    const requestId = parsed.requestId?.trim() ?? "";
+    if (requestId) {
+      const requestRaw = requestById.get(requestId.toLowerCase());
+      if (requestRaw && isHousingRequestRecordDeleted(requestRaw)) continue;
+    }
 
     try {
       rows.push(

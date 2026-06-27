@@ -56,45 +56,61 @@ export const excelToHtml = async (
 };
 
 // Helper function to convert relative URLs to full URLs with backend base URL
-export const getFullFileUrl = (
-  url: string | undefined | null
-): string | undefined => {
+/** Same-origin path for backend static files (proxied via next.config rewrites on Vercel). */
+export function toProxiedBackendFilePath(
+  url: string | undefined | null,
+): string | undefined {
   if (!url) return undefined;
 
-  // If URL is already a full URL (starts with http:// or https://), return as is
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    return url;
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.startsWith("blob:") || trimmed.startsWith("data:")) {
+    return trimmed || undefined;
   }
 
-  // If URL is a blob URL, return as is
-  if (url.startsWith("blob:")) {
-    return url;
+  const extractAttachPath = (value: string): string | undefined => {
+    const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
+    const lower = normalized.toLowerCase();
+    for (const marker of ["attach/", "wwwroot/"]) {
+      const idx = lower.indexOf(marker);
+      if (idx !== -1) {
+        return `/${normalized.substring(idx)}`;
+      }
+    }
+    return undefined;
+  };
+
+  const proxiedFromRelative = extractAttachPath(trimmed);
+  if (proxiedFromRelative) return proxiedFromRelative;
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    try {
+      const parsed = new URL(trimmed);
+      const proxiedFromAbsolute = extractAttachPath(parsed.pathname);
+      if (proxiedFromAbsolute) return proxiedFromAbsolute;
+
+      const backendBase = (process.env.NEXT_PUBLIC_BACK_END ?? "").trim();
+      if (backendBase) {
+        const backendHost = new URL(
+          backendBase.startsWith("http") ? backendBase : `http://${backendBase}`,
+        ).host;
+        if (parsed.host === backendHost) {
+          const fallback = parsed.pathname.replace(/^\/+/, "");
+          return fallback ? `/${fallback}` : undefined;
+        }
+      }
+    } catch {
+      return trimmed;
+    }
+    return trimmed;
   }
 
-  // For relative URLs, extract the Attach/ part
-  // Remove leading slash if present
-  const cleanUrl = url.startsWith("/") ? url.substring(1) : url;
+  if (trimmed.startsWith("/")) return trimmed;
+  return `/${trimmed.replace(/^\/+/, "")}`;
+}
 
-  // Find the "Attach/" part in the URL
-  const attachIndex = cleanUrl.indexOf("Attach/");
-  if (attachIndex !== -1) {
-    // Extract everything from "Attach/" onwards
-    const attachPath = cleanUrl.substring(attachIndex);
-
-    // Use NEXT_PUBLIC_BACK_END_DEV for client-side access, fallback to localhost:57950
-    const backendBaseUrl =
-      process.env.NEXT_PUBLIC_BACK_END || "http://localhost:57950";
-
-    // Combine base URL with the Attach/ path
-    return `${backendBaseUrl}/${attachPath}`;
-  }
-
-  // If "Attach/" not found, use the original URL (fallback)
-  const backendBaseUrl =
-    process.env.NEXT_PUBLIC_BACK_END || "http://localhost:57950";
-
-  return `${backendBaseUrl}/${cleanUrl}`;
-};
+export const getFullFileUrl = (
+  url: string | undefined | null,
+): string | undefined => toProxiedBackendFilePath(url);
 
 // Helper function to convert attachments from initialData to LocalFile format
 export const convertAttachmentsToLocalFiles = (

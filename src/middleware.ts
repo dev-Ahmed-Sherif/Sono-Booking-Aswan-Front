@@ -72,6 +72,15 @@ export async function middleware(req: NextRequest) {
     return new NextResponse(null, { status: 204 });
   }
 
+  // Backend static files — proxied by next.config rewrites; skip locale/auth redirects.
+  if (
+    nextUrl.pathname.startsWith("/Attach/") ||
+    nextUrl.pathname.startsWith("/attach/") ||
+    nextUrl.pathname.startsWith("/wwwroot/")
+  ) {
+    return NextResponse.next();
+  }
+
   // App Router API / tRPC: skip locale + auth redirect so Route Handlers run (they enforce auth themselves).
   if (
     nextUrl.pathname.startsWith("/api") ||

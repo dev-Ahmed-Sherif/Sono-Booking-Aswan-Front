@@ -23,7 +23,7 @@ export function ChatPanelToggleButton() {
   const { setOpen } = useChatPanel();
 
   return (
-    <div className="fixed left-3 z-[9999] bottom-[4.25rem] size-20 sm:left-4 sm:bottom-[4.75rem]">
+    <div className="fixed left-3 z-[9999] bottom-[6.25rem] size-20 sm:left-4 lg:bottom-[4.75rem]">
       <span
         aria-hidden
         className="pointer-events-none absolute inset-0 rounded-full bg-primary/25 animate-chat-fab-ring"
@@ -64,7 +64,7 @@ export function AppChatPanel({ locale }: AppChatPanelProps) {
         <SheetContent
           forceMount
           side="left"
-          className="flex h-full w-[min(96vw,56rem)] max-w-none flex-col gap-0 overflow-hidden border-r border-border p-0 shadow-2xl sm:max-w-none"
+          className="flex h-full w-[80vw] max-w-[80vw] flex-col gap-0 overflow-hidden border-r border-border p-0 shadow-2xl lg:w-[min(96vw,56rem)] lg:max-w-none"
         >
           <VisuallyHidden>
             <SheetTitle>{t("chat")}</SheetTitle>
