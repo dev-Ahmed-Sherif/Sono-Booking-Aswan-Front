@@ -102,6 +102,11 @@ export function parseStoredReservationUnits(
     const apartmentId = pickStr(o, "apartmentId", "ApartmentId");
     const roomId = pickStr(o, "roomId", "RoomId");
     const genderType = pickStr(o, "genderType", "GenderType");
+    const allocationTypeLabel = pickStr(
+      o,
+      "allocationTypeLabel",
+      "AllocationTypeLabel",
+    );
     const buildingNumberAr = pickStr(o, "buildingNumberAr", "BuildingNumberAr");
     const city = pickStr(o, "city", "City");
     const priceLabel = pickStr(o, "priceLabel", "PriceLabel");
@@ -113,10 +118,23 @@ export function parseStoredReservationUnits(
       ...(apartmentId ? { apartmentId } : {}),
       ...(roomId ? { roomId } : {}),
       ...(genderType ? { genderType } : {}),
+      ...(allocationTypeLabel ? { allocationTypeLabel } : {}),
       ...(buildingNumberAr ? { buildingNumberAr } : {}),
       ...(city ? { city } : {}),
       ...(priceLabel ? { priceLabel } : {}),
     });
+  }
+  return out;
+}
+
+/** Inquiry gender filter for validation — from saved unit cards, not search multi-select. */
+export function deriveInquiryGendersFromStoredUnits(
+  units: ReservationStoredUnitSnapshot[],
+): GuestGender[] {
+  const out: GuestGender[] = [];
+  for (const unit of units) {
+    const g = normalizeUnitGender(unit.genderType);
+    if (g && !out.includes(g)) out.push(g);
   }
   return out;
 }

@@ -45,7 +45,6 @@ import { cn } from "@/lib/utils";
 import type { AvailabilityUnitCard } from "@/lib/availability-inquiry";
 import {
   ALL_UNIT_TYPE_OPTIONS,
-  UNIT_TYPE_LABEL_AR,
   availabilityCardKey,
   fetchMergedAvailabilityCards,
   getLookupArray,
@@ -54,6 +53,7 @@ import {
   normalizeInquiryStartYmd,
   orderedUnitKindsFromSelection,
   toReservationStoredUnits,
+  buildPreservedInquiryFieldsFromUnits,
 } from "@/lib/availability-inquiry";
 import type { AvailableUnitType } from "@/actions/availabilityService";
 import { getGenders } from "@/actions/settings/genderService";
@@ -1085,16 +1085,11 @@ const ReservationPage = () => {
       return;
     }
 
-    const unitTypeLabels = selectedUnitTypes.map(
-      (value) => UNIT_TYPE_LABEL_AR[value] ?? value,
-    );
-    const unitTypeLabel = unitTypeLabels.join("، ");
+    const storedUnits = toReservationStoredUnits(selectedUnits);
+    const preserved = buildPreservedInquiryFieldsFromUnits(storedUnits);
     const requestTypeLabel =
       requestTypeOptions.find((o) => o.value === requestType)?.label ??
       requestType;
-    const genderLabels = selectedGenders.map(
-      (value) => genderOptions.find((o) => o.value === value)?.label ?? value,
-    );
     const allocationTypeLabel =
       allocationTypeOptions.find((o) => o.value === allocationType)?.label ??
       allocationType;
@@ -1114,18 +1109,19 @@ const ReservationPage = () => {
         startDate: startIso,
         startDateDisplay: startDisplay,
         nights,
-        unitTypes: [...selectedUnitTypes],
-        unitTypeLabels,
-        unitType: selectedUnitTypes[0] ?? "",
-        unitTypeLabel,
+        unitTypes: preserved.unitTypes,
+        unitTypeLabels: preserved.unitTypeLabels,
+        unitType: preserved.unitTypes[0] ?? "",
+        unitTypeLabel: preserved.unitTypeLabel,
         requestType,
         requestTypeLabel,
-        genders: [...selectedGenders],
-        genderLabels,
-        allocationType,
-        allocationTypeLabel,
+        genders: preserved.genders,
+        genderLabels: preserved.genderLabels,
+        allocationType: preserved.allocationType ?? allocationType,
+        allocationTypeLabel:
+          preserved.allocationTypeLabel ?? allocationTypeLabel,
       },
-      selectedUnits: toReservationStoredUnits(selectedUnits),
+      selectedUnits: storedUnits,
     });
 
     toast({

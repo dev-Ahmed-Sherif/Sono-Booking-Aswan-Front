@@ -1,5 +1,6 @@
 import type { AvailableUnitType } from "@/actions/availabilityService";
 import {
+  buildPreservedInquiryFieldsFromUnits,
   mergeAvailabilityGenderFromRows,
   unitSnapshotFromRequestUnitDto,
   type ReservationStoredUnitSnapshot,
@@ -704,6 +705,9 @@ export function mapReservationToAddRequestDto(input: {
   }
 
   const requestAllocationType =
+    parseAllocationTypeEnum(
+      buildPreservedInquiryFieldsFromUnits(units).allocationType,
+    ) ??
     parseAllocationTypeEnum(inquiryForm?.allocationType) ??
     parseAllocationTypeEnum(inquiryForm?.allocationTypeLabel);
   if (!requestAllocationType) {

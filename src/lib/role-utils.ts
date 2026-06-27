@@ -105,6 +105,16 @@ export const canAccessHousingReceiverFromCandidates = (
   ].some(canAccessHousingReceiver);
 };
 
+/** Reservation request owner (`/reservation`) — end-user role slug. */
+export const END_USER_ROLE = "user";
+
+export const isEndUserRole = (role: unknown) =>
+  normalizeRole(role) === END_USER_ROLE;
+
+/** Leader or reception staff — chat targets visible to end users. */
+export const isChatStaffRole = (role: unknown) =>
+  canAccessHousingSender(role) || canAccessHousingReceiver(role);
+
 
 /** Account page: hide basic profile + companions for staff / admin roles. */
 export const isAccountProfileAndCompanionsHidden = (

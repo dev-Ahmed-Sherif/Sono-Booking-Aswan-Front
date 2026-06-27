@@ -102,6 +102,8 @@ const getCatalogList = async (path: string) => {
     withCredentials: true,
     headers: {
       "Content-Type": "application/json",
+      Status: AVAILABLE_STATUS_HEADER,
+      Hierarchy: "true",
     },
   });
   return asList(res.data);
@@ -109,11 +111,16 @@ const getCatalogList = async (path: string) => {
 
 export type AvailableUnitType = "bed" | "room" | "apartment";
 
-export type CatalogUnitType = "bed" | "room";
+export type CatalogUnitType = "bed" | "room" | "apartment";
 
 /** Beds/rooms catalog without `Status` filter (all statuses for hierarchy checks). */
 export async function getCatalogUnits(unitType: CatalogUnitType) {
-  const path = unitType === "bed" ? "Beds/getAll" : "Rooms/getAll";
+  const path =
+    unitType === "bed"
+      ? "Beds/getAll"
+      : unitType === "room"
+        ? "Rooms/getAll"
+        : "Apartments/getAll";
   try {
     const list = await getCatalogList(path);
     return { data: list };

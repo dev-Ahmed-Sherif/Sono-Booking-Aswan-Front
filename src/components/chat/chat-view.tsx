@@ -33,7 +33,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useEffectiveRole } from "@/hooks/use-effective-role";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
+import {
+  filterContactsForEndUser,
+  filterConversationsForEndUser,
+} from "@/lib/chat-role-filters";
+import { isEndUserRole } from "@/lib/role-utils";
 import { useChatPresence } from "@/contexts/chat-presence-context";
 import { useVideoCallContext } from "@/contexts/video-call-context";
 import {
@@ -397,6 +403,8 @@ export function ChatView({
     return stored?.id ? String(stored.id) : "";
   }, [reduxUserId, userStorage]);
 
+  const { effectiveRole, isRoleReady } = useEffectiveRole();
+
   const [conversations, setConversations] = React.useState<ChatConversation[]>(
     [],
   );
@@ -418,6 +426,23 @@ export function ChatView({
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  const isEndUser =
+    isRoleReady && Boolean(effectiveRole) && isEndUserRole(effectiveRole);
+
+  const visibleContacts = React.useMemo(() => {
+    if (!isEndUser) return contacts;
+    return filterContactsForEndUser(contacts);
+  }, [contacts, isEndUser]);
+
+  const visibleConversations = React.useMemo(() => {
+    if (!isEndUser) return conversations;
+    return filterConversationsForEndUser(
+      conversations,
+      currentUserId,
+      contacts,
+    );
+  }, [conversations, contacts, currentUserId, isEndUser]);
 
   const refreshConversations = React.useCallback(async () => {
     setLoadingList(true);
@@ -457,6 +482,14 @@ export function ChatView({
     refreshConversations();
     refreshContacts();
   }, [refreshConversations, refreshContacts]);
+
+  React.useEffect(() => {
+    if (!selectedId) return;
+    if (!visibleConversations.some((conversation) => conversation.id === selectedId)) {
+      setSelectedId(null);
+      setMobileShowThread(false);
+    }
+  }, [selectedId, visibleConversations]);
 
   const loadMessages = React.useCallback(
     async (conversationId: string) => {
@@ -594,24 +627,24 @@ export function ChatView({
 
   const directPeerIds = React.useMemo(() => {
     const ids = new Set<string>();
-    for (const conversation of conversations) {
+    for (const conversation of visibleConversations) {
       const peerId = resolveConversationPeerId(conversation, currentUserId);
       if (peerId) {
         ids.add(peerId);
       }
     }
     return ids;
-  }, [conversations, currentUserId]);
+  }, [visibleConversations, currentUserId]);
 
   const watchedUserIds = React.useMemo(() => {
     const ids = new Set<string>(directPeerIds);
-    for (const contact of contacts) {
+    for (const contact of visibleContacts) {
       if (contact.userId && !isSameUserId(contact.userId, currentUserId)) {
         ids.add(contact.userId);
       }
     }
     return Array.from(ids);
-  }, [contacts, currentUserId, directPeerIds]);
+  }, [visibleContacts, currentUserId, directPeerIds]);
 
   const {
     hubConfigured,
@@ -764,7 +797,7 @@ export function ChatView({
     return formatUtcToCairoTime(value);
   };
 
-  const filteredConversations = conversations.filter((c) => {
+  const filteredConversations = visibleConversations.filter((c) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     const title = (c.title || c.participantNames?.join(" ") || "").toLowerCase();
@@ -774,7 +807,7 @@ export function ChatView({
 
   const startableContacts = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return contacts.filter((contact) => {
+    return visibleContacts.filter((contact) => {
       if (directPeerIds.has(contact.userId)) return false;
       if (!q) return true;
       return (
@@ -782,9 +815,9 @@ export function ChatView({
         contact.role.toLowerCase().includes(q)
       );
     });
-  }, [contacts, directPeerIds, searchQuery]);
+  }, [visibleContacts, directPeerIds, searchQuery]);
 
-  const selected = conversations.find((c) => c.id === selectedId);
+  const selected = visibleConversations.find((c) => c.id === selectedId);
   const threadMessages = React.useMemo(
     () =>
       selectedId
@@ -806,7 +839,7 @@ export function ChatView({
     selected,
     currentUserId,
     threadMessages,
-    contacts,
+    visibleContacts,
   );
 
   const openVideoCall = () => {

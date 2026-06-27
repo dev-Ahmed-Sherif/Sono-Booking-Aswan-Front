@@ -321,6 +321,24 @@ export function formatAllocationTypeAr(value: unknown): string {
   return "—";
 }
 
+/** True when request type is مأمورية / mission (attachments required on new requests). */
+export function isMissionRequestType(
+  label?: string | null,
+  labelEn?: string | null,
+): boolean {
+  const ar = String(label ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  const en = String(labelEn ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  if (ar.includes("مأمورية") || ar.includes("مامورية")) return true;
+  if (en === "mission" || en.includes("mission")) return true;
+  return false;
+}
+
 export function isHousingRequestStatusLocked(statusLabel: string): boolean {
   return (
     statusLabel === "تمت الموافقة" ||

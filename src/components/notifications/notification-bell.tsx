@@ -312,36 +312,37 @@ export function NotificationBell({ locale }: NotificationBellProps) {
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        align={locale === "ar" ? "start" : "end"}
-        className="w-[min(100vw-2rem,22rem)] overflow-hidden rounded-xl border border-border/60 p-0 shadow-xl shadow-black/10 dark:shadow-black/40"
+        align="center"
+        collisionPadding={{ left: 16, right: 16, top: 8, bottom: 8 }}
+        className="w-[min(calc(100vw-3rem),30rem)] overflow-hidden rounded-xl border border-border/60 p-0 text-base shadow-xl shadow-black/10 dark:shadow-black/40"
         sideOffset={10}
       >
-        <div className="flex items-center justify-between border-b border-border/60 bg-gradient-to-r from-amber-500/8 via-background to-primary/5 px-4 py-3">
-          <h3 className="text-sm font-semibold tracking-tight">{t("title")}</h3>
+        <div className="flex items-center justify-between border-b border-border/60 bg-gradient-to-r from-amber-500/8 via-background to-primary/5 px-5 py-3.5">
+          <h3 className="text-base font-semibold tracking-tight sm:text-lg">{t("title")}</h3>
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 gap-1 text-xs text-muted-foreground transition-colors hover:bg-amber-500/10 hover:text-amber-700 dark:hover:text-amber-400"
+            className="h-9 gap-1.5 text-sm text-muted-foreground transition-colors hover:bg-amber-500/10 hover:text-amber-700 dark:hover:text-amber-400"
             disabled={markingAll || unreadCount === 0}
             onClick={handleMarkAll}
           >
             {markingAll ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <CheckCheck className="h-3.5 w-3.5" />
+              <CheckCheck className="h-4 w-4" />
             )}
             {t("markAllRead")}
           </Button>
         </div>
 
-        <div className="max-h-[min(60vh,24rem)] overflow-y-auto overscroll-contain">
+        <div className="max-h-[min(60vh,28rem)] overflow-y-auto overscroll-contain">
           {loading ? (
             <div className="flex justify-center py-10">
-              <Loader2 className="h-6 w-6 animate-spin text-amber-600/70 dark:text-amber-400/70" />
+              <Loader2 className="h-7 w-7 animate-spin text-amber-600/70 dark:text-amber-400/70" />
             </div>
           ) : notifications.length === 0 ? (
-            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+            <p className="px-5 py-10 text-center text-base text-muted-foreground">
               {t("empty")}
             </p>
           ) : (
@@ -361,7 +362,7 @@ export function NotificationBell({ locale }: NotificationBellProps) {
                       type="button"
                       onClick={() => handleItemClick(n)}
                       className={cn(
-                        "flex w-full gap-3 px-4 py-3 text-start transition-all duration-200",
+                        "flex w-full gap-3.5 px-5 py-3.5 text-start transition-all duration-200",
                         "hover:bg-muted/60 active:scale-[0.99]",
                         !n.isRead &&
                           "border-s-[3px] border-s-amber-500 bg-amber-500/[0.07] dark:bg-amber-400/[0.09]",
@@ -369,37 +370,37 @@ export function NotificationBell({ locale }: NotificationBellProps) {
                     >
                       <span
                         className={cn(
-                          "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ring-1 ring-inset ring-black/5 dark:ring-white/10",
+                          "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-1 ring-inset ring-black/5 dark:ring-white/10",
                           typeStyles(n.type),
                         )}
                       >
-                        <Icon className="h-4 w-4" aria-hidden />
+                        <Icon className="h-5 w-5" aria-hidden />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center justify-between gap-2">
-                          <span className="truncate text-sm font-medium">
+                          <span className="truncate text-lg font-semibold">
                             {notificationTitle(n)}
                           </span>
                           {!n.isRead && (
-                            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.7)] dark:bg-amber-400" />
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.7)] dark:bg-amber-400" />
                           )}
                         </span>
-                        <span className="mt-0.5 line-clamp-3 text-xs text-muted-foreground">
+                        <span className="mt-1 line-clamp-3 text-base leading-relaxed text-muted-foreground">
                           {n.content}
                         </span>
                         {showSender ? (
-                          <span className="mt-0.5 block text-[10px] font-medium text-muted-foreground">
+                          <span className="mt-1 block text-xs font-medium text-muted-foreground">
                             {t("fromSender", { name: n.senderName!.trim() })}
                           </span>
                         ) : null}
                         {n.type === "chat" && groupLabel ? (
-                          <span className="mt-0.5 block text-[10px] font-medium text-muted-foreground">
+                          <span className="mt-1 block text-xs font-medium text-muted-foreground">
                             {groupLabel}
                           </span>
                         ) : null}
                         {n.createdAt ? (
                           <span
-                            className="mt-1 block text-[10px] text-muted-foreground/80"
+                            className="mt-1.5 block text-xs text-muted-foreground/80"
                             title={formatAbsoluteTime(n.createdAt)}
                           >
                             {formatRelativeTime(n.createdAt)}

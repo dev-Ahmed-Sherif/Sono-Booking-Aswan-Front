@@ -13,46 +13,30 @@ export function AvailabilityUnitCardBedsCount({
   const showBedCounts =
     card.unitKind === "room" || card.unitKind === "apartment";
 
-  if (
-    !showBedCounts &&
-    !allocationType
-  ) {
+  if (!showBedCounts && !allocationType) {
     return null;
   }
-  if (card.unitKind !== "room" && card.unitKind !== "apartment" && card.unitKind !== "bed") {
+  if (
+    card.unitKind !== "room" &&
+    card.unitKind !== "apartment" &&
+    card.unitKind !== "bed"
+  ) {
     return null;
   }
 
   const availableN = available ? Number(available) : 0;
   const unavailableN = unavailable ? Number(unavailable) : 0;
-  const totalN =
-    showBedCounts &&
-    Number.isFinite(availableN) &&
-    Number.isFinite(unavailableN)
+  const totalN = showBedCounts
+    ? Number.isFinite(availableN) && Number.isFinite(unavailableN)
       ? availableN + unavailableN
-      : null;
+      : null
+    : null;
 
   return (
     <div className="space-y-0.5 text-base font-bold leading-snug text-slate-800">
-      {showBedCounts && available ? (
+      {showBedCounts && totalN != null && totalN > 0 ? (
         <p>
-          <span className="font-semibold text-slate-600">الأسرة المتاحة: </span>
-          <span className="text-lg font-extrabold tabular-nums text-emerald-700">
-            {available}
-          </span>
-        </p>
-      ) : null}
-      {showBedCounts && unavailable ? (
-        <p>
-          <span className="font-semibold text-slate-600">الأسرة غير المتاحة: </span>
-          <span className="text-lg font-extrabold tabular-nums text-rose-700">
-            {unavailable}
-          </span>
-        </p>
-      ) : null}
-      {showBedCounts && totalN != null ? (
-        <p>
-          <span className="font-semibold text-slate-600">إجمالي الأسرة: </span>
+          <span className="font-semibold text-slate-600">عدد الأسرة: </span>
           <span className="text-lg font-extrabold tabular-nums text-slate-900">
             {totalN.toLocaleString("ar-EG")}
           </span>
@@ -69,4 +53,3 @@ export function AvailabilityUnitCardBedsCount({
     </div>
   );
 }
-

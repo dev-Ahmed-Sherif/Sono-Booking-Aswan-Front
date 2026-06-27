@@ -1,6 +1,8 @@
 import {
   formatStoredUnitHierarchyLabel,
   getLookupArray,
+  UNIT_TYPE_LABEL_AR,
+  type ReservationStoredUnitSnapshot,
 } from "@/lib/availability-inquiry";
 import { parseBirthDateValue } from "@/lib/companion-registration";
 import {
@@ -41,6 +43,7 @@ export type ReceiverReservationRow = {
   userName: string;
   room: string;
   reservationUnits: string[];
+  reservationUnitSnapshots: ReservationStoredUnitSnapshot[];
   companions: Array<{ name: string; relationship: string; age?: number }>;
   /** Formatted for table display. */
   arrivalDate: string;
@@ -165,13 +168,13 @@ function indexRequestsById(
   return map;
 }
 
-function unitLabelsForRequest(
+function unitSnapshotsForRequest(
   requestId: string,
   requestUnitsRes: unknown,
   bedsRaw: unknown[],
   roomsRaw: unknown[],
   apartmentsRaw: unknown[],
-): string[] {
+): ReservationStoredUnitSnapshot[] {
   const rows = enrichRequestUnitRowsFromHierarchy(
     filterRowsByRequestId(getLookupArray(requestUnitsRes), requestId),
     bedsRaw,
@@ -184,16 +187,47 @@ function unitLabelsForRequest(
 
   if (dtos.length === 0) return [];
 
-  const snapshots = requestUnitDtosToEnrichedSnapshots(
+  return requestUnitDtosToEnrichedSnapshots(
     dtos,
     bedsRaw,
     roomsRaw,
     apartmentsRaw,
   );
+}
 
-  return snapshots
-    .map((u) => formatStoredUnitHierarchyLabel(u))
-    .filter(Boolean);
+export type ReceiverUnitHierarchyCells = {
+  apartment: string;
+  room: string;
+  unit: string;
+};
+
+/** Table cells for apartment → room → bed hierarchy in receiver detail modal. */
+export function receiverUnitHierarchyCells(
+  unit: ReservationStoredUnitSnapshot,
+): ReceiverUnitHierarchyCells {
+  const dash = "—";
+  const leaf =
+    unit.title?.trim() ||
+    UNIT_TYPE_LABEL_AR[unit.unitKind] ||
+    "وحدة";
+
+  if (unit.unitKind === "apartment") {
+    return { apartment: leaf, room: dash, unit: dash };
+  }
+
+  if (unit.unitKind === "room") {
+    return {
+      apartment: unit.parentApartmentLabel?.trim() || dash,
+      room: leaf,
+      unit: dash,
+    };
+  }
+
+  return {
+    apartment: unit.parentApartmentLabel?.trim() || dash,
+    room: unit.parentRoomLabel?.trim() || dash,
+    unit: leaf,
+  };
 }
 
 function pickRelationshipLabel(row: Record<string, unknown>): string {
@@ -309,8 +343,8 @@ export function mapReservationToReceiverRow(
     linkedRequestId.toLowerCase() !== requestId.toLowerCase()
       ? (requestById.get(linkedRequestId.toLowerCase()) ?? requestRaw)
       : requestRaw;
-  const reservationUnits = linkedRequestId
-    ? unitLabelsForRequest(
+  const reservationUnitSnapshots = linkedRequestId
+    ? unitSnapshotsForRequest(
         linkedRequestId,
         requestUnitsRes,
         bedsRaw,
@@ -318,6 +352,9 @@ export function mapReservationToReceiverRow(
         apartmentsRaw,
       )
     : [];
+  const reservationUnits = reservationUnitSnapshots
+    .map((u) => formatStoredUnitHierarchyLabel(u))
+    .filter(Boolean);
 
   return {
     id: reservation.id ?? "",
@@ -325,6 +362,7 @@ export function mapReservationToReceiverRow(
     userName: extractApplicantDisplayNameFromRequest(requestRaw),
     room: reservationUnits.length > 0 ? reservationUnits.join("، ") : "—",
     reservationUnits,
+    reservationUnitSnapshots,
     companions: companionsForRequest(
       contentRequestRaw,
       participantsRes,
@@ -391,6 +429,7 @@ function sortReceiverReservationRowsAsc(
 /**
  * Active tab (reception):
  * - `Reserved` arrivals whose start date is today
+ * - `Reserved` stays that started earlier but have not ended yet (`endDate >= today`)
  * - `Completed` guests still in-house from earlier check-ins
  */
 export function filterActiveReservationsToday(
@@ -407,11 +446,17 @@ export function filterActiveReservationsToday(
         return false;
       }
 
-      if (
-        row.status === RESERVATION_STATUS_RESERVED &&
-        row.startDateYmd === todayYmd
-      ) {
-        return true;
+      if (row.status === RESERVATION_STATUS_RESERVED) {
+        if (row.startDateYmd === todayYmd) {
+          return true;
+        }
+
+        if (
+          row.startDateYmd < todayYmd &&
+          row.endDateYmd >= todayYmd
+        ) {
+          return true;
+        }
       }
 
       if (
@@ -424,6 +469,29 @@ export function filterActiveReservationsToday(
       return false;
     }),
   );
+}
+
+export function isReservationEndDateBeforeToday(
+  endDateYmd: string,
+  todayYmd: string = todayYmdLocal(),
+): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(endDateYmd)) return false;
+  return endDateYmd < todayYmd;
+}
+
+/** Canceled / no-show rows can be restored only while the stay end date is still today or later. */
+export function canRestoreReceiverReservation(
+  row: Pick<ReceiverReservationRow, "status" | "endDateYmd">,
+  todayYmd: string = todayYmdLocal(),
+): boolean {
+  if (
+    row.status !== RESERVATION_STATUS_CANCELED &&
+    row.status !== RESERVATION_STATUS_NO_SHOW
+  ) {
+    return false;
+  }
+
+  return !isReservationEndDateBeforeToday(row.endDateYmd, todayYmd);
 }
 
 /** Approved future `Reserved` stays (start after today). */
@@ -499,6 +567,7 @@ export function buildReceiverReservationRows(input: {
         userName: "—",
         room: "—",
         reservationUnits: [],
+        reservationUnitSnapshots: [],
         companions: [],
         arrivalDate: formatReceiverDisplayDate(parsed.startDate),
         totalAmount: parsed.totalAmount,

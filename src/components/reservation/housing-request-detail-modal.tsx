@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
 import { format } from "date-fns";
 import { ar } from "date-fns/locale";
 import {
@@ -126,11 +125,10 @@ import {
   canCancelHousingRequest,
   canEditHousingRequest,
   isHousingRequestStatusLocked,
+  isMissionRequestType,
   type HousingRequestTableRow,
 } from "@/lib/housing-request-list";
 import { HOUSING_REQUEST_CATAGORY_EXTENSION } from "@/lib/housing-request-map";
-import { RequestChatLinks } from "@/components/chat/request-chat-links";
-
 type ModalMode = "view" | "edit" | "leader-unit-edit";
 
 type HousingRequestDetailModalProps = {
@@ -206,6 +204,7 @@ type EditFieldErrors = {
   nights?: string;
   requestType?: string;
   allocationType?: string;
+  attachments?: string;
 };
 
 function resolveRequestTypeIdFromLabel(
@@ -232,8 +231,6 @@ export function HousingRequestDetailModal({
   onClose,
   onChanged,
 }: HousingRequestDetailModalProps) {
-  const params = useParams();
-  const locale = typeof params?.locale === "string" ? params.locale : "ar";
   const { toast } = useToast();
   const userStorage = useLocalStorage("user");
   const [loading, setLoading] = useState(false);
@@ -720,6 +717,14 @@ export function HousingRequestDetailModal({
       detail.requestAllocationType !== 2
     ) {
       nextErrors.allocationType = "يرجى اختيار نوع الحجز";
+    }
+    if (
+      isMissionRequestType(detail.requestTypeLabel) &&
+      visibleExistingAttachments.length === 0 &&
+      attachmentFiles.length === 0
+    ) {
+      nextErrors.attachments =
+        "يُطلب إرفاق مستند واحد على الأقل لطلبات المأمورية";
     }
 
     if (Object.keys(nextErrors).length > 0) {
@@ -1439,14 +1444,22 @@ export function HousingRequestDetailModal({
             {canEditScalars ? (
               <RequestAttachmentsInput
                 files={attachmentFiles}
-                onChange={setAttachmentFiles}
+                onChange={(files) => {
+                  setAttachmentFiles(files);
+                  if (files.length > 0) {
+                    setEditFieldErrors((prev) => {
+                      if (!prev.attachments) return prev;
+                      const { attachments: _removed, ...rest } = prev;
+                      return rest;
+                    });
+                  }
+                }}
                 disabled={saving || loading}
+                required={isMissionRequestType(detail?.requestTypeLabel)}
+                errorMessage={editFieldErrors.attachments}
               />
             ) : null}
 
-            {mode === "view" && requestId ? (
-              <RequestChatLinks requestId={requestId} locale={locale} />
-            ) : null}
           </div>
         ) : null}
 

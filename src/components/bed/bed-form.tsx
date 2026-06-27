@@ -1195,10 +1195,8 @@ export default function BedForm({
         </div>
         {hideRecordsTable ? null : (
           <div className="rounded-lg border border-emerald-200/60 bg-emerald-50/40 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
-            <h3 className="mb-2 text-base font-semibold text-center">
-              قائمة الأسرة
-            </h3>
             <UnitRecordsApartmentHeader
+              listLabel="قائمة الأسرة"
               apartmentNumber={apartmentSummary.apartmentNumber}
               genderLabel={apartmentSummary.genderLabel}
             />

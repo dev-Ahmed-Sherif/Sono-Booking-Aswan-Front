@@ -3,6 +3,10 @@
 import * as React from "react";
 import { Maximize, Minimize } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  bindScreenfullForFilePickRestore,
+  installGlobalFullscreenFilePickRestore,
+} from "@/lib/fullscreen-file-pick-restore";
 
 type ScreenfullApi = {
   request: (element?: Element, options?: FullscreenOptions) => Promise<void>;
@@ -28,8 +32,11 @@ export function FullscreenProvider({ children }: { children: React.ReactNode }) 
   const screenfullRef = React.useRef<ScreenfullApi | null>(null);
 
   React.useEffect(() => {
+    let removeGlobalFilePickRestore: (() => void) | null = null;
+
     import("screenfull").then((sf) => {
       screenfullRef.current = sf.default;
+      bindScreenfullForFilePickRestore(sf.default);
       const enabled = sf.default.isEnabled;
       setIsSupported(enabled);
       setIsFullscreen(sf.default.isFullscreen);
@@ -47,7 +54,14 @@ export function FullscreenProvider({ children }: { children: React.ReactNode }) 
           setShowPrompt(true);
         });
       }
+
+      removeGlobalFilePickRestore = installGlobalFullscreenFilePickRestore();
     });
+
+    return () => {
+      removeGlobalFilePickRestore?.();
+      bindScreenfullForFilePickRestore(null);
+    };
   }, []);
 
   React.useEffect(() => {

@@ -43,12 +43,14 @@ import {
 } from "@/lib/reservation-map";
 import {
   buildReceiverReservationRows,
+  canRestoreReceiverReservation,
   filterActiveReservationsToday,
   filterUpcomingReservations,
   formatReceiverDisplayDate,
   formatReceiverDisplayDateTime,
   isReservationStillInHouse,
   parseCompanionMetaFromApi,
+  receiverUnitHierarchyCells,
   type ReceiverCompanionMeta,
   type ReceiverReservationRow,
 } from "@/lib/reservation-receiver-list";
@@ -476,7 +478,7 @@ export default function HousingReceiverDashboard() {
 
   const runRowAction = useCallback(
     async (row: ReceiverReservationRow, kind: ReceiverRowAction) => {
-      if (kind === "restore" && !canRestore(row.status)) return;
+      if (kind === "restore" && !canRestoreReceiverReservation(row)) return;
 
       const confirmed = window.confirm(
         `هل تريد إعادة حجز ${row.userName} إلى حالة «محجوز»؟`,
@@ -742,7 +744,10 @@ export default function HousingReceiverDashboard() {
       {canRestore(row.status) ? (
         <Button
           type="button"
-          disabled={pendingAction?.id === row.id}
+          disabled={
+            pendingAction?.id === row.id ||
+            !canRestoreReceiverReservation(row)
+          }
           onClick={() => void runRowAction(row, "restore")}
           className={cn(
             receiverTableButtonClassName,
@@ -999,18 +1004,13 @@ export default function HousingReceiverDashboard() {
           if (!open) setDetailRow(null);
         }}
       >
-        <DialogContent dir="rtl" className="max-w-lg text-right">
+        <DialogContent dir="rtl" className="max-w-2xl text-right">
           <DialogHeader>
             <DialogTitle>تفاصيل الحجز</DialogTitle>
           </DialogHeader>
           {detailRow ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <DetailField label="صاحب الحجز">{detailRow.userName}</DetailField>
-              <DetailField label="الوحدات">
-                {detailRow.reservationUnits.length > 0
-                  ? detailRow.reservationUnits.join("، ")
-                  : detailRow.room}
-              </DetailField>
               <DetailField label="تاريخ الوصول">
                 {detailRow.arrivalDate}
               </DetailField>
@@ -1031,6 +1031,48 @@ export default function HousingReceiverDashboard() {
                   {detailRow.cancelationReason}
                 </DetailField>
               ) : null}
+              <div className="sm:col-span-2 space-y-2">
+                <p className="text-sm font-medium text-gray-600">وحدات الحجز</p>
+                {detailRow.reservationUnitSnapshots.length > 0 ? (
+                  <div className="overflow-x-auto rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-center">شقة</TableHead>
+                          <TableHead className="text-center">غرفة</TableHead>
+                          <TableHead className="text-center">
+                            السرير / الوحدة
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {detailRow.reservationUnitSnapshots.map((unit, index) => {
+                          const cells = receiverUnitHierarchyCells(unit);
+                          return (
+                            <TableRow
+                              key={`${unit.unitKind}:${unit.id}-${index}`}
+                            >
+                              <TableCell className="text-center">
+                                {cells.apartment}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {cells.room}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {cells.unit}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="text-base text-gray-900">
+                    {detailRow.room !== "—" ? detailRow.room : "—"}
+                  </p>
+                )}
+              </div>
               <div className="sm:col-span-2">
                 <DetailField label="المرافقون">
                   {detailRow.companions.length > 0 ? (

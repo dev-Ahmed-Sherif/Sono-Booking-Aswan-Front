@@ -111,19 +111,22 @@ function formatGenderAr(value: unknown): string {
         ? Number(value.trim())
         : null;
   const byNum: Record<number, string> = {
-    1: "ذكر",
-    2: "أنثى",
+    1: "رجال",
+    2: "سيدات",
   };
   if (num !== null && byNum[num]) return byNum[num];
 
   const key = String(value).trim();
   const byName: Record<string, string> = {
-    Male: "ذكر",
-    MALE: "ذكر",
-    Female: "أنثى",
-    FEMALE: "أنثى",
-    "1": "ذكر",
-    "2": "أنثى",
+    Male: "رجال",
+    MALE: "رجال",
+    Female: "سيدات",
+    FEMALE: "سيدات",
+    "1": "رجال",
+    "2": "سيدات",
+    ذكر: "رجال",
+    أنثى: "سيدات",
+    انثى: "سيدات",
   };
   return byName[key] ?? key;
 }
@@ -227,7 +230,7 @@ export function createColumns(): ColumnDef<ApartmentColumn>[] {
     },
     {
       accessorKey: "gender",
-      header: "النوع",
+      header: "التخصيص",
       cell: ({ row }) =>
         formatGenderAr(pick(row.original, ["gender", "Gender"])),
     },

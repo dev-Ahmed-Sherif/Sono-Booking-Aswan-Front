@@ -23,7 +23,10 @@ const inter = Cairo({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: process.env.TITLE,
   description: process.env.DESCRIPTION,
-  icons: ["/favicon.ico"],
+  icons: {
+    icon: "/housing-icon.svg",
+    apple: "/housing-icon.svg",
+  },
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

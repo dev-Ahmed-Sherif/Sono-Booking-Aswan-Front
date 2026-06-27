@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import { isImageFile } from "@/lib/image-file";
 import {
   MAX_IMAGE_SIZE_BYTES,
@@ -37,12 +38,17 @@ export type RequestAttachmentsInputProps = {
   files: File[];
   onChange: (files: File[]) => void;
   disabled?: boolean;
+  /** When true (e.g. نوع الطلب = مأمورية), at least one file is required before submit. */
+  required?: boolean;
+  errorMessage?: string;
 };
 
 export function RequestAttachmentsInput({
   files,
   onChange,
   disabled,
+  required = false,
+  errorMessage,
 }: RequestAttachmentsInputProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const { toast } = useToast();
@@ -122,15 +128,33 @@ export function RequestAttachmentsInput({
   };
 
   return (
-    <div className="space-y-3 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/80 p-4">
+    <div
+      className={cn(
+        "space-y-3 rounded-2xl border-2 border-dashed bg-slate-50/80 p-4",
+        errorMessage
+          ? "border-destructive bg-destructive/5"
+          : "border-slate-200",
+      )}
+    >
       <div className="space-y-1">
         <Label className="text-sm font-semibold text-slate-900">
-          مرفقات الطلب (اختياري)
+          مرفقات الطلب
+          {required ? (
+            <span className="text-destructive"> (مطلوب)</span>
+          ) : (
+            <span className="text-slate-500"> (اختياري)</span>
+          )}
         </Label>
         <p className="text-xs leading-relaxed text-slate-600">
+          {required
+            ? "يُطلب إرفاق مستند واحد على الأقل لطلبات المأمورية — "
+            : ""}
           صور أو PDF — حتى {MAX_NEW_IMAGES} ملفات، {MAX_IMAGE_SIZE_LABEL} لكل
           ملف
         </p>
+        {errorMessage ? (
+          <p className="text-sm font-medium text-destructive">{errorMessage}</p>
+        ) : null}
       </div>
 
       <input

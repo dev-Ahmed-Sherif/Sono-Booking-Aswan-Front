@@ -11,8 +11,6 @@ export {
 import type { AvailabilityInquiryDates } from "@/lib/availability-dates";
 import { isUnitFreeFromInquiryStart } from "@/lib/availability-dates";
 import {
-  filterBedsWithAvailableRoom,
-  filterRoomsWithAvailableApartment,
   applyAvailabilityHierarchyFilters,
 } from "@/lib/availability-hierarchy";
 import {
@@ -80,12 +78,114 @@ export type ReservationStoredUnitSnapshot = Pick<
   | "parentApartmentLabel"
   | "priceLabel"
   | "genderType"
+  | "allocationTypeLabel"
   | "buildingNumberAr"
   | "city"
   | "primaryPhotoUrls"
   | "availableBedsCountLabel"
   | "unavailableBedsCountLabel"
 >;
+
+export type PreservedInquiryFieldsFromUnits = {
+  unitTypes: AvailableUnitType[];
+  unitTypeLabels: string[];
+  unitTypeLabel: string;
+  genders: ("male" | "female")[];
+  genderLabels: string[];
+  genderLabel: string;
+  allocationType?: string;
+  allocationTypeLabel?: string;
+};
+
+const UNIT_KIND_ORDER: readonly AvailableUnitType[] = [
+  "bed",
+  "room",
+  "apartment",
+];
+
+function guestGenderCodeFromLabel(
+  label: string | undefined,
+): "male" | "female" | undefined {
+  if (!label?.trim()) return undefined;
+  const t = label.trim().toLowerCase();
+  if (
+    t === "male" ||
+    t === "m" ||
+    t === "1" ||
+    t === "ذكر" ||
+    t === "رجال" ||
+    t === "man"
+  ) {
+    return "male";
+  }
+  if (
+    t === "female" ||
+    t === "f" ||
+    t === "2" ||
+    t === "أنثى" ||
+    t === "انثى" ||
+    t === "سيدات" ||
+    t === "woman"
+  ) {
+    return "female";
+  }
+  return undefined;
+}
+
+function normalizeGenderDisplayLabel(label: string): string {
+  const code = guestGenderCodeFromLabel(label);
+  if (code === "male") return "رجال";
+  if (code === "female") return "سيدات";
+  return label.trim();
+}
+
+/** Labels for the request form «محفوظ» block — derived from chosen units, not search filters. */
+export function buildPreservedInquiryFieldsFromUnits(
+  units: ReservationStoredUnitSnapshot[],
+): PreservedInquiryFieldsFromUnits {
+  const unitTypes = UNIT_KIND_ORDER.filter((kind) =>
+    units.some((u) => u.unitKind === kind),
+  );
+  const unitTypeLabels = unitTypes.map((k) => UNIT_TYPE_LABEL_AR[k] ?? k);
+
+  const genderLabels: string[] = [];
+  const genders: ("male" | "female")[] = [];
+  for (const unit of units) {
+    const raw = unit.genderType?.trim();
+    if (!raw) continue;
+    const display = normalizeGenderDisplayLabel(raw);
+    const code = guestGenderCodeFromLabel(raw);
+    if (!genderLabels.includes(display)) genderLabels.push(display);
+    if (code && !genders.includes(code)) genders.push(code);
+  }
+
+  const allocationLabels = [
+    ...new Set(
+      units
+        .map((u) => u.allocationTypeLabel?.trim())
+        .filter((x): x is string => Boolean(x)),
+    ),
+  ];
+  const allocationTypeLabel =
+    allocationLabels.length > 0 ? allocationLabels.join("، ") : undefined;
+  let allocationType: string | undefined;
+  if (allocationLabels.length === 1) {
+    const only = allocationLabels[0]!;
+    if (only === "ثابت") allocationType = "1";
+    else if (only === "مرن") allocationType = "2";
+  }
+
+  return {
+    unitTypes,
+    unitTypeLabels,
+    unitTypeLabel: unitTypeLabels.join("، "),
+    genders,
+    genderLabels,
+    genderLabel: genderLabels.join("، "),
+    ...(allocationType ? { allocationType } : {}),
+    ...(allocationTypeLabel ? { allocationTypeLabel } : {}),
+  };
+}
 
 export function toReservationStoredUnits(
   units: AvailabilityUnitCard[],
@@ -99,6 +199,9 @@ export function toReservationStoredUnits(
     ...(u.roomId ? { roomId: u.roomId } : {}),
     priceLabel: u.priceLabel,
     genderType: u.genderType,
+    ...(u.allocationTypeLabel
+      ? { allocationTypeLabel: u.allocationTypeLabel }
+      : {}),
     ...(u.parentRoomLabel ? { parentRoomLabel: u.parentRoomLabel } : {}),
     ...(u.parentApartmentLabel
       ? { parentApartmentLabel: u.parentApartmentLabel }
@@ -362,6 +465,21 @@ function indexRowsById(rows: unknown[]): Map<string, Record<string, unknown>> {
     if (id) m.set(id.trim().toLowerCase(), r);
   }
   return m;
+}
+
+/** Later sources override earlier rows with the same id (for catalog + inquiry merge). */
+function mergeRowsForLookup(...sources: unknown[][]): unknown[] {
+  const byId = new Map<string, unknown>();
+  for (const rows of sources) {
+    for (const item of rows) {
+      if (!item || typeof item !== "object") continue;
+      const id = pickStr(item as Record<string, unknown>, "id", "Id")
+        .trim()
+        .toLowerCase();
+      if (id) byId.set(id, item);
+    }
+  }
+  return Array.from(byId.values());
 }
 
 function pickBuildingNumberAr(r: Record<string, unknown>): string | undefined {
@@ -797,6 +915,9 @@ export type AvailabilityHierarchyRaw = {
   roomsRaw?: unknown[];
   bedsRaw?: unknown[];
   allBedsRaw?: unknown[];
+  /** Full housing catalog for parent labels when inquiry lists omit hidden parents. */
+  catalogRoomsRaw?: unknown[];
+  catalogApartmentsRaw?: unknown[];
 };
 
 export async function enrichAvailabilityCards(
@@ -807,7 +928,10 @@ export async function enrichAvailabilityCards(
   if (unitKind === "apartment") {
     const bedsRawForCount = hierarchy?.bedsRaw ?? [];
     const allBedsRawForCount = hierarchy?.allBedsRaw ?? bedsRawForCount;
-    const roomsRawForCount = hierarchy?.roomsRaw ?? [];
+    const roomsRawForCount = mergeRowsForLookup(
+      hierarchy?.catalogRoomsRaw ?? [],
+      hierarchy?.roomsRaw ?? [],
+    );
 
     // Map roomId -> apartmentId so we can count beds under each apartment.
     const roomApartmentById = new Map<string, string>();
@@ -927,16 +1051,19 @@ export async function enrichAvailabilityCards(
       totalBedCountByRoomId.set(roomId.toLowerCase(), prev + 1);
     }
 
-    let aptRows: unknown[] = hierarchy?.apartmentsRaw ?? [];
+    let aptRows = mergeRowsForLookup(
+      hierarchy?.catalogApartmentsRaw ?? [],
+      hierarchy?.apartmentsRaw ?? [],
+    );
     if (!aptRows.length) {
-      const aptRes = await getAvailableUnits("apartment");
+      const aptRes = await getCatalogUnits("apartment");
       if ("error" in aptRes && aptRes.error) {
         return mapRawToCards(unitKind, rawList);
       }
       aptRows = Array.isArray(aptRes.data) ? aptRes.data : [];
     }
     const aptById = indexRowsById(aptRows);
-    const workingList = filterRoomsWithAvailableApartment(rawList, aptRows);
+    const workingList = rawList;
     const base = mapRawToCards(unitKind, workingList);
     const safeBase = (idx: number): AvailabilityUnitCard =>
       base[idx] ?? {
@@ -994,16 +1121,22 @@ export async function enrichAvailabilityCards(
     });
   }
 
-  let roomRows: unknown[] = hierarchy?.roomsRaw ?? [];
-  let aptRows: unknown[] = hierarchy?.apartmentsRaw ?? [];
+  let roomRows = mergeRowsForLookup(
+    hierarchy?.catalogRoomsRaw ?? [],
+    hierarchy?.roomsRaw ?? [],
+  );
+  let aptRows = mergeRowsForLookup(
+    hierarchy?.catalogApartmentsRaw ?? [],
+    hierarchy?.apartmentsRaw ?? [],
+  );
   if (!roomRows.length || !aptRows.length) {
     const [roomRes, aptRes] = await Promise.all([
       roomRows.length
         ? Promise.resolve({ data: roomRows })
-        : getAvailableUnits("room"),
+        : getCatalogUnits("room"),
       aptRows.length
         ? Promise.resolve({ data: aptRows })
-        : getAvailableUnits("apartment"),
+        : getCatalogUnits("apartment"),
     ]);
     if (!roomRows.length) {
       roomRows =
@@ -1021,14 +1154,8 @@ export async function enrichAvailabilityCards(
 
   const roomById = indexRowsById(roomRows);
   const aptById = indexRowsById(aptRows);
-  const roomsWithAvailableApartment = filterRoomsWithAvailableApartment(
-    roomRows,
-    aptRows,
-  );
-  const workingList = filterBedsWithAvailableRoom(
-    rawList,
-    roomsWithAvailableApartment,
-  );
+  // Hierarchy filter already applied; bed search keeps free beds without parent wiring.
+  const workingList = rawList;
   const base = mapRawToCards(unitKind, workingList);
   const safeBase = (idx: number): AvailabilityUnitCard =>
     base[idx] ?? {
@@ -1152,9 +1279,10 @@ export async function fetchMergedAvailabilityCards(
   let failures = 0;
   let lastMessage: string | undefined;
 
-  const [catalogBedsRes, catalogRoomsRes] = await Promise.all([
+  const [catalogBedsRes, catalogRoomsRes, catalogAptsRes] = await Promise.all([
     getCatalogUnits("bed"),
     getCatalogUnits("room"),
+    getCatalogUnits("apartment"),
   ]);
   const catalogBedsRaw =
     !("error" in catalogBedsRes && catalogBedsRes.error) &&
@@ -1165,6 +1293,11 @@ export async function fetchMergedAvailabilityCards(
     !("error" in catalogRoomsRes && catalogRoomsRes.error) &&
     Array.isArray(catalogRoomsRes.data)
       ? catalogRoomsRes.data
+      : [];
+  const catalogApartmentsRaw =
+    !("error" in catalogAptsRes && catalogAptsRes.error) &&
+    Array.isArray(catalogAptsRes.data)
+      ? catalogAptsRes.data
       : [];
 
   await Promise.all(
@@ -1197,6 +1330,7 @@ export async function fetchMergedAvailabilityCards(
     apartments: apartmentsRaw,
     rooms: roomsRaw,
     beds: bedsRaw,
+    searchKinds: kinds,
     catalogBeds: catalogBedsRaw,
     catalogRooms: catalogRoomsRaw,
     hierarchyRaw: { apartmentsRaw, roomsRaw },
@@ -1219,6 +1353,8 @@ export async function fetchMergedAvailabilityCards(
         roomsRaw,
         bedsRaw: filtered.beds,
         allBedsRaw: catalogBedsRaw.length > 0 ? catalogBedsRaw : bedsRaw,
+        catalogRoomsRaw,
+        catalogApartmentsRaw,
       })),
     );
   }

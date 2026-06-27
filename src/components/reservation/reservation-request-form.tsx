@@ -60,12 +60,14 @@ import {
   getLookupArray,
   hierarchyFilteredAvailabilityLists,
   mapGenericOptions,
+  buildPreservedInquiryFieldsFromUnits,
   type ReservationStoredUnitSnapshot,
 } from "@/lib/availability-inquiry";
 import { mapCompanionDtoToFormEntry } from "@/lib/companion-registration";
 import {
   enrichUnitsWithApartmentGender,
   extractAvailabilityList,
+  deriveInquiryGendersFromStoredUnits,
   parseGuestGenderStrict,
   parseInquiryGenders,
   parseStoredReservationUnits,
@@ -83,6 +85,7 @@ import {
   type ReservationInquiryFormSnapshot,
 } from "@/lib/housing-request-map";
 import { oncePerSession } from "@/lib/server-action-cache";
+import { isMissionRequestType } from "@/lib/housing-request-list";
 
 type ReservationCompanion = {
   id: string;
@@ -277,13 +280,21 @@ function hydrateReservationFromLocalStorage(
     return;
   }
 
-  setStoredSelectedUnits(parseStoredReservationUnits(saved?.selectedUnits));
+  const parsedUnits = parseStoredReservationUnits(saved?.selectedUnits);
+  setStoredSelectedUnits(parsedUnits);
+  const preservedFromUnits =
+    parsedUnits.length > 0
+      ? buildPreservedInquiryFieldsFromUnits(parsedUnits)
+      : null;
+
   setInquiryGenders(
-    parseInquiryGenders(
-      saved?.form && typeof saved.form === "object"
-        ? (saved.form as Record<string, unknown>)
-        : undefined,
-    ),
+    preservedFromUnits?.genders.length
+      ? preservedFromUnits.genders
+      : parseInquiryGenders(
+          saved?.form && typeof saved.form === "object"
+            ? (saved.form as Record<string, unknown>)
+            : undefined,
+        ),
   );
 
   const formData = saved?.form;
@@ -296,10 +307,15 @@ function hydrateReservationFromLocalStorage(
   const nextNights = parseNightsFromForm(formData);
 
   const labels = {
-    unitTypeLabel: nonEmptyString(formData.unitTypeLabel),
+    unitTypeLabel:
+      preservedFromUnits?.unitTypeLabel ||
+      nonEmptyString(formData.unitTypeLabel),
     requestTypeLabel: nonEmptyString(formData.requestTypeLabel),
-    genderLabel: resolveStoredGenderSummary(formData),
-    allocationTypeLabel: nonEmptyString(formData.allocationTypeLabel),
+    genderLabel:
+      preservedFromUnits?.genderLabel || resolveStoredGenderSummary(formData),
+    allocationTypeLabel:
+      preservedFromUnits?.allocationTypeLabel ||
+      nonEmptyString(formData.allocationTypeLabel),
   };
   const units = parseStoredUnits(saved?.selectedUnits);
   const hasLabels = Object.values(labels).some(Boolean);
@@ -403,6 +419,7 @@ const ReservationRequestForm = ({
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | undefined>();
   const [storedInquiry, setStoredInquiry] =
     useState<StoredInquirySnapshot | null>(null);
   const [storedSelectedUnits, setStoredSelectedUnits] = useState<
@@ -663,14 +680,17 @@ const ReservationRequestForm = ({
       storedSelectedUnits.length > 0
         ? storedSelectedUnits
         : parseStoredReservationUnits(saved?.selectedUnits);
+    const unitInquiryGenders = deriveInquiryGendersFromStoredUnits(units);
     const inquiry =
-      inquiryGenders.length > 0
-        ? inquiryGenders
-        : parseInquiryGenders(
-            saved?.form && typeof saved.form === "object"
-              ? (saved.form as Record<string, unknown>)
-              : undefined,
-          );
+      unitInquiryGenders.length > 0
+        ? unitInquiryGenders
+        : inquiryGenders.length > 0
+          ? inquiryGenders
+          : parseInquiryGenders(
+              saved?.form && typeof saved.form === "object"
+                ? (saved.form as Record<string, unknown>)
+                : undefined,
+            );
 
     try {
       setIsSaving(true);
@@ -792,6 +812,28 @@ const ReservationRequestForm = ({
         return;
       }
 
+      const missionType = isMissionRequestType(
+        storedInquiry?.requestTypeLabel ??
+          (saved?.form && typeof saved.form === "object"
+            ? String(
+                (saved.form as ReservationLocalStoragePayload["form"])
+                  ?.requestTypeLabel ?? "",
+              )
+            : undefined),
+      );
+      if (missionType && attachmentFiles.length === 0) {
+        const message =
+          "مرفقات الطلب مطلوبة لطلبات المأمورية. أرفق مستنداً واحداً على الأقل.";
+        setAttachmentError(message);
+        toast({
+          variant: "destructive",
+          title: "لا يمكن تقديم الطلب",
+          description: message,
+        });
+        return;
+      }
+      setAttachmentError(undefined);
+
       const inquiryForm =
         saved?.form && typeof saved.form === "object"
           ? (saved.form as ReservationInquiryFormSnapshot)
@@ -852,6 +894,7 @@ const ReservationRequestForm = ({
       setStoredSelectedUnits([]);
       setInquiryGenders([]);
       setAttachmentFiles([]);
+      setAttachmentError(undefined);
       onStorageCleared?.();
     } finally {
       setIsSaving(false);
@@ -870,6 +913,7 @@ const ReservationRequestForm = ({
     setStoredSelectedUnits([]);
     setInquiryGenders([]);
     setAttachmentFiles([]);
+    setAttachmentError(undefined);
     setPickedCompanionRows([]);
     const clearedGuests = [
       {
@@ -948,6 +992,16 @@ const ReservationRequestForm = ({
   };
 
   const loading = isSubmitting || isSaving;
+
+  const missionAttachmentsRequired = useMemo(
+    () => isMissionRequestType(storedInquiry?.requestTypeLabel),
+    [storedInquiry?.requestTypeLabel],
+  );
+
+  const handleAttachmentFilesChange = (files: File[]) => {
+    setAttachmentFiles(files);
+    if (files.length > 0) setAttachmentError(undefined);
+  };
 
   const handleInvalidSubmit = () => {
     toast({
@@ -1182,8 +1236,10 @@ const ReservationRequestForm = ({
                 <FormItem>
                   <RequestAttachmentsInput
                     files={attachmentFiles}
-                    onChange={setAttachmentFiles}
+                    onChange={handleAttachmentFilesChange}
                     disabled={loading}
+                    required={missionAttachmentsRequired}
+                    errorMessage={attachmentError}
                   />
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <FormLabel className="text-gray-700 text-base m-0">
