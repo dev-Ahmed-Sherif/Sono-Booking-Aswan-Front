@@ -55,9 +55,24 @@ const REPORT_OPTIONS = [
   { value: "RequestReport", label: "تقرير الطلبات" },
 ] as const;
 
-async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+async function dataUrlToBlob(
+  dataUrl: string,
+  fallbackType = "application/pdf",
+): Promise<Blob> {
   const response = await fetch(dataUrl);
-  return response.blob();
+  const blob = await response.blob();
+  if (
+    blob.type &&
+    blob.type !== "application/octet-stream" &&
+    blob.type !== "text/plain"
+  ) {
+    return blob;
+  }
+  return new Blob([await blob.arrayBuffer()], { type: fallbackType });
+}
+
+function formatLocalDate(date: Date): string {
+  return format(date, "yyyy-MM-dd");
 }
 
 function triggerDownload(blob: Blob, filename: string) {
@@ -92,7 +107,7 @@ const ReportsForm = () => {
       endDate: undefined,
       reservationStatus: undefined,
       reportName: "",
-      reportType: "",
+      reportType: "pdf",
     },
   });
 
@@ -136,11 +151,13 @@ const ReportsForm = () => {
 
   const fetchReport = async (reportType: string) => {
     const data = form.getValues();
+    const startDate = formatLocalDate(data.startDate);
+    const endDate = formatLocalDate(data.endDate);
 
     if (data.reportName === "ReservationDetailsReport") {
       return getReservationReport({
-        startDate: data.startDate,
-        endDate: data.endDate,
+        startDate,
+        endDate,
         reportName: data.reportName,
         reportType,
         reservationStatus: data.reservationStatus,
@@ -149,8 +166,8 @@ const ReportsForm = () => {
 
     if (data.reportName === "RequestReport") {
       return getRequestReport({
-        startDate: data.startDate,
-        endDate: data.endDate,
+        startDate,
+        endDate,
         reportName: data.reportName,
         reportType,
       });
@@ -217,8 +234,13 @@ const ReportsForm = () => {
       }
 
       if (result?.data) {
-        const blob = await dataUrlToBlob(result.data);
-        const filename = result.filename || "report.pdf";
+        const blob = await dataUrlToBlob(
+          result.data,
+          result.contentType || "application/pdf",
+        );
+        const filename = result.filename?.endsWith(".pdf")
+          ? result.filename
+          : `${result.filename || "report"}.pdf`;
         const url = URL.createObjectURL(blob);
 
         setReportFilename(filename);
