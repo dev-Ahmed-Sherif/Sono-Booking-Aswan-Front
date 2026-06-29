@@ -28,6 +28,7 @@ import { canAccessHousingReceiverFromCandidates } from "@/lib/role-utils";
 import {
   computeFinalAmountAfterDiscount,
   formatReservationAmountAr,
+  receiverRowBookingAmount,
 } from "@/lib/reservation-discount";
 import {
   PAYMENT_METHOD_CASH,
@@ -424,7 +425,7 @@ export default function HousingReceiverDashboard() {
     if (!checkInRow) return 0;
     const pct = Number(discountPercent);
     return computeFinalAmountAfterDiscount(
-      checkInRow.totalAmount,
+      checkInRow.reservationTotalAmount,
       Number.isFinite(pct) ? pct : 0,
     );
   }, [checkInRow, discountPercent]);
@@ -513,6 +514,13 @@ export default function HousingReceiverDashboard() {
             variant: "destructive",
             title: "تنبيه: حالة الوحدات",
             description: String(result.unitReserveWarning),
+          });
+        }
+
+        if ("unitReplacementWarning" in result && result.unitReplacementWarning) {
+          toast({
+            title: "تم استبدال وحدات الحجز",
+            description: String(result.unitReplacementWarning),
           });
         }
 
@@ -608,7 +616,7 @@ export default function HousingReceiverDashboard() {
         startDateYmd: checkInRow.startDateYmd,
         endDateYmd: checkInRow.endDateYmd,
         discountPercent: pct,
-        baseTotalAmount: checkInRow.totalAmount,
+        baseTotalAmount: checkInRow.reservationTotalAmount,
         paymentMethod,
       });
 
@@ -664,7 +672,7 @@ export default function HousingReceiverDashboard() {
 
   const openCheckInModal = useCallback((row: ReceiverReservationRow) => {
     setCheckInRow(row);
-    setDiscountPercent("0");
+    setDiscountPercent(String(row.discountPercent ?? 0));
     setPaymentMethod(PAYMENT_METHOD_CASH);
   }, []);
 
@@ -1018,7 +1026,9 @@ export default function HousingReceiverDashboard() {
                 {formatReceiverDisplayDate(detailRow.endDateYmd)}
               </DetailField>
               <DetailField label="مبلغ الحجز">
-                {formatReservationAmountAr(detailRow.totalAmount)}
+                {formatReservationAmountAr(
+                  receiverRowBookingAmount(detailRow),
+                )}
               </DetailField>
               <DetailField label="تأكيد الوصول">
                 {formatReceiverDisplayDateTime(detailRow.checkInAt)}
@@ -1198,7 +1208,9 @@ export default function HousingReceiverDashboard() {
                 <div className="space-y-1">
                   <Label>مبلغ الحجز</Label>
                   <p className="text-base font-medium">
-                    {formatReservationAmountAr(checkoutRow.totalAmount)}
+                    {formatReservationAmountAr(
+                      receiverRowBookingAmount(checkoutRow),
+                    )}
                   </p>
                 </div>
               </div>
@@ -1253,7 +1265,9 @@ export default function HousingReceiverDashboard() {
               <div className="space-y-1">
                 <Label>مبلغ الحجز</Label>
                 <p className="rounded-md border bg-muted/40 px-3 py-2 text-base">
-                  {formatReservationAmountAr(checkInRow.totalAmount)}
+                  {formatReservationAmountAr(
+                    receiverRowBookingAmount(checkInRow),
+                  )}
                 </p>
               </div>
               <div className="space-y-2">

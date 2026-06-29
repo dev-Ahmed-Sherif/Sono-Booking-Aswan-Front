@@ -36,6 +36,9 @@ export type AddRequestDtoPayload = {
   startDate: string;
   nights: number;
   requestTypeId: string;
+  requestToId: string;
+  /** Discount percentage (0–100); set by leader on approval for new stays. */
+  percentage: number;
   requestAllocationType: 1 | 2;
   /** Required by API — field name matches backend spelling (`requestCatagory`). */
   requestCatagory: HousingRequestCatagoryApi;
@@ -147,6 +150,8 @@ export function serializeAddRequestDtoForApi(
     startDate: payload.startDate,
     nights: payload.nights,
     requestTypeId: payload.requestTypeId,
+    requestToId: payload.requestToId,
+    percentage: payload.percentage,
     requestAllocationType: payload.requestAllocationType,
     requestUnits,
     requestCompanions,
@@ -213,6 +218,8 @@ export function buildAddRequestFormData(
   appendAddRequestFormScalar(formData, "StartDate", payload.startDate);
   appendAddRequestFormScalar(formData, "Nights", payload.nights);
   appendAddRequestFormScalar(formData, "RequestTypeId", payload.requestTypeId);
+  appendAddRequestFormScalar(formData, "RequestToId", payload.requestToId);
+  appendAddRequestFormScalar(formData, "Percentage", payload.percentage);
   appendAddRequestFormScalar(
     formData,
     "RequestAllocationType",
@@ -344,6 +351,12 @@ export function validateLeaderDecisionPayload(
     return {
       ok: false,
       message: "نوع الطلب غير موجود في بيانات الطلب. أعد فتح التفاصيل أو حدّث الصفحة.",
+    };
+  }
+  if (!payload.requestToId?.trim()) {
+    return {
+      ok: false,
+      message: "الجهة الموجّه إليها الطلب غير موجودة في بيانات الطلب.",
     };
   }
   if (!payload.startDate?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(payload.startDate)) {
@@ -704,6 +717,14 @@ export function mapReservationToAddRequestDto(input: {
     };
   }
 
+  const requestToId = String(formValues.requestToId ?? "").trim();
+  if (!requestToId) {
+    return {
+      ok: false,
+      message: "يرجى اختيار الجهة الموجّه إليها الطلب.",
+    };
+  }
+
   const requestAllocationType =
     parseAllocationTypeEnum(
       buildPreservedInquiryFieldsFromUnits(units).allocationType,
@@ -748,6 +769,8 @@ export function mapReservationToAddRequestDto(input: {
     startDate,
     nights: Math.trunc(nights),
     requestTypeId,
+    requestToId,
+    percentage: 0,
     requestAllocationType,
     requestCatagory: HOUSING_REQUEST_CATAGORY_NEW_STAY,
     requestUnits: normalizeRequestUnitsForAddRequestDto(requestUnits),
@@ -764,6 +787,8 @@ export function formatAddRequestErrorMessage(message: string): string {
     return "عدد الليالي يجب أن يكون أكبر من صفر.";
   if (m === "RequestTypeId is required.")
     return "نوع الطلب مطلوب.";
+  if (m === "RequestToId is required.")
+    return "الجهة الموجّه إليها الطلب مطلوبة.";
   if (m.includes("ApartmentId") || m.includes("BedId") || m.includes("RoomId"))
     return "يجب تحديد وحدة صالحة (شقة أو غرفة أو سرير) لكل صف في الطلب.";
   return m;

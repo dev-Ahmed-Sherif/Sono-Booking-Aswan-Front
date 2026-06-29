@@ -40,6 +40,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { ReportPreviewDialog } from "@/components/report/report-preview-dialog";
+import { useRequestDetailsReport } from "@/hooks/use-request-details-report";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { cn } from "@/lib/utils";
 import type { AvailabilityUnitCard } from "@/lib/availability-inquiry";
@@ -120,6 +122,7 @@ import {
   requestUnitDtosToEnrichedSnapshots,
 } from "@/lib/housing-request-map";
 import { mapHousingRequestToExtendInquiryPrefill } from "@/lib/reservation-extend-inquiry";
+import { extractRequestToId } from "@/lib/housing-request-list";
 import {
   areReservationUnitsFreeForExtend,
   mapExtendStayToAddRequestDto,
@@ -197,6 +200,8 @@ function storedUserId(raw: unknown): string {
 
 const ReservationPage = () => {
   const { toast } = useToast();
+  const { openRequestDetailsReport, isReportLoading, previewProps } =
+    useRequestDetailsReport();
   const params = useParams();
   const locale = (params?.locale as string) || "ar";
   const reservation = useLocalStorage("reservation");
@@ -646,6 +651,7 @@ const ReservationPage = () => {
       extendInquirySnapshotRef.current = snapshot;
       setExtendContext({
         sourceRequestId: requestId,
+        requestToId: extractRequestToId(requestRaw),
         reservationId,
         reservationEndYmd: nextStart,
         unitSnapshots,
@@ -1028,6 +1034,7 @@ const ReservationPage = () => {
         nights: Number(nights),
         requestTypeId: requestType,
         allocationTypeValue: allocationType,
+        requestToId: extendContext.requestToId,
       });
       if (!mapped.ok) {
         toast({
@@ -1324,6 +1331,7 @@ const ReservationPage = () => {
 
                           {showAvailabilityInquiry ? (
                             <>
+                              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                               <div className="space-y-1.5">
                                 <Label className="text-foreground flex items-center gap-1.5 text-base">
                                   <CalendarDays className="h-4 w-4 text-blue-500" />
@@ -1417,6 +1425,7 @@ const ReservationPage = () => {
                                     {availabilityErrors.nights}
                                   </p>
                                 ) : null}
+                              </div>
                               </div>
 
                               <div className="space-y-1.5">
@@ -1749,7 +1758,7 @@ const ReservationPage = () => {
                                               initial={{ opacity: 0, y: 6 }}
                                               animate={{ opacity: 1, y: 0 }}
                                               className={cn(
-                                                "rounded-2xl border-2 p-4 text-right shadow-sm transition-shadow hover:shadow-md",
+                                                "flex flex-col rounded-2xl border-2 p-4 text-right shadow-sm transition-shadow hover:shadow-md",
                                                 card.unitKind === "bed" &&
                                                   "bg-gradient-to-br from-sky-50 via-white to-slate-50/80 border-sky-200",
                                                 card.unitKind === "room" &&
@@ -1817,48 +1826,15 @@ const ReservationPage = () => {
                                                   <AvailabilityUnitCardBedsCount
                                                     card={card}
                                                   />
-                                                  <AvailabilityUnitCardPhotos
-                                                    card={card}
-                                                  />
-                                                  {card.genderType ? (
-                                                    <p className="text-base font-bold leading-snug text-slate-800">
-                                                      <span className="font-semibold text-slate-600">
-                                                        نوع الجنس:{" "}
-                                                      </span>
-                                                      {card.genderType}
-                                                    </p>
-                                                  ) : null}
-                                                  {card.buildingNumberAr ||
-                                                  card.city ? (
-                                                    <div className="space-y-0.5 text-sm font-semibold leading-snug text-slate-800">
-                                                      {card.buildingNumberAr ? (
-                                                        <p>
-                                                          <span className="text-slate-600">
-                                                            رقم المبنى:{" "}
-                                                          </span>
-                                                          <span className="font-bold tabular-nums text-slate-900">
-                                                            {
-                                                              card.buildingNumberAr
-                                                            }
-                                                          </span>
-                                                        </p>
-                                                      ) : null}
-                                                      {card.city ? (
-                                                        <p>
-                                                          <span className="text-slate-600">
-                                                            المدينة:{" "}
-                                                          </span>
-                                                          <span className="font-bold text-slate-900">
-                                                            {card.city}
-                                                          </span>
-                                                        </p>
-                                                      ) : null}
-                                                    </div>
-                                                  ) : null}
-                                                  <p className="text-sm leading-relaxed text-slate-600 line-clamp-3">
-                                                    {card.subtitle}
-                                                  </p>
                                                 </div>
+                                              </div>
+                                              <div
+                                                className="mt-3 flex justify-start"
+                                                dir="ltr"
+                                              >
+                                                <AvailabilityUnitCardPhotos
+                                                  card={card}
+                                                />
                                               </div>
                                             </motion.div>
                                           );
@@ -2026,8 +2002,9 @@ const ReservationPage = () => {
                                             canceling={
                                               cancelingRequestId === row.id
                                             }
+                                            viewLoading={isReportLoading(row.id)}
                                             onView={(r) =>
-                                              openHistoryModal(r, "view")
+                                              void openRequestDetailsReport(r.id)
                                             }
                                             onEdit={(r) =>
                                               openHistoryModal(r, "edit")
@@ -2080,6 +2057,7 @@ const ReservationPage = () => {
           </motion.div>
         </Card>
       </motion.div>
+      <ReportPreviewDialog {...previewProps} />
       <div className="mb-14 h-24 text-transparent">t</div>
     </main>
   );

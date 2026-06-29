@@ -23,6 +23,8 @@ import type { ReservationStoredUnitSnapshot } from "@/lib/availability-inquiry";
 import {
   extractNightsFromRequest,
   extractRequestAllocationTypeValue,
+  extractRequestPercentage,
+  extractRequestToId,
   extractRequestTypeId,
   formatRequestAllocationTypeForTable,
   formatRequestCatagoryForTable,
@@ -42,6 +44,8 @@ export type HousingRequestDetail = {
   startDate: string;
   nights: number;
   requestTypeId: string;
+  requestToId: string;
+  percentage: number;
   requestAllocationType: 1 | 2;
   requestCatagory: HousingRequestCatagoryApi;
   statusLabel: string;
@@ -394,6 +398,8 @@ export function parseRequestDetail(
     startDate,
     nights: extractNightsFromRequest(raw),
     requestTypeId: pickStr(raw, "requestTypeId", "RequestTypeId"),
+    requestToId: extractRequestToId(raw),
+    percentage: extractRequestPercentage(raw),
     requestAllocationType,
     requestCatagory:
       parseRequestCatagoryApiValue(raw) ?? HOUSING_REQUEST_CATAGORY_NEW_STAY,
@@ -514,6 +520,8 @@ export function buildUpdateRequestPayload(
     startDate: detail.startDate,
     nights: detail.nights,
     requestTypeId: detail.requestTypeId,
+    requestToId: detail.requestToId,
+    percentage: detail.percentage,
     requestAllocationType: detail.requestAllocationType,
     requestCatagory: detail.requestCatagory,
     requestUnits: normalizeRequestUnitsForAddRequestDto(
@@ -540,7 +548,11 @@ export function buildLeaderRequestDecisionPayload(
   requestUnits: AddRequestUnitDtoPayload[],
   companionIds: string[],
   decision: LeaderRequestDecision,
-  options: { leaderUserId: string; rejectionReason?: string },
+  options: {
+    leaderUserId: string;
+    rejectionReason?: string;
+    percentage?: number;
+  },
 ): AddRequestDtoPayload & { status: number | string } {
   const statusNumeric =
     decision === "approve"
@@ -559,6 +571,11 @@ export function buildLeaderRequestDecisionPayload(
 
   const requestId = pickStr(raw, "id", "Id");
   const previousRequestId = extractPreviousRequestId(raw);
+  const requestToId = extractRequestToId(raw);
+  const percentage =
+    decision === "approve" && options.percentage != null
+      ? Math.min(100, Math.max(0, options.percentage))
+      : extractRequestPercentage(raw);
 
   return {
     id: requestId,
@@ -567,6 +584,8 @@ export function buildLeaderRequestDecisionPayload(
     startDate,
     nights: Math.max(1, extractNightsFromRequest(raw)),
     requestTypeId: extractRequestTypeId(raw),
+    requestToId,
+    percentage,
     requestAllocationType: parseAllocationTypeEnum(allocationValue) ?? 1,
     requestCatagory:
       parseRequestCatagoryApiValue(raw) ?? HOUSING_REQUEST_CATAGORY_NEW_STAY,

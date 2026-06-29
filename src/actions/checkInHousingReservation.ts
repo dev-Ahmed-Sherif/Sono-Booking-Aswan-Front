@@ -18,6 +18,7 @@ import {
 import { computeFinalAmountAfterDiscount } from "@/lib/reservation-discount";
 import {
   RESERVATION_STATUS_COMPLETED,
+  reservationEndDateAtNoonIso,
   serializeAddReservationDtoForApi,
 } from "@/lib/reservation-map";
 
@@ -55,8 +56,8 @@ function isDuplicatePaymentError(res: unknown): boolean {
 }
 
 /**
- * `PUT /Reservations/update` with `status: "Completed"`, `checkInDate` and
- * `actualCheckOutDate` set to now, then `POST /Payments/add`, then mark units Occupied.
+ * `PUT /Reservations/update` with `status: "Completed"`, `checkInDate` set to now,
+ * `actualCheckOutDate` set to endDate at 12:00:00, then `POST /Payments/add`, then mark units Occupied.
  */
 export async function checkInHousingReservation(
   input: CheckInHousingReservationInput,
@@ -81,6 +82,14 @@ export async function checkInHousingReservation(
   }
 
   const nowIso = new Date().toISOString();
+  const endDateYmd =
+    reservation.endDate?.trim().slice(0, 10) ||
+    input.endDateYmd?.trim().slice(0, 10) ||
+    "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(endDateYmd)) {
+    return { ok: false, message: "تاريخ نهاية الحجز غير صالح." };
+  }
+  const plannedCheckOutIso = reservationEndDateAtNoonIso(endDateYmd);
   const totalAmount = computeFinalAmountAfterDiscount(
     input.baseTotalAmount,
     discountPercent,
@@ -95,7 +104,7 @@ export async function checkInHousingReservation(
       status: RESERVATION_STATUS_COMPLETED,
       totalAmount,
       checkInDate: nowIso,
-      actualCheckOutDate: nowIso,
+      actualCheckOutDate: plannedCheckOutIso,
       cancelationReason: "",
     }),
   );

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, CalendarIcon, X, Download, Eye } from "lucide-react";
+import { Loader2, CalendarIcon, Download, Eye } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import * as z from "zod";
@@ -32,15 +32,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogClose,
-} from "@/components/ui/dialog";
-
+import { ReportPreviewDialog } from "@/components/report/report-preview-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { dataUrlToBlob, triggerDownload } from "@/lib/report-blob";
 import useToggleState from "@/hooks/use-toggle-state";
 
 import { reportSchema } from "@/schemas";
@@ -55,35 +49,8 @@ const REPORT_OPTIONS = [
   { value: "RequestReport", label: "تقرير الطلبات" },
 ] as const;
 
-async function dataUrlToBlob(
-  dataUrl: string,
-  fallbackType = "application/pdf",
-): Promise<Blob> {
-  const response = await fetch(dataUrl);
-  const blob = await response.blob();
-  if (
-    blob.type &&
-    blob.type !== "application/octet-stream" &&
-    blob.type !== "text/plain"
-  ) {
-    return blob;
-  }
-  return new Blob([await blob.arrayBuffer()], { type: fallbackType });
-}
-
 function formatLocalDate(date: Date): string {
   return format(date, "yyyy-MM-dd");
-}
-
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
 }
 
 const ReportsForm = () => {
@@ -95,7 +62,7 @@ const ReportsForm = () => {
   >([]);
 
   const [viewerOpen, setViewerOpen] = useState(false);
-  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loadingContent, setLoadingContent] = useState(false);
   const [reportBlob, setReportBlob] = useState<Blob | null>(null);
   const [reportFilename, setReportFilename] = useState<string>("");
@@ -133,21 +100,16 @@ const ReportsForm = () => {
     fetchStatuses();
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (fileContent?.startsWith("blob:")) {
-        URL.revokeObjectURL(fileContent);
+  const resetPreview = () => {
+    setPreviewUrl((current) => {
+      if (current?.startsWith("blob:")) {
+        URL.revokeObjectURL(current);
       }
-    };
-  }, [fileContent]);
-
-  useEffect(() => {
-    if (!viewerOpen && fileContent?.startsWith("blob:")) {
-      URL.revokeObjectURL(fileContent);
-      setFileContent(null);
-      setReportBlob(null);
-    }
-  }, [viewerOpen, fileContent]);
+      return null;
+    });
+    setReportBlob(null);
+    setReportFilename("");
+  };
 
   const fetchReport = async (reportType: string) => {
     const data = form.getValues();
@@ -219,8 +181,7 @@ const ReportsForm = () => {
       togglePreviewLoading();
       setLoadingContent(true);
       setViewerOpen(true);
-      setFileContent(null);
-      setReportBlob(null);
+      resetPreview();
 
       const result = await fetchReport("pdf");
 
@@ -245,7 +206,7 @@ const ReportsForm = () => {
 
         setReportFilename(filename);
         setReportBlob(blob);
-        setFileContent(url);
+        setPreviewUrl(url);
       }
     } catch (error: unknown) {
       setViewerOpen(false);
@@ -548,60 +509,21 @@ const ReportsForm = () => {
         </form>
       </Form>
 
-      <Dialog open={viewerOpen} onOpenChange={setViewerOpen}>
-        <DialogContent
-          className="max-w-6xl w-[95vw] max-h-[95vh] overflow-hidden flex flex-col high-z-index"
-          hideCloseButton={true}
-        >
-          <DialogHeader>
-            <DialogTitle className="relative flex items-center justify-end">
-              <span className="absolute inset-x-0 text-center pointer-events-none">
-                {reportFilename || "معاينة التقرير"}
-              </span>
-              <div className="flex gap-2 z-10">
-                {reportBlob && (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => {
-                      if (reportBlob) {
-                        triggerDownload(reportBlob, reportFilename);
-                        toast({ description: "تم تحميل التقرير بنجاح" });
-                      }
-                    }}
-                    title="تحميل"
-                  >
-                    <Download className="h-4 w-4" />
-                  </Button>
-                )}
-                <DialogClose asChild>
-                  <Button variant="outline" size="icon" title="إغلاق">
-                    <X className="h-4 w-4" />
-                  </Button>
-                </DialogClose>
-              </div>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-auto p-4 min-h-[75vh]">
-            {loadingContent ? (
-              <div className="flex items-center justify-center min-h-[75vh]">
-                <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-                <span className="mr-2 text-gray-600 dark:text-gray-400">
-                  جاري تحميل التقرير...
-                </span>
-              </div>
-            ) : fileContent ? (
-              <div className="w-full h-[70vh] border rounded-lg overflow-hidden">
-                <iframe
-                  src={fileContent}
-                  className="w-full h-full border-0"
-                  title={reportFilename}
-                />
-              </div>
-            ) : null}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ReportPreviewDialog
+        open={viewerOpen}
+        onOpenChange={(open) => {
+          setViewerOpen(open);
+          if (!open) resetPreview();
+        }}
+        loading={loadingContent}
+        fileUrl={previewUrl}
+        blob={reportBlob}
+        filename={reportFilename}
+        title={reportFilename || "معاينة التقرير"}
+        onDownloadSuccess={() => {
+          toast({ description: "تم تحميل التقرير بنجاح" });
+        }}
+      />
     </>
   );
 };

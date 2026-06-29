@@ -119,22 +119,6 @@ export function ExtendStayReviewPanel({
                   <p className="font-bold text-base text-slate-900">{card.title}</p>
                   <AvailabilityUnitCardParents card={card} />
                   <AvailabilityUnitCardPrice card={card} />
-                  {card.unitKind === "bed" && card.allocationTypeLabel ? (
-                    <p className="text-sm font-semibold text-slate-800">
-                      <span className="font-semibold text-slate-600">
-                        نوع التخصيص:{" "}
-                      </span>
-                      <span className="text-slate-900">
-                        {card.allocationTypeLabel}
-                      </span>
-                    </p>
-                  ) : null}
-                  {card.genderType ? (
-                    <p className="text-sm font-semibold text-slate-800">
-                      نوع الجنس: {card.genderType}
-                    </p>
-                  ) : null}
-                  <p className="text-sm text-slate-600 line-clamp-3">{card.subtitle}</p>
                 </div>
               </div>
             </div>

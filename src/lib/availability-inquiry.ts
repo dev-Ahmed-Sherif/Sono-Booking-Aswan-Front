@@ -263,6 +263,27 @@ export function mapGenericOptions(response: unknown): GenericOption[] {
     .filter((item) => item.value.length > 0 && item.label.length > 0);
 }
 
+/** Active housing leaders for `RequestToId` dropdown (`Leaders/getAll`). */
+export function mapLeaderOptions(response: unknown): GenericOption[] {
+  return getLookupArray(response)
+    .map((item) => item as Record<string, unknown>)
+    .filter((item) => {
+      if (item.isDeleted === true || item.IsDeleted === true) return false;
+      if (item.isActive === false || item.IsActive === false) return false;
+      return true;
+    })
+    .map((item) => {
+      const value = String(item.id ?? item.Id ?? "").trim();
+      const fullName = String(item.fullName ?? item.FullName ?? "").trim();
+      const position = String(item.position ?? item.Position ?? "").trim();
+      const label = position
+        ? `${fullName} — ${position}`
+        : fullName || value;
+      return { value, label };
+    })
+    .filter((item) => item.value.length > 0 && item.label.length > 0);
+}
+
 function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {
     const v = r[k];

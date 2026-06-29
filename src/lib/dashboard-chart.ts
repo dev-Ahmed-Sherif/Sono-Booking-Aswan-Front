@@ -70,10 +70,12 @@ function bucketByWeek(
     const chunk = rows.slice(index, index + 7);
     if (chunk.length === 0) continue;
 
+    const value = chunk.reduce((sum, row) => sum + row[metric], 0);
+
     points.push({
       date: chunk[0].date,
       label: formatDayLabel(chunk[0].date),
-      value: chunk.reduce((sum, row) => sum + row[metric], 0),
+      value: Math.round(value),
     });
   }
 
@@ -95,11 +97,15 @@ function bucketByMonth(
 
   return Array.from(grouped.entries())
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([monthKey, chunk]) => ({
-      date: `${monthKey}-01`,
-      label: formatMonthLabel(`${monthKey}-01`),
-      value: chunk.reduce((sum, row) => sum + row[metric], 0),
-    }));
+    .map(([monthKey, chunk]) => {
+      const value = chunk.reduce((sum, row) => sum + row[metric], 0);
+
+      return {
+        date: `${monthKey}-01`,
+        label: formatMonthLabel(`${monthKey}-01`),
+        value: Math.round(value),
+      };
+    });
 }
 
 export function buildMetricChartData(
@@ -171,7 +177,7 @@ export const DASHBOARD_CHART_METRICS: Array<{
   {
     metric: "totalRevenue",
     title: "إجمالي الإيرادات",
-    description: "مجموع مبالغ الدفع للحجوزات النشطة في ذلك اليوم",
+    description: "مجموع مبالغ الدفع المسجلة في ذلك اليوم",
     color: "hsl(32 95% 44%)",
   },
 ];

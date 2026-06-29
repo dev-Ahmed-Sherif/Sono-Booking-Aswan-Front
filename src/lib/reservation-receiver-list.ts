@@ -10,7 +10,11 @@ import {
   formatUtcToCairoDate,
   todayYmdCairo,
 } from "@/lib/date-timeOptions";
-import { extractApplicantDisplayNameFromRequest, isHousingRequestRecordDeleted } from "@/lib/housing-request-list";
+import {
+  extractApplicantDisplayNameFromRequest,
+  extractRequestPercentage,
+  isHousingRequestRecordDeleted,
+} from "@/lib/housing-request-list";
 import {
   buildCompanionNameMapFromParticipants,
   extractCompanionIdsFromParticipantRows,
@@ -33,6 +37,8 @@ import {
   RESERVATION_STATUS_COMPLETED,
   RESERVATION_STATUS_NO_SHOW,
   RESERVATION_STATUS_RESERVED,
+  resolveReservationActualCheckInAt,
+  resolveReservationActualCheckOutAt,
   type ReservationDtoPayload,
   type ReservationStatus,
 } from "@/lib/reservation-map";
@@ -47,7 +53,12 @@ export type ReceiverReservationRow = {
   companions: Array<{ name: string; relationship: string; age?: number }>;
   /** Formatted for table display. */
   arrivalDate: string;
-  totalAmount: number;
+  /** Reservation `TotalAmount` from API (used before payment / discount base). */
+  reservationTotalAmount: number;
+  /** `Payment.Amount` when a payment row exists for this reservation. */
+  paymentAmount?: number;
+  /** Saved leader discount from `Request.Percentage` (0–100). */
+  discountPercent: number;
   checkInAt?: string;
   actualCheckOutAt?: string;
   cancelationReason?: string;
@@ -356,8 +367,10 @@ export function mapReservationToReceiverRow(
     .map((u) => formatStoredUnitHierarchyLabel(u))
     .filter(Boolean);
 
+  const reservationId = reservation.id?.trim() ?? "";
+
   return {
-    id: reservation.id ?? "",
+    id: reservationId,
     requestId,
     userName: extractApplicantDisplayNameFromRequest(requestRaw),
     room: reservationUnits.length > 0 ? reservationUnits.join("، ") : "—",
@@ -371,9 +384,13 @@ export function mapReservationToReceiverRow(
       relationshipLabelById,
     ),
     arrivalDate: formatReceiverDisplayDate(reservation.startDate),
-    totalAmount: reservation.totalAmount,
-    checkInAt: reservation.checkInDate || undefined,
-    actualCheckOutAt: reservation.actualCheckOutDate || undefined,
+    reservationTotalAmount: reservation.totalAmount,
+    ...(reservation.paymentAmount != null
+      ? { paymentAmount: reservation.paymentAmount }
+      : {}),
+    discountPercent: extractRequestPercentage(requestRaw),
+    checkInAt: resolveReservationActualCheckInAt(reservation),
+    actualCheckOutAt: resolveReservationActualCheckOutAt(reservation),
     cancelationReason: reservation.cancelationReason || undefined,
     startDateYmd: reservation.startDate,
     endDateYmd: reservation.endDate,
@@ -569,19 +586,27 @@ export function buildReceiverReservationRows(input: {
         ),
       );
     } catch {
+      const requestId = parsed.requestId?.trim() ?? "";
+      const requestRaw = requestId
+        ? (requestById.get(requestId.toLowerCase()) ?? {})
+        : {};
       // Keep list rendering even if companion/unit enrichment fails for a row.
       rows.push({
-        id: parsed.id ?? "",
-        requestId: parsed.requestId ?? "",
+        id: parsed.id?.trim() ?? "",
+        requestId,
         userName: "—",
         room: "—",
         reservationUnits: [],
         reservationUnitSnapshots: [],
         companions: [],
         arrivalDate: formatReceiverDisplayDate(parsed.startDate),
-        totalAmount: parsed.totalAmount,
-        checkInAt: parsed.checkInDate || undefined,
-        actualCheckOutAt: parsed.actualCheckOutDate || undefined,
+        reservationTotalAmount: parsed.totalAmount,
+        ...(parsed.paymentAmount != null
+          ? { paymentAmount: parsed.paymentAmount }
+          : {}),
+        discountPercent: extractRequestPercentage(requestRaw),
+        checkInAt: resolveReservationActualCheckInAt(parsed),
+        actualCheckOutAt: resolveReservationActualCheckOutAt(parsed),
         cancelationReason: parsed.cancelationReason || undefined,
         startDateYmd: parsed.startDate,
         endDateYmd: parsed.endDate,

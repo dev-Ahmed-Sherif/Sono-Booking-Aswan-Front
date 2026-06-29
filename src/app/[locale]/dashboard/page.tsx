@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getGovernorDashboardSummary } from "@/actions/dashboardService";
 import {
@@ -12,6 +12,7 @@ import {
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
+import { DashboardPeriodSelect } from "@/components/dashboard/dashboard-period-select";
 import { GovernorDashboardChartsSection } from "@/components/dashboard/governor-dashboard-charts-section";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TablePagination } from "@/components/ui/table-pagination";
@@ -29,16 +30,14 @@ import {
   getAllowedNavRoutes,
   getFirstAllowedNavRoute,
 } from "@/lib/nav-routes";
+import type { ChartPeriod } from "@/lib/dashboard-chart";
+import {
+  buildDashboardKpis,
+  buildDashboardOccupancy,
+  getPeriodSummaryLabel,
+} from "@/lib/dashboard-period";
 
 type KpiItem = { label: string; value: string };
-
-const emptyKpiItems: KpiItem[] = [
-  { label: "إجمالي طلبات اليوم", value: "—" },
-  { label: "الطلبات الموافق عليها", value: "—" },
-  { label: "الطلبات المرفوضة", value: "—" },
-  { label: "نسبة الإشغال", value: "—" },
-  { label: "إجمالي الإيرادات", value: "—" },
-];
 
 const DashboardPage = () => {
   const router = useRouter();
@@ -46,7 +45,7 @@ const DashboardPage = () => {
   const locale = (params?.locale as string) || "ar";
   const { roleCandidates, isRoleReady } = useEffectiveRole();
 
-  const [kpiItems, setKpiItems] = useState<KpiItem[]>(emptyKpiItems);
+  const [kpiItems, setKpiItems] = useState<KpiItem[]>([]);
   const [occupancyData, setOccupancyData] = useState<ApartmentOccupancyItem[]>(
     [],
   );
@@ -54,6 +53,7 @@ const DashboardPage = () => {
     ApprovedRequestItem[]
   >([]);
   const [dailyStats, setDailyStats] = useState<DashboardDailyStat[]>([]);
+  const [period, setPeriod] = useState<ChartPeriod>("month");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -66,7 +66,7 @@ const DashboardPage = () => {
       const parsed = parseGovernorDashboardResponse(response);
 
       if ("error" in parsed) {
-        setKpiItems(emptyKpiItems);
+        setKpiItems([]);
         setOccupancyData([]);
         setApprovedRequests([]);
         setDailyStats([]);
@@ -74,12 +74,10 @@ const DashboardPage = () => {
         return;
       }
 
-      setKpiItems(parsed.kpiItems);
-      setOccupancyData(parsed.occupancyData);
       setApprovedRequests(parsed.approvedRequests);
       setDailyStats(parsed.dailyStats);
     } catch {
-      setKpiItems(emptyKpiItems);
+      setKpiItems([]);
       setOccupancyData([]);
       setApprovedRequests([]);
       setDailyStats([]);
@@ -101,6 +99,22 @@ const DashboardPage = () => {
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
+
+  useEffect(() => {
+    if (dailyStats.length === 0) {
+      setKpiItems([]);
+      setOccupancyData([]);
+      return;
+    }
+
+    setKpiItems(buildDashboardKpis(dailyStats, period));
+    setOccupancyData(buildDashboardOccupancy(dailyStats, period));
+  }, [dailyStats, period]);
+
+  const periodSummaryLabel = useMemo(
+    () => getPeriodSummaryLabel(period),
+    [period],
+  );
 
   const {
     paginatedItems: paginatedApprovedRequests,
@@ -140,6 +154,10 @@ const DashboardPage = () => {
               <h2 className="text-right text-2xl font-semibold text-foreground">
                 تقرير للمحافظ
               </h2>
+              <DashboardPeriodSelect value={period} onChange={setPeriod} />
+              <p className="text-center text-sm text-muted-foreground">
+                {periodSummaryLabel}
+              </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 {kpiItems.map((item, index) => (
                   <motion.div
@@ -170,7 +188,7 @@ const DashboardPage = () => {
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.55, duration: 0.5 }}
             >
-              <GovernorDashboardChartsSection data={dailyStats} />
+              <GovernorDashboardChartsSection data={dailyStats} period={period} />
             </motion.div>
 
             <motion.div
@@ -194,7 +212,7 @@ const DashboardPage = () => {
                       {occupancyData.map((item) => (
                         <div
                           key={item.unitLabel}
-                          className="flex h-full flex-col items-center justify-end gap-2"
+                          className="flex h-full flex-col items-center justify-end"
                         >
                           <div className="relative flex h-52 w-full items-end rounded-sm bg-muted">
                             <div
@@ -203,9 +221,13 @@ const DashboardPage = () => {
                                 height: `${Math.max(item.percent, 10)}%`,
                               }}
                             />
-                            <div className="absolute inset-x-0 bottom-3 text-center text-sm font-semibold text-white">
-                              <p>{item.percent}%</p>
-                              <p>{item.unitLabel}</p>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center px-1 text-center text-sm">
+                              <p className="font-semibold text-brand-accent">
+                                {item.percent}%
+                              </p>
+                              <p className="font-medium text-foreground">
+                                {item.unitLabel}
+                              </p>
                             </div>
                           </div>
                         </div>

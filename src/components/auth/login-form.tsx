@@ -1334,7 +1334,7 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                         initial={{ opacity: 0, y: 6 }}
                         animate={{ opacity: 1, y: 0 }}
                         className={cn(
-                          "rounded-2xl border-2 p-4 text-right shadow-sm transition-shadow hover:shadow-md",
+                          "flex flex-col rounded-2xl border-2 p-4 text-right shadow-sm transition-shadow hover:shadow-md",
                           card.unitKind === "bed" &&
                             "bg-gradient-to-br from-sky-50 via-white to-slate-50/80 border-sky-200",
                           card.unitKind === "room" &&
@@ -1391,41 +1391,10 @@ export function LoginForm({ Cookie }: LoginFormProps) {
                             </div>
                             <AvailabilityUnitCardParents card={card} />
                             <AvailabilityUnitCardBedsCount card={card} />
-                            <AvailabilityUnitCardPhotos card={card} />
-                            {card.genderType ? (
-                              <p className="text-base font-bold leading-snug text-slate-800">
-                                <span className="font-semibold text-slate-600">
-                                  نوع الجنس:{" "}
-                                </span>
-                                {card.genderType}
-                              </p>
-                            ) : null}
-                            {card.buildingNumberAr || card.city ? (
-                              <div className="space-y-0.5 text-sm font-semibold leading-snug text-slate-800">
-                                {card.buildingNumberAr ? (
-                                  <p>
-                                    <span className="text-slate-600">
-                                      رقم المبنى:{" "}
-                                    </span>
-                                    <span className="font-bold tabular-nums text-slate-900">
-                                      {card.buildingNumberAr}
-                                    </span>
-                                  </p>
-                                ) : null}
-                                {card.city ? (
-                                  <p>
-                                    <span className="text-slate-600">المدينة: </span>
-                                    <span className="font-bold text-slate-900">
-                                      {card.city}
-                                    </span>
-                                  </p>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            <p className="text-sm leading-relaxed text-slate-600 line-clamp-3">
-                              {card.subtitle}
-                            </p>
                           </div>
+                        </div>
+                        <div className="mt-3 flex justify-start" dir="ltr">
+                          <AvailabilityUnitCardPhotos card={card} />
                         </div>
                       </motion.div>
                     );

@@ -38,6 +38,9 @@ export type ExtendStayContext = {
 
   sourceRequestId: string;
 
+  /** `Request.RequestToId` from the stay being extended. */
+  requestToId: string;
+
   reservationId: string;
 
   /** Current reservation checkout (yyyy-MM-dd) for extend validation fallback. */
@@ -216,6 +219,7 @@ export function mapExtendStayToAddRequestDto(input: {
   nights: number;
   requestTypeId: string;
   allocationTypeValue: string;
+  requestToId: string;
 }):
   | { ok: true; dto: AddRequestDtoPayload }
   | { ok: false; message: string } {
@@ -244,12 +248,19 @@ export function mapExtendStayToAddRequestDto(input: {
     return { ok: false, message: "نوع الحجز غير صالح." };
   }
 
+  const requestToId = input.requestToId.trim();
+  if (!requestToId) {
+    return { ok: false, message: "الجهة الموجّه إليها الطلب غير متوفرة." };
+  }
+
   return {
     ok: true,
     dto: {
       startDate,
       nights,
       requestTypeId,
+      requestToId,
+      percentage: 0,
       requestAllocationType,
       requestCatagory: HOUSING_REQUEST_CATAGORY_EXTENSION,
       previousRequestId,

@@ -54,12 +54,14 @@ import { submitAddRequestFormData } from "@/lib/request-add-client";
 import { formDataHasFileEntries } from "@/lib/form-data-relay";
 import { RequestAttachmentsInput } from "@/components/reservation/request-attachments-input";
 import { getRelationships } from "@/actions/settings/relationshipService";
+import { getLeaders } from "@/actions/settings/leaderService";
 import { useToast } from "@/hooks/use-toast";
 import { useTablePagination } from "@/hooks/use-table-pagination";
 import {
   getLookupArray,
   hierarchyFilteredAvailabilityLists,
   mapGenericOptions,
+  mapLeaderOptions,
   buildPreservedInquiryFieldsFromUnits,
   type ReservationStoredUnitSnapshot,
 } from "@/lib/availability-inquiry";
@@ -436,6 +438,10 @@ const ReservationRequestForm = ({
   const [savedCompanionOptions, setSavedCompanionOptions] = useState<
     SavedCompanionOption[]
   >([]);
+  const [leaderOptions, setLeaderOptions] = useState<
+    { value: string; label: string }[]
+  >([]);
+  const [leadersListFetched, setLeadersListFetched] = useState(false);
   const [companionsListFetched, setCompanionsListFetched] = useState(false);
   const guestsSyncSignatureRef = useRef("");
 
@@ -498,10 +504,34 @@ const ReservationRequestForm = ({
       numberOfNights: initialNumberOfNights,
       guests,
       selectedGuestIds: guests.length ? [guests[0].id] : [],
+      requestToId: "",
     },
   });
 
   const { getValues, setValue, reset } = form;
+
+  useEffect(() => {
+    let cancelled = false;
+    void oncePerSession("reservation:leaders", async () => getLeaders())
+      .then((res) => {
+        if (cancelled) return;
+        if ((res as { error?: string })?.error) {
+          setLeaderOptions([]);
+          return;
+        }
+        setLeaderOptions(mapLeaderOptions(res));
+      })
+      .catch(() => {
+        if (!cancelled) setLeaderOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLeadersListFetched(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -932,6 +962,7 @@ const ReservationRequestForm = ({
       numberOfNights: 1,
       guests: clearedGuests,
       selectedGuestIds: clearedGuests.length ? [clearedGuests[0].id] : [],
+      requestToId: "",
     });
     onStorageCleared?.();
   };
@@ -1228,6 +1259,63 @@ const ReservationRequestForm = ({
                   ) : null}
                 </div>
               )}
+
+            <FormField
+              control={form.control}
+              name="requestToId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-gray-700 text-base">
+                    موجّه إلى
+                    <span className="text-red-500 text-xs"> *</span>
+                  </FormLabel>
+                  <Select
+                    dir="rtl"
+                    value={field.value?.trim() ? field.value : undefined}
+                    onValueChange={field.onChange}
+                    disabled={loading || !leadersListFetched}
+                  >
+                    <FormControl>
+                      <SelectTrigger
+                        className={cn(
+                          "h-[3.75rem] min-h-[3.75rem] border-2 border-black text-base text-right [&>span]:w-full [&>span]:text-right",
+                          !field.value?.trim() && "text-muted-foreground",
+                        )}
+                      >
+                        <SelectValue
+                          placeholder={
+                            leadersListFetched
+                              ? "اختر الجهة الموجّه إليها الطلب"
+                              : "جاري تحميل القائمة..."
+                          }
+                        />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent className="text-right max-h-60" dir="rtl">
+                      {leaderOptions.map((opt) => (
+                        <SelectItem
+                          key={opt.value}
+                          value={opt.value}
+                          className="text-right"
+                        >
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {!leadersListFetched ? (
+                    <p className="text-sm text-muted-foreground">
+                      جاري تحميل قائمة الجهات...
+                    </p>
+                  ) : leaderOptions.length === 0 ? (
+                    <p className="text-sm text-destructive">
+                      لا توجد جهات متاحة. تواصل مع الإدارة.
+                    </p>
+                  ) : null}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <FormField
               control={form.control}

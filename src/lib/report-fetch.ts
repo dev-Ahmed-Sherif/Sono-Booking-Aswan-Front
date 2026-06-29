@@ -7,6 +7,7 @@ export type ReportFetchParams = {
   reportName: string;
   reportType: string;
   reservationStatus?: string | number;
+  requestId?: string;
 };
 
 type ReportSuccess = {
@@ -112,7 +113,7 @@ export async function fetchReportBlob(
   params: ReportFetchParams,
   defaultArabicFilename: string,
 ): Promise<ReportFetchResult> {
-  const { startDate, endDate, reportName, reportType, reservationStatus } =
+  const { startDate, endDate, reportName, reportType, reservationStatus, requestId } =
     params;
 
   if (!startDate || !endDate || !reportName || !reportType) {
@@ -152,6 +153,10 @@ export async function fetchReportBlob(
     reservationStatus !== ""
   ) {
     query.append("ReservationStatus", String(reservationStatus));
+  }
+
+  if (requestId !== undefined && requestId !== null && String(requestId).trim()) {
+    query.append("RequestId", String(requestId).trim());
   }
 
   const url = endpointUrl.startsWith("http")

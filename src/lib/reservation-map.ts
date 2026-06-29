@@ -77,6 +77,8 @@ export type AddReservationDtoPayload = {
 /** Mirrors `SonoBooking.Common.DTO.Housing.Reservation.ReservationDto`. */
 export type ReservationDtoPayload = Omit<AddReservationDtoPayload, "requestId"> & {
   requestId?: string;
+  /** Mapped from linked `Payment.Amount` when present. */
+  paymentAmount?: number;
   cancelationReason?: string;
   userId?: string;
   createdAt?: string;
@@ -174,6 +176,119 @@ function pickIsoDateTime(
   return raw || null;
 }
 
+/** ISO datetime at 12:00:00 (noon) on the given `yyyy-MM-dd` end date. */
+export function reservationEndDateAtNoonIso(endDateYmd: string): string {
+  const ymd = endDateYmd.trim().slice(0, 10);
+  return new Date(`${ymd}T12:00:00`).toISOString();
+}
+
+function isoInstantMs(value: string | null | undefined): number | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const ms = new Date(raw).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function isoInstantsEqual(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  const aMs = isoInstantMs(a);
+  const bMs = isoInstantMs(b);
+  if (aMs == null || bMs == null) return false;
+  return Math.abs(aMs - bMs) <= 60_000;
+}
+
+/** Actual check-in timestamp from API (`CheckInDate` / optional `ActualCheckInDate` alias). */
+export function pickReservationActualCheckInDate(
+  raw: Record<string, unknown>,
+): string | null {
+  return pickIsoDateTime(
+    raw,
+    "checkInDate",
+    "CheckInDate",
+    "actualCheckInDate",
+    "ActualCheckInDate",
+  );
+}
+
+/** «تأكيد الوصول» — real check-in moment; excludes planned checkout on `endDate`. */
+export function resolveReservationActualCheckInAt(
+  reservation: Pick<
+    ReservationDtoPayload,
+    "checkInDate" | "actualCheckOutDate" | "endDate" | "status"
+  >,
+): string | undefined {
+  if (
+    reservation.status !== RESERVATION_STATUS_COMPLETED &&
+    reservation.status !== RESERVATION_STATUS_CHECKOUT
+  ) {
+    return undefined;
+  }
+
+  const checkIn = reservation.checkInDate?.trim();
+  if (!checkIn) return undefined;
+
+  const plannedCheckout = reservationEndDateAtNoonIso(reservation.endDate);
+  if (isoInstantsEqual(checkIn, plannedCheckout)) {
+    return undefined;
+  }
+
+  const checkout = reservation.actualCheckOutDate?.trim();
+  if (
+    checkout &&
+    isoInstantsEqual(checkIn, checkout) &&
+    isoInstantsEqual(checkout, plannedCheckout)
+  ) {
+    return undefined;
+  }
+
+  return checkIn;
+}
+
+/** «تسجيل المغادرة» — actual departure; hides planned end-date checkout while still in-house. */
+export function resolveReservationActualCheckOutAt(
+  reservation: Pick<
+    ReservationDtoPayload,
+    "actualCheckOutDate" | "endDate" | "status"
+  >,
+): string | undefined {
+  const checkout = reservation.actualCheckOutDate?.trim();
+  if (!checkout) return undefined;
+
+  if (reservation.status === RESERVATION_STATUS_CHECKOUT) {
+    return checkout;
+  }
+
+  if (reservation.status === RESERVATION_STATUS_COMPLETED) {
+    const plannedCheckout = reservationEndDateAtNoonIso(reservation.endDate);
+    if (isoInstantsEqual(checkout, plannedCheckout)) {
+      return undefined;
+    }
+  }
+
+  return checkout;
+}
+
+function pickReservationPaymentAmount(
+  raw: Record<string, unknown>,
+): number | undefined {
+  const direct = pickNum(raw, "paymentAmount", "PaymentAmount");
+  if (direct != null && direct >= 0) return direct;
+
+  const nested = raw.payment ?? raw.Payment;
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    const amount = pickNum(
+      nested as Record<string, unknown>,
+      "amount",
+      "Amount",
+    );
+    if (amount != null && amount >= 0) return amount;
+  }
+
+  return undefined;
+}
+
 /** Parses API row (`ReservationDto`) with camelCase or PascalCase keys. */
 export function parseReservationFromApi(
   raw: Record<string, unknown>,
@@ -196,6 +311,7 @@ export function parseReservationFromApi(
   }
 
   const totalAmount = pickNum(raw, "totalAmount", "TotalAmount") ?? 0;
+  const paymentAmount = pickReservationPaymentAmount(raw);
 
   return {
     id,
@@ -204,9 +320,10 @@ export function parseReservationFromApi(
     endDate,
     status,
     totalAmount,
+    ...(paymentAmount != null ? { paymentAmount } : {}),
     cancelationReason:
       pickStr(raw, "cancelationReason", "CancelationReason") || undefined,
-    checkInDate: pickIsoDateTime(raw, "checkInDate", "CheckInDate"),
+    checkInDate: pickReservationActualCheckInDate(raw),
     actualCheckOutDate: pickIsoDateTime(
       raw,
       "actualCheckOutDate",

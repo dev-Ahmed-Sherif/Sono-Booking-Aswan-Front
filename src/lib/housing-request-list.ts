@@ -156,6 +156,17 @@ export function extractRequestTypeId(raw: Record<string, unknown>): string {
   return pickStr(raw, "requestTypeId", "RequestTypeId");
 }
 
+export function extractRequestToId(raw: Record<string, unknown>): string {
+  return pickStr(raw, "requestToId", "RequestToId");
+}
+
+export function extractRequestPercentage(raw: Record<string, unknown>): number {
+  const rawValue = raw.percentage ?? raw.Percentage;
+  const n = Number(rawValue);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, n));
+}
+
 export function formatRequestTypeForTable(
   raw: Record<string, unknown>,
   requestTypeLabelsById?: Map<string, string>,

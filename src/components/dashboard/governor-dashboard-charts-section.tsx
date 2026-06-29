@@ -2,15 +2,20 @@
 
 import { GovernorDashboardMetricChart } from "@/components/dashboard/governor-dashboard-metric-chart";
 import { Card, CardContent } from "@/components/ui/card";
-import { DASHBOARD_CHART_METRICS } from "@/lib/dashboard-chart";
+import {
+  DASHBOARD_CHART_METRICS,
+  type ChartPeriod,
+} from "@/lib/dashboard-chart";
 import type { DashboardDailyStat } from "@/lib/dashboard-map";
 
 type GovernorDashboardChartsSectionProps = {
   data: DashboardDailyStat[];
+  period: ChartPeriod;
 };
 
 export function GovernorDashboardChartsSection({
   data,
+  period,
 }: GovernorDashboardChartsSectionProps) {
   return (
     <section className="space-y-4">
@@ -27,6 +32,7 @@ export function GovernorDashboardChartsSection({
                 metric={item.metric}
                 color={item.color}
                 data={data}
+                period={period}
               />
             </CardContent>
           </Card>

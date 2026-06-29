@@ -51,6 +51,8 @@ import { ClipboardList, Loader2 } from "lucide-react";
 import { HousingSenderDecisionDialog } from "@/components/housing-sender/housing-sender-decision-dialog";
 import { HousingRequestDetailModal } from "@/components/reservation/housing-request-detail-modal";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { ReportPreviewDialog } from "@/components/report/report-preview-dialog";
+import { useRequestDetailsReport } from "@/hooks/use-request-details-report";
 import { useToast } from "@/hooks/use-toast";
 import { useTablePagination } from "@/hooks/use-table-pagination";
 import { Button } from "@/components/ui/button";
@@ -286,6 +288,7 @@ function renderPendingRequestActions(
     onReject: () => void;
     onDetails: () => void;
     onEditUnits: () => void;
+    detailsLoading?: boolean;
   },
 ) {
   const overlapEdit = senderRowNeedsUnitOverlapEdit(request);
@@ -335,10 +338,14 @@ function renderPendingRequestActions(
         type="button"
         variant="outline"
         className={senderTableButtonClassName}
-        disabled={!request.requestId}
+        disabled={!request.requestId || options.detailsLoading}
         onClick={options.onDetails}
       >
-        تفاصيل
+        {options.detailsLoading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          "معاينة"
+        )}
       </Button>
     </div>
   );
@@ -347,6 +354,8 @@ function renderPendingRequestActions(
 const HousingSenderPage = () => {
   const { roleCandidates, isRoleReady } = useEffectiveRole();
   const allowed = canAccessHousingSenderFromCandidates(roleCandidates);
+  const { openRequestDetailsReport, isReportLoading, previewProps } =
+    useRequestDetailsReport();
   useRequireRole({ allowed });
   const { toast } = useToast();
 
@@ -385,6 +394,7 @@ const HousingSenderPage = () => {
     null,
   );
   const [decisionNote, setDecisionNote] = useState("");
+  const [decisionPercentage, setDecisionPercentage] = useState("");
   const [decisionSubmitting, setDecisionSubmitting] = useState(false);
   const fetchTicketRef = useRef(0);
 
@@ -434,6 +444,7 @@ const HousingSenderPage = () => {
       setDecisionTarget(row);
       setDecisionKind(kind);
       setDecisionNote("");
+      setDecisionPercentage("");
       setDecisionOpen(true);
     },
     [toast],
@@ -445,6 +456,7 @@ const HousingSenderPage = () => {
     setDecisionKind(null);
     setDecisionTarget(null);
     setDecisionNote("");
+    setDecisionPercentage("");
   }, [decisionSubmitting]);
 
   const loadSenderData = useCallback(async () => {
@@ -613,6 +625,20 @@ const HousingSenderPage = () => {
       return;
     }
 
+    let approvePercentage: number | undefined;
+    if (decisionKind === "approve") {
+      const pct = Number(decisionPercentage);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        toast({
+          variant: "destructive",
+          title: "نسبة خصم غير صالحة",
+          description: "نسبة الخصم يجب أن تكون بين 0 و 100.",
+        });
+        return;
+      }
+      approvePercentage = pct;
+    }
+
     const requestId = decisionTarget.requestId.trim();
     setDecisionSubmitting(true);
 
@@ -623,6 +649,7 @@ const HousingSenderPage = () => {
         leaderUserId,
         ownerUserId: decisionTarget.requestOwnerUserId.trim() || undefined,
         rejectionReason: decisionKind === "reject" ? decisionNote : "",
+        percentage: approvePercentage,
       });
 
       if (!result.ok) {
@@ -672,6 +699,7 @@ const HousingSenderPage = () => {
     closeDecisionModal,
     decisionKind,
     decisionNote,
+    decisionPercentage,
     decisionTarget,
     loadSenderData,
     toast,
@@ -1038,12 +1066,17 @@ const HousingSenderPage = () => {
                                         onReject: () =>
                                           openDecisionModal(request, "reject"),
                                         onDetails: () =>
-                                          openRequestDetails(request, "view"),
+                                          void openRequestDetailsReport(
+                                            request.requestId,
+                                          ),
                                         onEditUnits: () =>
                                           openRequestDetails(
                                             request,
                                             "leader-unit-edit",
                                           ),
+                                        detailsLoading: isReportLoading(
+                                          request.requestId,
+                                        ),
                                       })}
                                     </TableCell>
                                   </TableRow>
@@ -1174,12 +1207,21 @@ const HousingSenderPage = () => {
                                         type="button"
                                         variant="outline"
                                         className={senderTableButtonClassName}
-                                        disabled={!request.requestId}
+                                        disabled={
+                                          !request.requestId ||
+                                          isReportLoading(request.requestId)
+                                        }
                                         onClick={() =>
-                                          openRequestDetails(request)
+                                          void openRequestDetailsReport(
+                                            request.requestId,
+                                          )
                                         }
                                       >
-                                        تفاصيل
+                                        {isReportLoading(request.requestId) ? (
+                                          <Loader2 className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                          "معاينة"
+                                        )}
                                       </Button>
                                     </TableCell>
                                   </TableRow>
@@ -1293,12 +1335,17 @@ const HousingSenderPage = () => {
                                         onReject: () =>
                                           openDecisionModal(request, "reject"),
                                         onDetails: () =>
-                                          openRequestDetails(request, "view"),
+                                          void openRequestDetailsReport(
+                                            request.requestId,
+                                          ),
                                         onEditUnits: () =>
                                           openRequestDetails(
                                             request,
                                             "leader-unit-edit",
                                           ),
+                                        detailsLoading: isReportLoading(
+                                          request.requestId,
+                                        ),
                                       })}
                                     </TableCell>
                                   </TableRow>
@@ -1355,13 +1402,16 @@ const HousingSenderPage = () => {
         kind={decisionKind}
         requestNumber={decisionTarget?.requestNumber}
         note={decisionNote}
+        percentage={decisionPercentage}
         submitting={decisionSubmitting}
         onNoteChange={setDecisionNote}
+        onPercentageChange={setDecisionPercentage}
         onOpenChange={(open) => {
           if (!open) closeDecisionModal();
         }}
         onConfirm={() => void handleDecisionConfirm()}
       />
+      <ReportPreviewDialog {...previewProps} />
       <div className="mb-14 h-24 text-transparent">t</div>
     </main>
   );

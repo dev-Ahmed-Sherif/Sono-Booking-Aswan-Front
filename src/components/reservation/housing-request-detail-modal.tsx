@@ -1493,6 +1493,7 @@ type HousingRequestRowActionsProps = {
   onDelete: (id: string) => void;
   deleting?: boolean;
   canceling?: boolean;
+  viewLoading?: boolean;
 };
 
 export function HousingRequestRowActions({
@@ -1503,6 +1504,7 @@ export function HousingRequestRowActions({
   onDelete,
   deleting,
   canceling,
+  viewLoading,
 }: HousingRequestRowActionsProps) {
   const [deleteOpen, toggleDeleteOpen] = useToggleState(false);
   const [cancelOpen, toggleCancelOpen] = useToggleState(false);
@@ -1544,10 +1546,15 @@ export function HousingRequestRowActions({
         variant="outline"
         size="icon"
         className="h-9 w-9"
-        title="عرض التفاصيل"
+        title="معاينة نموذج طلب الإقامة"
+        disabled={viewLoading}
         onClick={() => onView(row)}
       >
-        <Eye className="h-4 w-4" />
+        {viewLoading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Eye className="h-4 w-4" />
+        )}
       </Button>
       {showEdit ? (
         <Button

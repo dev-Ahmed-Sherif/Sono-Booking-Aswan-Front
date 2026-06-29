@@ -1,6 +1,11 @@
 // import { UserRole } from "@prisma/client";
 import * as z from "zod";
 
+import {
+  documentTypeRequiresEgyptianNationalId,
+  EGYPTIAN_NATIONAL_ID_MESSAGE,
+  isValidEgyptianNationalId,
+} from "@/lib/egyptian-national-id";
 import { isImageFile } from "@/lib/image-file";
 
 export const RegisterSchema = z.object({
@@ -104,14 +109,14 @@ export const registrationCompanionSchema = z
       });
     }
 
-    const needsNationalId =
-      data.documentType === "IDCard" ||
-      data.documentType === "ResidencePermit";
-    if (needsNationalId && !/^\d{14}$/.test(data.nationalId.trim())) {
+    if (
+      documentTypeRequiresEgyptianNationalId(data.documentType) &&
+      !isValidEgyptianNationalId(data.nationalId)
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["nationalId"],
-        message: "رقم المستند يجب أن يكون 14 رقمًا",
+        message: EGYPTIAN_NATIONAL_ID_MESSAGE,
       });
     }
   });
@@ -150,14 +155,14 @@ export const registrationSchema = z
   companions: z.array(registrationCompanionSchema).default([]),
 })
   .superRefine((data, ctx) => {
-    const needsNationalId =
-      data.documentType === "IDCard" ||
-      data.documentType === "ResidencePermit";
-    if (needsNationalId && !/^\d{14}$/.test(data.nationalId.trim())) {
+    if (
+      documentTypeRequiresEgyptianNationalId(data.documentType) &&
+      !isValidEgyptianNationalId(data.nationalId)
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["nationalId"],
-        message: "رقم المستند يجب أن يكون 14 رقمًا",
+        message: EGYPTIAN_NATIONAL_ID_MESSAGE,
       });
     }
   });
@@ -191,6 +196,7 @@ export const reservationRequestSchema = z
     selectedGuestIds: z.array(z.string()).min(1, {
       message: "يجب اختيار اسم واحد على الأقل",
     }),
+    requestToId: z.string().min(1, { message: "الجهة الموجّه إليها الطلب مطلوبة" }),
   })
   .superRefine((data, ctx) => {
     const guestIds = new Set(data.guests.map((guest) => guest.id));
@@ -357,14 +363,14 @@ export const accountSchema = z
       .optional(),
   })
   .superRefine((data, ctx) => {
-    const needsNationalId =
-      data.documentType === "IDCard" ||
-      data.documentType === "ResidencePermit";
-    if (needsNationalId && !/^\d{14}$/.test(data.documentNumber.trim())) {
+    if (
+      documentTypeRequiresEgyptianNationalId(data.documentType) &&
+      !isValidEgyptianNationalId(data.documentNumber)
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["documentNumber"],
-        message: "رقم المستند يجب أن يكون 14 رقمًا",
+        message: EGYPTIAN_NATIONAL_ID_MESSAGE,
       });
     }
 
@@ -1093,9 +1099,8 @@ export const organizationEmployeeBaseSchema = z.object({
   nationalId: z
     .string()
     .min(1, { message: "الرقم القومي مطلوب" })
-    .regex(/^[23]\d{2}(0[1-9]|1[0-2])[0-3]\d{8}$/, {
-      message:
-        "الرقم القومي يجب أن يبدأ بـ 2 أو 3، وأن يكون الشهر بين 01 و 12، وأن يكون الرقم السادس بين 0 و 2، ويتكون من 14 رقمًا",
+    .refine(isValidEgyptianNationalId, {
+      message: EGYPTIAN_NATIONAL_ID_MESSAGE,
     }),
   mobile: z
     .string()

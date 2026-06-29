@@ -196,11 +196,32 @@ const getRequestReport = async (data: {
     "تقرير الطلبات",
   );
 
+const getRequestDetailsReport = async (data: {
+  requestId: string;
+  startDate?: Date | string;
+  endDate?: Date | string;
+  reportType?: string;
+}) => {
+  const year = new Date().getFullYear();
+  return fetchReportBlob(
+    `${BASE}/getReport`,
+    {
+      startDate: data.startDate ?? `${year}-01-01`,
+      endDate: data.endDate ?? `${year}-12-31`,
+      reportName: "RequestDetailsReport",
+      reportType: data.reportType ?? "PDF",
+      requestId: data.requestId,
+    },
+    "نموذج طلب الإقامة",
+  );
+};
+
 export {
   addRequest,
   deleteRequestById,
   getAllRequests,
   getRequestById,
+  getRequestDetailsReport,
   getRequestParticipantsAll,
   getRequestReport,
   getRequests,

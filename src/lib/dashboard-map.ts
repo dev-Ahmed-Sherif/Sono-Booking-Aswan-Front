@@ -16,10 +16,11 @@ export type DashboardDailyStat = {
   approvedRequests: number;
   rejectedRequests: number;
   totalRevenue: number;
+  occupancyPercent: number;
+  apartmentOccupancy: ApartmentOccupancyItem[];
 };
 
 export type GovernorDashboardData = {
-  kpiItems: Array<{ label: string; value: string }>;
   occupancyData: ApartmentOccupancyItem[];
   approvedRequests: ApprovedRequestItem[];
   dailyStats: DashboardDailyStat[];
@@ -43,11 +44,6 @@ function pickStr(raw: Record<string, unknown>, keys: string[]): string {
   return "";
 }
 
-function formatRevenueAr(amount: number): string {
-  const rounded = Math.round(amount);
-  return `${rounded.toLocaleString("ar-EG")} جنيه`;
-}
-
 export function parseGovernorDashboardResponse(
   response: unknown,
 ): GovernorDashboardData | { error: string; message: string } {
@@ -68,29 +64,6 @@ export function parseGovernorDashboardResponse(
       ? (envelope.data as Record<string, unknown>)
       : envelope;
 
-  const todayTotal = pickNum(payload, ["todayTotalRequests", "TodayTotalRequests"]);
-  const todayApproved = pickNum(payload, [
-    "todayApprovedRequests",
-    "TodayApprovedRequests",
-  ]);
-  const todayRejected = pickNum(payload, [
-    "todayRejectedRequests",
-    "TodayRejectedRequests",
-  ]);
-  const occupancyPercent = pickNum(payload, ["occupancyPercent", "OccupancyPercent"]);
-  const totalRevenue = pickNum(payload, ["totalRevenue", "TotalRevenue"]);
-
-  const occupancyRaw = payload.apartmentOccupancy ?? payload.ApartmentOccupancy;
-  const occupancyData: ApartmentOccupancyItem[] = Array.isArray(occupancyRaw)
-    ? occupancyRaw.map((item) => {
-        const row = (item ?? {}) as Record<string, unknown>;
-        return {
-          unitLabel: pickStr(row, ["unitLabel", "UnitLabel"]) || "—",
-          percent: pickNum(row, ["percent", "Percent"]),
-        };
-      })
-    : [];
-
   const approvedRaw =
     payload.latestApprovedRequests ?? payload.LatestApprovedRequests;
   const approvedRequests: ApprovedRequestItem[] = Array.isArray(approvedRaw)
@@ -109,24 +82,52 @@ export function parseGovernorDashboardResponse(
   const dailyStats: DashboardDailyStat[] = Array.isArray(dailyRaw)
     ? dailyRaw.map((item) => {
         const row = (item ?? {}) as Record<string, unknown>;
+        const apartmentRaw = row.apartmentOccupancy ?? row.ApartmentOccupancy;
+        const apartmentOccupancy: ApartmentOccupancyItem[] = Array.isArray(
+          apartmentRaw,
+        )
+          ? apartmentRaw.map((entry) => {
+              const apartment = (entry ?? {}) as Record<string, unknown>;
+              return {
+                unitLabel:
+                  pickStr(apartment, ["unitLabel", "UnitLabel"]) || "—",
+                percent: pickNum(apartment, ["percent", "Percent"]),
+              };
+            })
+          : [];
+
         return {
           date: pickStr(row, ["date", "Date"]),
           totalRequests: pickNum(row, ["totalRequests", "TotalRequests"]),
           approvedRequests: pickNum(row, ["approvedRequests", "ApprovedRequests"]),
           rejectedRequests: pickNum(row, ["rejectedRequests", "RejectedRequests"]),
           totalRevenue: pickNum(row, ["totalRevenue", "TotalRevenue"]),
+          occupancyPercent: pickNum(row, ["occupancyPercent", "OccupancyPercent"]),
+          apartmentOccupancy,
         };
       })
     : [];
 
+  const topLevelOccupancyRaw =
+    payload.apartmentOccupancy ?? payload.ApartmentOccupancy;
+  const topLevelOccupancy: ApartmentOccupancyItem[] = Array.isArray(
+    topLevelOccupancyRaw,
+  )
+    ? topLevelOccupancyRaw.map((entry) => {
+        const apartment = (entry ?? {}) as Record<string, unknown>;
+        return {
+          unitLabel: pickStr(apartment, ["unitLabel", "UnitLabel"]) || "—",
+          percent: pickNum(apartment, ["percent", "Percent"]),
+        };
+      })
+    : [];
+
+  const occupancyData =
+    dailyStats.length > 0
+      ? dailyStats[dailyStats.length - 1].apartmentOccupancy
+      : topLevelOccupancy;
+
   return {
-    kpiItems: [
-      { label: "إجمالي طلبات اليوم", value: String(todayTotal) },
-      { label: "الطلبات الموافق عليها", value: String(todayApproved) },
-      { label: "الطلبات المرفوضة", value: String(todayRejected) },
-      { label: "نسبة الإشغال", value: `${occupancyPercent}%` },
-      { label: "إجمالي الإيرادات", value: formatRevenueAr(totalRevenue) },
-    ],
     occupancyData,
     approvedRequests,
     dailyStats,

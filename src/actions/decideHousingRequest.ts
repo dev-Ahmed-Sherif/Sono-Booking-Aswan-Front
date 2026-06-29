@@ -49,6 +49,8 @@ export type DecideHousingRequestInput = {
   leaderUserId: string;
   ownerUserId?: string;
   rejectionReason?: string;
+  /** 0–100; required when approving. */
+  percentage?: number;
 };
 
 export type DecideHousingRequestResult =
@@ -150,6 +152,7 @@ export async function decideHousingRequest(
     {
       leaderUserId,
       rejectionReason: input.rejectionReason,
+      percentage: input.percentage,
     },
   );
 

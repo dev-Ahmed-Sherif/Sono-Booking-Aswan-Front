@@ -15,3 +15,14 @@ export function formatReservationAmountAr(amount: number): string {
   if (!Number.isFinite(amount)) return "—";
   return `${amount.toLocaleString("ar-EG")} ج.م`;
 }
+
+/** «مبلغ الحجز» — paid amount when payment exists, else reservation total. */
+export function receiverRowBookingAmount(row: {
+  paymentAmount?: number;
+  reservationTotalAmount: number;
+}): number {
+  if (row.paymentAmount != null && Number.isFinite(row.paymentAmount)) {
+    return row.paymentAmount;
+  }
+  return row.reservationTotalAmount;
+}

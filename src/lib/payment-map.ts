@@ -126,3 +126,47 @@ export type PaymentPagedFilterPayload = {
     sort?: string;
   }>;
 };
+
+function pickStr(r: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const v = r[key];
+    if (v != null && String(v).trim() !== "") return String(v).trim();
+  }
+  return "";
+}
+
+function pickNum(r: Record<string, unknown>, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const v = r[key];
+    if (v == null || v === "") continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+/** Parses `PaymentDto` from API list rows. */
+export function parsePaymentFromApi(
+  raw: Record<string, unknown>,
+): PaymentDtoPayload | null {
+  const reservationId = pickStr(raw, "reservationId", "ReservationId");
+  if (!reservationId) return null;
+
+  const amount = pickNum(raw, "amount", "Amount");
+  if (amount == null || amount < 0) return null;
+
+  return {
+    id: pickStr(raw, "id", "Id") || undefined,
+    code: pickStr(raw, "code", "Code") || undefined,
+    amount,
+    paymentMethod:
+      pickStr(raw, "paymentMethod", "PaymentMethod") || PAYMENT_METHOD_CASH,
+    paymentStatus:
+      pickStr(raw, "paymentStatus", "PaymentStatus") || PAYMENT_STATUS_PAID,
+    paymentDate: pickStr(raw, "paymentDate", "PaymentDate"),
+    transactionReference:
+      pickStr(raw, "transactionReference", "TransactionReference") ||
+      undefined,
+    reservationId,
+  };
+}
